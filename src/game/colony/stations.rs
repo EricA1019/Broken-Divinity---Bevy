@@ -273,6 +273,7 @@ mod tests {
         let mut world = World::new();
         world.insert_resource(GameLog::default());
         world.insert_resource(GameTime { turn: 1 });
+        world.insert_resource(ShelterResources::new_game());
         world.init_resource::<ColonyUiAction>();
 
         let station_entity = world
@@ -326,6 +327,7 @@ mod tests {
         let mut world = World::new();
         world.insert_resource(GameLog::default());
         world.insert_resource(GameTime { turn: 1 });
+        world.insert_resource(ShelterResources::new_game());
         world.init_resource::<ColonyUiAction>();
 
         let station_entity = world
