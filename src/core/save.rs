@@ -12,12 +12,15 @@ use crate::core::inventory::{Equipment, Inventory, RangedWeaponState};
 use crate::core::movement::MapTiles;
 use crate::core::perks::{PendingPerkChoices, PlayerPerks};
 use crate::core::player::PlayerBundle;
-use crate::core::resources::{ShelterResources, WorldSeed};
+use crate::core::resources::{ColonyTickTimer, ShelterResources, TravelDayTimer, WorldSeed};
 use crate::core::sanity::RaidExposure;
 use crate::core::state::AppState;
-use crate::core::stats::{CombatStats, EntityName, SkillId, SkillState};
+use crate::core::stats::{CombatStats, EntityName, PlayerProgression, SkillId, SkillState};
 use crate::core::turn::GameTime;
+use crate::game::colony::raids::{ActiveRaid, PendingRaidReport, RaidChance};
+use crate::game::colony::research::CompletedResearch;
 use crate::game::colony::spawn::ShelterState;
+use crate::game::colony::stations::{Station, StationType};
 use crate::game::colony::survivors::{Survivor, SurvivorNeeds, SurvivorTask};
 use crate::game::dungeon::gabriel::GabrielState;
 use crate::game::dungeon::lore::{LoreFragment, LoreJournal};
@@ -28,7 +31,7 @@ use crate::game::overworld::graphgen::{DungeonStoryTag, OverworldGraph};
 use crate::game::overworld::map::{PlayerMapPosition, SelectedDestination, WorldMap};
 use crate::game::overworld::travel::TravelState;
 
-const SAVE_VERSION: u32 = 3;
+const SAVE_VERSION: u32 = 5;
 
 /// Load-only resource used by future state restoration wiring.
 #[derive(Resource, Debug, Clone, Default)]
@@ -199,6 +202,8 @@ pub struct SavePlayerState {
     #[serde(default)]
     pub perks: PlayerPerks,
     #[serde(default)]
+    pub progression: PlayerProgression,
+    #[serde(default)]
     pub sprint_cooldown: u32,
 }
 
@@ -211,21 +216,28 @@ impl SavePlayerState {
         ranged_state: &RangedWeaponState,
         sanity: &RaidExposure,
         perks: &PlayerPerks,
+        progression: &PlayerProgression,
         name: Option<&EntityName>,
         sprint_cooldown: u32,
     ) -> Self {
+        let mut progression = progression.clone();
+        progression.ensure_complete();
+        let mut canonical_stats = stats.clone();
+        progression.sync_pilot_combat_skill_proxies(&mut canonical_stats.skills);
+
         Self {
             name: name
                 .map(|name| name.name.clone())
                 .unwrap_or_else(|| "Player".to_string()),
             position: SavePosition::from(position),
-            stats: SaveCombatStats::from(stats),
+            stats: SaveCombatStats::from(&canonical_stats),
             inventory: inventory.clone(),
             inventory_slot_count: inventory.slots.iter().filter(|slot| slot.is_some()).count(),
             equipment: equipment.clone(),
             ranged_state: SaveRangedState::from(ranged_state),
             sanity: SaveSanityState::from(sanity),
             perks: perks.clone(),
+            progression,
             sprint_cooldown,
         }
     }
@@ -239,6 +251,7 @@ pub fn snapshot_player_state(
     ranged_state: &RangedWeaponState,
     sanity: &RaidExposure,
     perks: &PlayerPerks,
+    progression: &PlayerProgression,
     name: Option<&EntityName>,
     sprint_cooldown: u32,
 ) -> SavePlayerState {
@@ -250,6 +263,7 @@ pub fn snapshot_player_state(
         ranged_state,
         sanity,
         perks,
+        progression,
         name,
         sprint_cooldown,
     )
@@ -295,7 +309,16 @@ pub fn spawn_player_from_save_at(
         max: player.sanity.max.max(1),
     };
     bundle.perks = player.perks.clone();
-    bundle.sprint_cooldown = SprintCooldown { remaining: player.sprint_cooldown };
+    bundle.progression = if player.progression.is_empty() {
+        PlayerProgression::from_legacy_skills(&player.stats.skills)
+    } else {
+        let mut progression = player.progression.clone();
+        progression.ensure_complete();
+        progression
+    };
+    bundle.sprint_cooldown = SprintCooldown {
+        remaining: player.sprint_cooldown,
+    };
     commands.spawn(bundle);
 }
 
@@ -311,6 +334,13 @@ pub fn restore_persistent_run_resources(commands: &mut Commands, save: &SaveGame
     commands.insert_resource(save.gabriel.clone());
     commands.insert_resource(PlayerSnapshot(Some(save.player.clone())));
     commands.insert_resource(PendingSurvivorLoad(save.colony.survivors.clone()));
+    commands.insert_resource(PendingStationLoad(save.colony.stations.clone()));
+    commands.insert_resource(save.colony.research.clone());
+    if let Some(report) = save.colony.pending_raid_report.clone() {
+        commands.insert_resource(report);
+    } else {
+        commands.remove_resource::<PendingRaidReport>();
+    }
     // Only reset destination if no pending travel — preserve travel context on load
     if save.overworld.travel.is_none() {
         commands.insert_resource(SelectedDestination::default());
@@ -344,6 +374,9 @@ pub fn restore_persistent_run_resources(commands: &mut Commands, save: &SaveGame
 pub fn reset_run_state_for_menu(mut commands: Commands) {
     commands.insert_resource(GameTime::default());
     commands.insert_resource(GameLog::default());
+    commands.insert_resource(ColonyTickTimer::default());
+    commands.insert_resource(TravelDayTimer::default());
+    commands.insert_resource(RaidChance::default());
     commands.insert_resource(GabrielState::default());
     commands.insert_resource(LoreJournal::default());
     commands.insert_resource(SelectedDestination::default());
@@ -352,6 +385,8 @@ pub fn reset_run_state_for_menu(mut commands: Commands) {
     commands.insert_resource(SaveAndQuitRequested::default());
     commands.insert_resource(PlayerSnapshot::default());
     commands.insert_resource(PendingSurvivorLoad::default());
+    commands.insert_resource(PendingStationLoad::default());
+    commands.insert_resource(CompletedResearch::default());
 
     commands.remove_resource::<MapTiles>();
     commands.remove_resource::<ShelterState>();
@@ -359,6 +394,8 @@ pub fn reset_run_state_for_menu(mut commands: Commands) {
     commands.remove_resource::<WorldMap>();
     commands.remove_resource::<PlayerMapPosition>();
     commands.remove_resource::<Factions>();
+    commands.remove_resource::<ActiveRaid>();
+    commands.remove_resource::<PendingRaidReport>();
     commands.remove_resource::<TravelState>();
     commands.remove_resource::<ShelterResources>();
     commands.remove_resource::<WorldSeed>();
@@ -370,7 +407,10 @@ pub fn reset_run_state_for_menu(mut commands: Commands) {
 pub enum SaveSurvivorTask {
     #[default]
     Idle,
-    Working { x: i32, y: i32 },
+    Working {
+        x: i32,
+        y: i32,
+    },
 }
 
 impl From<&SurvivorTask> for SaveSurvivorTask {
@@ -412,6 +452,50 @@ pub struct SaveSurvivor {
 #[derive(Resource, Debug, Clone, Default)]
 pub struct PendingSurvivorLoad(pub Vec<SaveSurvivor>);
 
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct SaveStation {
+    pub kind: StationType,
+    #[serde(default)]
+    pub tier: u8,
+    #[serde(default)]
+    pub worker_slots: u8,
+    #[serde(default)]
+    pub workers_assigned: u8,
+    #[serde(default)]
+    pub x: i32,
+    #[serde(default)]
+    pub y: i32,
+}
+
+impl SaveStation {
+    pub fn to_runtime(&self) -> Station {
+        let worker_slots = self.worker_slots.max(self.kind.worker_slots());
+        Station {
+            kind: self.kind,
+            tier: self.tier.max(1),
+            worker_slots,
+            workers_assigned: self.workers_assigned.min(worker_slots),
+        }
+    }
+}
+
+impl From<(&Station, &Position)> for SaveStation {
+    fn from((station, position): (&Station, &Position)) -> Self {
+        Self {
+            kind: station.kind,
+            tier: station.tier,
+            worker_slots: station.worker_slots,
+            workers_assigned: station.workers_assigned,
+            x: position.x,
+            y: position.y,
+        }
+    }
+}
+
+/// Resource inserted during load or colony teardown to restore station entities.
+#[derive(Resource, Debug, Clone, Default)]
+pub struct PendingStationLoad(pub Vec<SaveStation>);
+
 #[derive(Serialize, Deserialize, Debug, Clone, Default)]
 pub struct SaveColonyState {
     #[serde(default)]
@@ -420,6 +504,12 @@ pub struct SaveColonyState {
     pub resources: ShelterResources,
     #[serde(default)]
     pub survivors: Vec<SaveSurvivor>,
+    #[serde(default)]
+    pub stations: Vec<SaveStation>,
+    #[serde(default)]
+    pub research: CompletedResearch,
+    #[serde(default)]
+    pub pending_raid_report: Option<PendingRaidReport>,
 }
 
 impl SaveColonyState {
@@ -427,11 +517,17 @@ impl SaveColonyState {
         shelter_state: Option<&ShelterState>,
         resources: Option<&ShelterResources>,
         survivors: Vec<SaveSurvivor>,
+        stations: Vec<SaveStation>,
+        research: Option<&CompletedResearch>,
+        pending_raid_report: Option<&PendingRaidReport>,
     ) -> Self {
         Self {
             shelter_seed: shelter_state.map_or(0, |state| state.seed),
             resources: resources.cloned().unwrap_or_default(),
             survivors,
+            stations,
+            research: research.cloned().unwrap_or_default(),
+            pending_raid_report: pending_raid_report.cloned(),
         }
     }
 }
@@ -474,7 +570,9 @@ impl SaveOverworldState {
             player_position: player_position
                 .map(SaveOverworldPlayerPosition::from)
                 .unwrap_or_default(),
-            factions: factions.map(|factions| factions.0.clone()).unwrap_or_default(),
+            factions: factions
+                .map(|factions| factions.0.clone())
+                .unwrap_or_default(),
             travel: travel.cloned(),
         }
     }
@@ -689,13 +787,21 @@ impl SaveGame {
             .player
             .inventory_slot_count
             .max(self.legacy_inventory_count);
-        self.lore_journal.fragment_count = self
-            .lore_journal
-            .fragment_count
-            .max(self.legacy_lore_count);
+        self.lore_journal.fragment_count =
+            self.lore_journal.fragment_count.max(self.legacy_lore_count);
     }
 
     fn sync_derived_fields(&mut self) {
+        if self.player.progression.is_empty() {
+            self.player.progression = PlayerProgression::from_legacy_skills(&self.player.stats.skills);
+        } else {
+            self.player.progression.ensure_complete();
+        }
+        if !self.has_legacy_flat_data() {
+            self.player
+                .progression
+                .sync_pilot_combat_skill_proxies(&mut self.player.stats.skills);
+        }
         if self.gabriel.joined {
             self.gabriel.encounter_completed = true;
         }
@@ -791,10 +897,7 @@ fn write_save(save: &SaveGame) -> bool {
 
 /// Collect all survivor entities into save data.
 fn collect_survivors(
-    survivors: &Query<
-        (&EntityName, &Position, &SurvivorNeeds, &SurvivorTask),
-        With<Survivor>,
-    >,
+    survivors: &Query<(&EntityName, &Position, &SurvivorNeeds, &SurvivorTask), With<Survivor>>,
 ) -> Vec<SaveSurvivor> {
     survivors
         .iter()
@@ -810,6 +913,47 @@ fn collect_survivors(
         .collect()
 }
 
+/// Collect all station entities into save data.
+fn collect_stations(stations: &Query<(&Station, &Position)>) -> Vec<SaveStation> {
+    stations.iter().map(SaveStation::from).collect()
+}
+
+fn capture_colony_survivors_for_save(
+    runtime_state: Option<&AppState>,
+    survivors: &Query<(&EntityName, &Position, &SurvivorNeeds, &SurvivorTask), With<Survivor>>,
+    pending_survivors: Option<&PendingSurvivorLoad>,
+) -> Vec<SaveSurvivor> {
+    let live = collect_survivors(survivors);
+    if matches!(runtime_state, Some(AppState::Colony)) || !live.is_empty() {
+        live
+    } else {
+        pending_survivors.map_or_else(Vec::new, |pending| pending.0.clone())
+    }
+}
+
+fn capture_colony_stations_for_save(
+    runtime_state: Option<&AppState>,
+    stations: &Query<(&Station, &Position)>,
+    pending_stations: Option<&PendingStationLoad>,
+) -> Vec<SaveStation> {
+    let live = collect_stations(stations);
+    if matches!(runtime_state, Some(AppState::Colony)) || !live.is_empty() {
+        live
+    } else {
+        pending_stations.map_or_else(Vec::new, |pending| pending.0.clone())
+    }
+}
+
+/// Cache survivor/station state before the colony scene is torn down.
+pub fn cache_colony_runtime_state(
+    mut commands: Commands,
+    survivors: Query<(&EntityName, &Position, &SurvivorNeeds, &SurvivorTask), With<Survivor>>,
+    stations: Query<(&Station, &Position)>,
+) {
+    commands.insert_resource(PendingSurvivorLoad(collect_survivors(&survivors)));
+    commands.insert_resource(PendingStationLoad(collect_stations(&stations)));
+}
+
 /// System: autosave when entering Colony state.
 pub fn autosave(
     app_state: Option<Res<State<AppState>>>,
@@ -822,32 +966,67 @@ pub fn autosave(
             &RangedWeaponState,
             &RaidExposure,
             &PlayerPerks,
+            &PlayerProgression,
             Option<&EntityName>,
             &SprintCooldown,
         ),
         With<Player>,
     >,
-    survivor_q: Query<
-        (&EntityName, &Position, &SurvivorNeeds, &SurvivorTask),
-        With<Survivor>,
-    >,
-    time: Option<Res<GameTime>>,
-    resources: Option<Res<ShelterResources>>,
-    shelter_state: Option<Res<ShelterState>>,
-    seed: Option<Res<WorldSeed>>,
-    gabriel_state: Option<Res<GabrielState>>,
-    journal: Option<Res<LoreJournal>>,
-    world_map: Option<Res<WorldMap>>,
-    player_map_position: Option<Res<PlayerMapPosition>>,
-    factions: Option<Res<Factions>>,
-    travel: Option<Res<TravelState>>,
-    dungeon_state: Option<Res<CurrentDungeonState>>,
+    colony_queries: (
+        Query<(&EntityName, &Position, &SurvivorNeeds, &SurvivorTask), With<Survivor>>,
+        Query<(&Station, &Position)>,
+    ),
+    colony_resources: (
+        Option<Res<GameTime>>,
+        Option<Res<ShelterResources>>,
+        Option<Res<ShelterState>>,
+        Option<Res<CompletedResearch>>,
+    ),
+    world_resources: (
+        Option<Res<WorldSeed>>,
+        Option<Res<GabrielState>>,
+        Option<Res<LoreJournal>>,
+        Option<Res<WorldMap>>,
+        Option<Res<PlayerMapPosition>>,
+        Option<Res<Factions>>,
+        Option<Res<TravelState>>,
+        Option<Res<CurrentDungeonState>>,
+    ),
+    persistence_resources: (
+        Option<Res<PendingSurvivorLoad>>,
+        Option<Res<PendingStationLoad>>,
+        Option<Res<PendingRaidReport>>,
+    ),
 ) {
-    let Ok((position, stats, inventory, equipment, ranged_state, sanity, perks, name, sprint_cd)) =
-        player_q.single()
+    let Ok((
+        position,
+        stats,
+        inventory,
+        equipment,
+        ranged_state,
+        sanity,
+        perks,
+        progression,
+        name,
+        sprint_cd,
+    )) = player_q.single()
     else {
         return;
     };
+    let (survivor_q, station_q) = colony_queries;
+    let (time, resources, shelter_state, research) = colony_resources;
+    let (
+        seed,
+        gabriel_state,
+        journal,
+        world_map,
+        player_map_position,
+        factions,
+        travel,
+        dungeon_state,
+    ) = world_resources;
+    let (pending_survivor_load, pending_station_load, pending_raid_report) = persistence_resources;
+    let runtime_state = app_state.as_ref().map(|state| state.get());
 
     let mut save = SaveGame {
         version: SAVE_VERSION,
@@ -865,13 +1044,25 @@ pub fn autosave(
             ranged_state,
             sanity,
             perks,
+            progression,
             name,
             sprint_cd.remaining,
         ),
         colony: SaveColonyState::from_resources(
             shelter_state.as_deref(),
             resources.as_deref(),
-            collect_survivors(&survivor_q),
+            capture_colony_survivors_for_save(
+                runtime_state,
+                &survivor_q,
+                pending_survivor_load.as_deref(),
+            ),
+            capture_colony_stations_for_save(
+                runtime_state,
+                &station_q,
+                pending_station_load.as_deref(),
+            ),
+            research.as_deref(),
+            pending_raid_report.as_deref(),
         ),
         overworld: SaveOverworldState::from_resources(
             world_map.as_deref(),
@@ -906,26 +1097,36 @@ pub fn handle_save_and_quit(
             &RangedWeaponState,
             &RaidExposure,
             &PlayerPerks,
+            &PlayerProgression,
             Option<&EntityName>,
             &SprintCooldown,
         ),
         With<Player>,
     >,
-    survivor_q: Query<
-        (&EntityName, &Position, &SurvivorNeeds, &SurvivorTask),
-        With<Survivor>,
-    >,
+    colony_queries: (
+        Query<(&EntityName, &Position, &SurvivorNeeds, &SurvivorTask), With<Survivor>>,
+        Query<(&Station, &Position)>,
+    ),
     player_snapshot: Option<Res<PlayerSnapshot>>,
-    time: Option<Res<GameTime>>,
-    (resources, shelter_state): (Option<Res<ShelterResources>>, Option<Res<ShelterState>>),
-    seed: Option<Res<WorldSeed>>,
-    gabriel_state: Option<Res<GabrielState>>,
-    journal: Option<Res<LoreJournal>>,
-    world_map: Option<Res<WorldMap>>,
-    player_map_position: Option<Res<PlayerMapPosition>>,
-    factions: Option<Res<Factions>>,
-    travel: Option<Res<TravelState>>,
-    dungeon_state: Option<Res<CurrentDungeonState>>,
+    colony_resources: (
+        Option<Res<GameTime>>,
+        Option<Res<ShelterResources>>,
+        Option<Res<ShelterState>>,
+        Option<Res<WorldSeed>>,
+        Option<Res<CompletedResearch>>,
+        Option<Res<PendingSurvivorLoad>>,
+        Option<Res<PendingStationLoad>>,
+        Option<Res<PendingRaidReport>>,
+    ),
+    world_resources: (
+        Option<Res<GabrielState>>,
+        Option<Res<LoreJournal>>,
+        Option<Res<WorldMap>>,
+        Option<Res<PlayerMapPosition>>,
+        Option<Res<Factions>>,
+        Option<Res<TravelState>>,
+        Option<Res<CurrentDungeonState>>,
+    ),
 ) {
     let Some(mut request) = request else { return };
     if !request.0 {
@@ -933,8 +1134,18 @@ pub fn handle_save_and_quit(
     }
     request.0 = false;
 
-    let player = if let Ok((position, stats, inventory, equipment, ranged_state, sanity, perks, name, sprint_cd)) =
-        player_q.single()
+    let player = if let Ok((
+        position,
+        stats,
+        inventory,
+        equipment,
+        ranged_state,
+        sanity,
+        perks,
+        progression,
+        name,
+        sprint_cd,
+    )) = player_q.single()
     {
         snapshot_player_state(
             position,
@@ -944,16 +1155,34 @@ pub fn handle_save_and_quit(
             ranged_state,
             sanity,
             perks,
+            progression,
             name,
             sprint_cd.remaining,
         )
-    } else if let Some(snapshot) = player_snapshot.as_ref().and_then(|snapshot| snapshot.0.clone()) {
+    } else if let Some(snapshot) = player_snapshot
+        .as_ref()
+        .and_then(|snapshot| snapshot.0.clone())
+    {
         snapshot
     } else if let Some(existing_save) = load_game() {
         existing_save.player
     } else {
         return;
     };
+    let (survivor_q, station_q) = colony_queries;
+    let (
+        time,
+        resources,
+        shelter_state,
+        seed,
+        research,
+        pending_survivor_load,
+        pending_station_load,
+        pending_raid_report,
+    ) = colony_resources;
+    let (gabriel_state, journal, world_map, player_map_position, factions, travel, dungeon_state) =
+        world_resources;
+    let runtime_state = app_state.as_ref().map(|state| state.get());
 
     let mut save = SaveGame {
         version: SAVE_VERSION,
@@ -967,7 +1196,18 @@ pub fn handle_save_and_quit(
         colony: SaveColonyState::from_resources(
             shelter_state.as_deref(),
             resources.as_deref(),
-            collect_survivors(&survivor_q),
+            capture_colony_survivors_for_save(
+                runtime_state,
+                &survivor_q,
+                pending_survivor_load.as_deref(),
+            ),
+            capture_colony_stations_for_save(
+                runtime_state,
+                &station_q,
+                pending_station_load.as_deref(),
+            ),
+            research.as_deref(),
+            pending_raid_report.as_deref(),
         ),
         overworld: SaveOverworldState::from_resources(
             world_map.as_deref(),
@@ -1001,9 +1241,12 @@ mod tests {
 
     use crate::core::items::ItemStack;
     use crate::core::perks::PerkId;
+    use crate::game::colony::raids::{PendingRaidReport, RaidPhase, RaidReport, RaidReportOrigin};
     use crate::game::factions::{FactionArchetype, FactionDisposition};
     use crate::game::overworld::graphgen::{NodeType, OverworldNode, Road};
     use crate::game::overworld::weather::Weather;
+    use bevy::ecs::system::RunSystemOnce;
+    use std::time::Duration;
 
     fn sample_player_state() -> SavePlayerState {
         let mut inventory = Inventory::default();
@@ -1037,6 +1280,9 @@ mod tests {
         let mut perks = PlayerPerks::default();
         perks.unlock(PerkId::ThickSkin);
 
+        let mut progression = PlayerProgression::new_game();
+        progression.kleos = 18;
+
         SavePlayerState {
             name: "Player".to_string(),
             position: SavePosition { x: 7, y: 9 },
@@ -1064,6 +1310,7 @@ mod tests {
                 max: 100,
             },
             perks,
+            progression,
             sprint_cooldown: 0,
         }
     }
@@ -1092,6 +1339,184 @@ mod tests {
     }
 
     #[test]
+    fn test_normalize_loaded_infers_missing_player_progression() {
+        let mut save = SaveGame::default();
+        save.player = sample_player_state();
+        save.player.progression = PlayerProgression::default();
+
+        let loaded = save.normalize_loaded();
+
+        assert_eq!(
+            loaded
+                .player
+                .progression
+                .proficiency_rating(crate::core::stats::ProficiencyId::MeleeTraining),
+            14
+        );
+        assert_eq!(
+            loaded
+                .player
+                .progression
+                .virtue_rank(crate::core::stats::VirtueId::Thumos),
+            3
+        );
+        assert_eq!(loaded.player.progression.kleos, 0);
+    }
+
+    #[test]
+    fn test_normalize_loaded_syncs_pilot_skill_proxies_from_progression() {
+        let mut save = SaveGame::default();
+        save.player = sample_player_state();
+        save.player.progression = PlayerProgression::new_game();
+        save.player.stats.skills.insert(
+            SkillId::Melee,
+            SkillState {
+                base: 99,
+                xp: 7,
+                level: 4,
+            },
+        );
+        save.player.stats.skills.insert(
+            SkillId::Ranged,
+            SkillState {
+                base: 88,
+                xp: 9,
+                level: 3,
+            },
+        );
+        save.player.stats.skills.insert(
+            SkillId::Evasion,
+            SkillState {
+                base: 77,
+                xp: 11,
+                level: 2,
+            },
+        );
+
+        let loaded = save.normalize_loaded();
+
+        assert_eq!(
+            loaded.player.stats.skills[&SkillId::Melee].effective(),
+            loaded
+                .player
+                .progression
+                .action_rating(
+                    crate::core::stats::VirtueId::Thumos,
+                    crate::core::stats::ProficiencyId::MeleeTraining,
+                    0,
+                    0,
+                ) as u32
+        );
+        assert_eq!(
+            loaded.player.stats.skills[&SkillId::Ranged].effective(),
+            loaded
+                .player
+                .progression
+                .action_rating(
+                    crate::core::stats::VirtueId::Prudence,
+                    crate::core::stats::ProficiencyId::RangedTraining,
+                    0,
+                    0,
+                ) as u32
+        );
+        assert_eq!(
+            loaded.player.stats.skills[&SkillId::Evasion].effective(),
+            loaded.player.progression.enemy_attack_dv() as u32
+        );
+        assert_eq!(loaded.player.stats.skills[&SkillId::Melee].xp, 0);
+        assert_eq!(loaded.player.stats.skills[&SkillId::Ranged].xp, 0);
+        assert_eq!(loaded.player.stats.skills[&SkillId::Evasion].xp, 0);
+    }
+
+    #[test]
+    fn test_snapshot_player_state_syncs_pilot_skill_proxies_from_progression() {
+        let mut runtime_stats = CombatStats {
+            hp: 46,
+            hp_max: 50,
+            speed: 1,
+            ar: 5,
+            md: 2,
+            skills: HashMap::from([
+                (
+                    SkillId::Melee,
+                    SkillState {
+                        base: 99,
+                        xp: 7,
+                        level: 4,
+                    },
+                ),
+                (
+                    SkillId::Ranged,
+                    SkillState {
+                        base: 88,
+                        xp: 9,
+                        level: 3,
+                    },
+                ),
+                (
+                    SkillId::Evasion,
+                    SkillState {
+                        base: 77,
+                        xp: 11,
+                        level: 2,
+                    },
+                ),
+            ]),
+        };
+        let progression = PlayerProgression::new_game();
+        let snapshot = snapshot_player_state(
+            &Position::new(7, 9),
+            &runtime_stats,
+            &Inventory::default(),
+            &Equipment::default(),
+            &RangedWeaponState {
+                clip_current: 0,
+                clip_size: 0,
+            },
+            &RaidExposure::default(),
+            &PlayerPerks::default(),
+            &progression,
+            Some(&EntityName {
+                name: "Player".to_string(),
+            }),
+            0,
+        );
+
+        assert_eq!(
+            snapshot.stats.skills[&SkillId::Melee].effective(),
+            progression.action_rating(
+                crate::core::stats::VirtueId::Thumos,
+                crate::core::stats::ProficiencyId::MeleeTraining,
+                0,
+                0,
+            ) as u32
+        );
+        assert_eq!(
+            snapshot.stats.skills[&SkillId::Ranged].effective(),
+            progression.action_rating(
+                crate::core::stats::VirtueId::Prudence,
+                crate::core::stats::ProficiencyId::RangedTraining,
+                0,
+                0,
+            ) as u32
+        );
+        assert_eq!(
+            snapshot.stats.skills[&SkillId::Evasion].effective(),
+            progression.enemy_attack_dv() as u32
+        );
+
+        runtime_stats.skills.insert(
+            SkillId::Melee,
+            SkillState {
+                base: 5,
+                xp: 0,
+                level: 0,
+            },
+        );
+        assert_eq!(snapshot.stats.skills[&SkillId::Melee].effective(), 22);
+    }
+
+    #[test]
     fn test_colony_save_roundtrip() {
         let loaded = roundtrip(SaveGame {
             seed: 42,
@@ -1108,6 +1533,24 @@ mod tests {
                     ammo: 18,
                 },
                 survivors: Vec::new(),
+                stations: vec![SaveStation {
+                    kind: StationType::Cook,
+                    tier: 2,
+                    worker_slots: 1,
+                    workers_assigned: 1,
+                    x: 4,
+                    y: 6,
+                }],
+                research: CompletedResearch::default(),
+                pending_raid_report: Some(PendingRaidReport {
+                    origin: RaidReportOrigin::AwayAutoResolve,
+                    report: RaidReport {
+                        survivors_lost: 1,
+                        raiders_killed: 3,
+                        resources_stolen: 4,
+                        stations_damaged: 0,
+                    },
+                }),
             },
             lore_journal: sample_lore_journal(1),
             ..SaveGame::default()
@@ -1118,6 +1561,16 @@ mod tests {
         assert_eq!(loaded.game_time.turn, 12);
         assert_eq!(loaded.colony.shelter_seed, 0xC010_0001);
         assert_eq!(loaded.colony.resources.scrap, 27);
+        assert_eq!(loaded.colony.stations.len(), 1);
+        assert_eq!(loaded.colony.stations[0].kind, StationType::Cook);
+        assert_eq!(
+            loaded
+                .colony
+                .pending_raid_report
+                .as_ref()
+                .map(|report| report.origin),
+            Some(RaidReportOrigin::AwayAutoResolve)
+        );
         assert_eq!(loaded.player.inventory_slot_count, 2);
         assert_eq!(loaded.player.equipment.weapon.as_deref(), Some("iron_pipe"));
         assert_eq!(loaded.lore_journal.fragment_count, 1);
@@ -1185,7 +1638,10 @@ mod tests {
         assert_eq!(loaded.overworld.player_position.current_node, 1);
         assert_eq!(loaded.overworld.factions.len(), 1);
         assert_eq!(loaded.overworld.factions[0].name, "The Collective");
-        assert_eq!(loaded.overworld.travel.as_ref().map(|travel| travel.day), Some(8));
+        assert_eq!(
+            loaded.overworld.travel.as_ref().map(|travel| travel.day),
+            Some(8)
+        );
         assert_eq!(
             loaded
                 .overworld
@@ -1233,7 +1689,10 @@ mod tests {
         assert_eq!(loaded.dungeon.floor_number, 3);
         assert_eq!(loaded.dungeon.theme, Some(DungeonTheme::Military));
         assert_eq!(loaded.dungeon.origin_node_id, Some(2));
-        assert_eq!(loaded.dungeon.story_tag, Some(DungeonStoryTag::GabrielIntro));
+        assert_eq!(
+            loaded.dungeon.story_tag,
+            Some(DungeonStoryTag::GabrielIntro)
+        );
         assert!(loaded.gabriel.joined);
         assert_eq!(loaded.lore_journal.fragment_count, 2);
     }
@@ -1317,16 +1776,55 @@ mod tests {
         assert_eq!(loaded.hunger, 60);
         assert_eq!(loaded.thirst, 40);
         assert_eq!(loaded.rest, 90);
-        assert!(matches!(loaded.task, SaveSurvivorTask::Working { x: 3, y: 7 }));
+        assert!(matches!(
+            loaded.task,
+            SaveSurvivorTask::Working { x: 3, y: 7 }
+        ));
+    }
+
+    #[test]
+    fn test_save_station_roundtrip() {
+        let station = SaveStation {
+            kind: StationType::MilitiaTraining,
+            tier: 2,
+            worker_slots: 1,
+            workers_assigned: 1,
+            x: 11,
+            y: 13,
+        };
+
+        let json = serde_json::to_string(&station).unwrap();
+        let loaded: SaveStation = serde_json::from_str(&json).unwrap();
+
+        assert_eq!(loaded.kind, StationType::MilitiaTraining);
+        assert_eq!(loaded.tier, 2);
+        assert_eq!(loaded.workers_assigned, 1);
+        assert_eq!(loaded.x, 11);
+        assert_eq!(loaded.y, 13);
     }
 
     #[test]
     fn test_transient_task_maps_to_idle() {
-        assert!(matches!(SaveSurvivorTask::from(&SurvivorTask::Idle), SaveSurvivorTask::Idle));
-        assert!(matches!(SaveSurvivorTask::from(&SurvivorTask::SeekingFood), SaveSurvivorTask::Idle));
-        assert!(matches!(SaveSurvivorTask::from(&SurvivorTask::SeekingWater), SaveSurvivorTask::Idle));
-        assert!(matches!(SaveSurvivorTask::from(&SurvivorTask::Resting), SaveSurvivorTask::Idle));
-        assert!(matches!(SaveSurvivorTask::from(&SurvivorTask::Patrolling), SaveSurvivorTask::Idle));
+        assert!(matches!(
+            SaveSurvivorTask::from(&SurvivorTask::Idle),
+            SaveSurvivorTask::Idle
+        ));
+        assert!(matches!(
+            SaveSurvivorTask::from(&SurvivorTask::SeekingFood),
+            SaveSurvivorTask::Idle
+        ));
+        assert!(matches!(
+            SaveSurvivorTask::from(&SurvivorTask::SeekingWater),
+            SaveSurvivorTask::Idle
+        ));
+        assert!(matches!(
+            SaveSurvivorTask::from(&SurvivorTask::Resting),
+            SaveSurvivorTask::Idle
+        ));
+        assert!(matches!(
+            SaveSurvivorTask::from(&SurvivorTask::Patrolling),
+            SaveSurvivorTask::Idle
+        ));
 
         let working = SaveSurvivorTask::from(&SurvivorTask::Working(IVec2::new(4, 8)));
         assert!(matches!(working, SaveSurvivorTask::Working { x: 4, y: 8 }));
@@ -1338,7 +1836,18 @@ mod tests {
         let json = r#"{"shelter_seed": 42, "resources": {"food": 10, "water": 5, "scrap": 0, "medicine": 0, "ammo": 0}}"#;
         let colony: SaveColonyState = serde_json::from_str(json).unwrap();
         assert_eq!(colony.shelter_seed, 42);
-        assert!(colony.survivors.is_empty(), "missing survivors should default to empty vec");
+        assert!(
+            colony.survivors.is_empty(),
+            "missing survivors should default to empty vec"
+        );
+        assert!(
+            colony.stations.is_empty(),
+            "missing stations should default to empty vec"
+        );
+        assert!(
+            colony.pending_raid_report.is_none(),
+            "missing pending raid report should default to none"
+        );
     }
 
     #[test]
@@ -1366,6 +1875,24 @@ mod tests {
                     task: SaveSurvivorTask::Working { x: 3, y: 7 },
                 },
             ],
+            stations: vec![SaveStation {
+                kind: StationType::Workbench,
+                tier: 1,
+                worker_slots: 2,
+                workers_assigned: 1,
+                x: 8,
+                y: 4,
+            }],
+            research: CompletedResearch::default(),
+            pending_raid_report: Some(PendingRaidReport {
+                origin: RaidReportOrigin::AwayAutoResolve,
+                report: RaidReport {
+                    survivors_lost: 0,
+                    raiders_killed: 2,
+                    resources_stolen: 1,
+                    stations_damaged: 0,
+                },
+            }),
         };
 
         let json = serde_json::to_string(&colony).unwrap();
@@ -1373,7 +1900,13 @@ mod tests {
         assert_eq!(loaded.survivors.len(), 2);
         assert_eq!(loaded.survivors[0].name, "Elena");
         assert_eq!(loaded.survivors[1].hunger, 30);
-        assert!(matches!(loaded.survivors[1].task, SaveSurvivorTask::Working { x: 3, y: 7 }));
+        assert_eq!(loaded.stations.len(), 1);
+        assert_eq!(loaded.stations[0].kind, StationType::Workbench);
+        assert!(loaded.pending_raid_report.is_some());
+        assert!(matches!(
+            loaded.survivors[1].task,
+            SaveSurvivorTask::Working { x: 3, y: 7 }
+        ));
     }
 
     #[test]
@@ -1384,5 +1917,99 @@ mod tests {
         let working = SaveSurvivorTask::Working { x: 10, y: 20 };
         let rt = working.to_runtime();
         assert!(matches!(rt, SurvivorTask::Working(pos) if pos == IVec2::new(10, 20)));
+    }
+
+    #[test]
+    fn test_reset_run_state_for_menu_clears_raid_and_timer_state() {
+        let mut app = App::new();
+
+        let mut colony_timer = ColonyTickTimer::default();
+        colony_timer.0.tick(Duration::from_secs_f32(0.4));
+        let mut travel_timer = TravelDayTimer::default();
+        travel_timer.0.tick(Duration::from_secs_f32(0.6));
+
+        app.insert_resource(GameTime { turn: 99 });
+        app.insert_resource(GameLog::default());
+        app.insert_resource(colony_timer);
+        app.insert_resource(travel_timer);
+        app.insert_resource(RaidChance {
+            accumulated: 2.5,
+            base_chance: 0.5,
+            ticks_since_last_raid: 17,
+        });
+        app.insert_resource(ActiveRaid {
+            raider_count: 4,
+            raider_strength: 60,
+            casualties: 1,
+            resources_stolen: 3,
+            phase: RaidPhase::Planning,
+        });
+        app.insert_resource(TravelState {
+            from_node: 0,
+            to_node: 1,
+            distance_remaining: 2.0,
+            day: 3,
+            current_weather: Weather::Clear,
+            world_seed: 7,
+            encounters_seen: 1,
+        });
+        app.insert_resource(ShelterResources::new_game());
+        app.add_systems(Update, reset_run_state_for_menu);
+
+        app.update();
+
+        assert_eq!(app.world().resource::<GameTime>().turn, 0);
+        assert_eq!(
+            app.world().resource::<RaidChance>().ticks_since_last_raid,
+            0
+        );
+        assert_eq!(
+            app.world().resource::<ColonyTickTimer>().0.elapsed_secs(),
+            0.0
+        );
+        assert_eq!(
+            app.world().resource::<TravelDayTimer>().0.elapsed_secs(),
+            0.0
+        );
+        assert!(app.world().get_resource::<ActiveRaid>().is_none());
+        assert!(app.world().get_resource::<TravelState>().is_none());
+        assert!(app.world().get_resource::<ShelterResources>().is_none());
+    }
+
+    #[test]
+    fn test_cache_colony_runtime_state_captures_pending_loads() {
+        let mut world = World::new();
+        world.spawn((
+            Survivor,
+            EntityName {
+                name: "Marcus".to_string(),
+            },
+            Position::new(3, 4),
+            SurvivorNeeds {
+                hunger: 70,
+                thirst: 65,
+                rest: 80,
+            },
+            SurvivorTask::Working(IVec2::new(9, 7)),
+        ));
+        world.spawn((
+            Station {
+                kind: StationType::Cook,
+                tier: 2,
+                worker_slots: 1,
+                workers_assigned: 1,
+            },
+            Position::new(9, 7),
+        ));
+
+        let _ = world.run_system_once(cache_colony_runtime_state);
+
+        let survivors = &world.resource::<PendingSurvivorLoad>().0;
+        let stations = &world.resource::<PendingStationLoad>().0;
+        assert_eq!(survivors.len(), 1);
+        assert_eq!(survivors[0].name, "Marcus");
+        assert_eq!(stations.len(), 1);
+        assert_eq!(stations[0].kind, StationType::Cook);
+        assert_eq!(stations[0].workers_assigned, 1);
     }
 }
