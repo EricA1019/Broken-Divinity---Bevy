@@ -7,7 +7,7 @@ use bevy::prelude::*;
 use crate::core::components::Player;
 use crate::core::gamelog::{GameLog, LogColor};
 use crate::core::inventory::Inventory;
-use crate::core::items::{find_item, ConsumableEffect};
+use crate::core::items::{ConsumableEffect, find_item};
 use crate::core::stats::CombatStats;
 use crate::core::turn::{ActionBudget, GameTime, PendingAction, PlayerAction};
 
@@ -92,15 +92,15 @@ pub fn resolve_consumable_use(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bevy::ecs::system::RunSystemOnce;
     use crate::core::inventory::Inventory;
     use crate::core::items::ItemStack;
     use crate::core::stats::{SkillId, SkillState};
+    use bevy::ecs::system::RunSystemOnce;
     use std::collections::HashMap;
 
     fn default_combat_stats(hp: i32, hp_max: i32) -> CombatStats {
         let mut skills = HashMap::new();
-        for &skill in SkillId::all() {
+        for &skill in SkillId::pilot_proxies() {
             skills.insert(
                 skill,
                 SkillState {
@@ -118,6 +118,14 @@ mod tests {
             md: 0,
             skills,
         }
+    }
+
+    #[test]
+    fn default_combat_stats_uses_only_canonical_skill_proxies() {
+        let stats = default_combat_stats(10, 20);
+        let keys: std::collections::HashSet<_> = stats.skills.keys().copied().collect();
+        let expected: std::collections::HashSet<_> = SkillId::pilot_proxies().iter().copied().collect();
+        assert_eq!(keys, expected);
     }
 
     #[test]
