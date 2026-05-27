@@ -1,0 +1,69 @@
+AXT-00 full gate run (2026-05-26)
+warning: please specify `--format-version` flag explicitly to avoid compatibility problems
+{"packages":[{"name":"broken_divinity","version":"0.1.0","id":"path+file:///home/eric/projects/BD%20virtues/Broken%20Divinity%20--Bevy#broken_divinity@0.1.0","license":null,"license_file":null,"description":null,"source":null,"dependencies":[{"name":"bevy","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^0.18.1","kind":null,"rename":null,"optional":false,"uses_default_features":false,"features":["2d"],"target":null,"registry":null},{"name":"bevy_ecs_tilemap","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^0.18.1","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null},{"name":"bevy_egui","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^0.39.1","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null},{"name":"rand","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^0.10.0","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null},{"name":"rand_chacha","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^0.10.0","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null},{"name":"serde","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^1.0","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":["derive"],"target":null,"registry":null},{"name":"serde_json","source":"registry+https://github.com/rust-lang/crates.io-index","req":"^1.0","kind":null,"rename":null,"optional":false,"uses_default_features":true,"features":[],"target":null,"registry":null}],"targets":[{"kind":["lib"],"crate_types":["lib"],"name":"broken_divinity","src_path":"/home/eric/projects/BD virtues/Broken Divinity --Bevy/src/lib.rs","edition":"2024","doc":true,"doctest":true,"test":true},{"kind":["bin"],"crate_types":["bin"],"name":"broken_divinity","src_path":"/home/eric/projects/BD virtues/Broken Divinity --Bevy/src/main.rs","edition":"2024","doc":true,"doctest":false,"test":true},{"kind":["test"],"crate_types":["bin"],"name":"rcv_compile_contract","src_path":"/home/eric/projects/BD virtues/Broken Divinity --Bevy/tests/rcv_compile_contract.rs","edition":"2024","doc":false,"doctest":false,"test":true},{"kind":["test"],"crate_types":["bin"],"name":"ux_baseline_red_harness","src_path":"/home/eric/projects/BD virtues/Broken Divinity --Bevy/tests/ux_baseline_red_harness.rs","edition":"2024","doc":false,"doctest":false,"test":true}],"features":{},"manifest_path":"/home/eric/projects/BD virtues/Broken Divinity --Bevy/Cargo.toml","metadata":null,"publish":null,"authors":[],"categories":[],"keywords":[],"readme":null,"repository":null,"homepage":null,"documentation":null,"edition":"2024","links":null,"default_run":null,"rust_version":"1.85"}],"workspace_members":["path+file:///home/eric/projects/BD%20virtues/Broken%20Divinity%20--Bevy#broken_divinity@0.1.0"],"workspace_default_members":["path+file:///home/eric/projects/BD%20virtues/Broken%20Divinity%20--Bevy#broken_divinity@0.1.0"],"resolve":null,"target_directory":"/home/eric/projects/BD virtues/Broken Divinity --Bevy/target","build_directory":"/home/eric/projects/BD virtues/Broken Divinity --Bevy/target","version":1,"workspace_root":"/home/eric/projects/BD virtues/Broken Divinity --Bevy","metadata":null}
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.23s
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.24s
+     Running unittests src/lib.rs (target/debug/deps/broken_divinity-8502d9357c6312f1)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/broken_divinity-2fd400fc89d21b67)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/rcv_compile_contract.rs (target/debug/deps/rcv_compile_contract-bf0684b025c5b21a)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.00s
+
+     Running tests/ux_baseline_red_harness.rs (target/debug/deps/ux_baseline_red_harness-61b1e547532e4feb)
+
+running 3 tests
+test ux_baseline_red::non_zero_execution_gate_accepts_minimum ... ok
+test ux_baseline_red::non_zero_execution_gate_rejects_zero ... ok
+test ux_baseline_red::scenario_ids_are_unique_and_non_empty ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.24s
+     Running unittests src/lib.rs (target/debug/deps/broken_divinity-8502d9357c6312f1)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running unittests src/main.rs (target/debug/deps/broken_divinity-2fd400fc89d21b67)
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/rcv_compile_contract.rs (target/debug/deps/rcv_compile_contract-bf0684b025c5b21a)
+
+running 1 test
+test crate_recovery_marker_is_present ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+     Running tests/ux_baseline_red_harness.rs (target/debug/deps/ux_baseline_red_harness-61b1e547532e4feb)
+
+running 3 tests
+test ux_baseline_red::non_zero_execution_gate_accepts_minimum ... ok
+test ux_baseline_red::non_zero_execution_gate_rejects_zero ... ok
+test ux_baseline_red::scenario_ids_are_unique_and_non_empty ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+   Doc-tests broken_divinity
+
+running 0 tests
+
+test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s
+
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.30s
+    Finished `release` profile [optimized] target(s) in 0.28s
