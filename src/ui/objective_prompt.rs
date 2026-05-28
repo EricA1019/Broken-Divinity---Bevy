@@ -90,8 +90,8 @@ impl ObjectivePromptEngine {
             self.primary_lock_active = true;
         }
 
-        let objective_should_persist = objective_is_active
-            || (self.primary_lock_active && !self.transition_success);
+        let objective_should_persist =
+            objective_is_active || (self.primary_lock_active && !self.transition_success);
         let priority = self
             .policy
             .resolve(objective_should_persist, ambient_hints_enabled);

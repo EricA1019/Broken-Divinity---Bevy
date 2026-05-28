@@ -13,7 +13,9 @@ fn new_game_sets_seed_and_queues_colony_transition() {
     let mut app = App::new();
     app.insert_resource(GameLog::default());
     app.insert_resource(GameTime { turn: TEST_TURN });
-    app.insert_resource(MenuUiAction(Some(MenuUiChoice::NewGame { seed: TEST_SEED })));
+    app.insert_resource(MenuUiAction(Some(MenuUiChoice::NewGame {
+        seed: TEST_SEED,
+    })));
     app.insert_resource(NextState::<AppState>::Unchanged);
     app.add_message::<AppExit>();
     app.add_systems(Update, process_menu_action);

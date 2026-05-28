@@ -1,8 +1,4 @@
-use broken_divinity::alpha_battery::{
-    Defect,
-    DefectSeverity,
-    triage_gate_passes,
-};
+use broken_divinity::alpha_battery::{Defect, DefectSeverity, triage_gate_passes};
 
 #[test]
 fn triage_gate_fails_with_open_p0() {

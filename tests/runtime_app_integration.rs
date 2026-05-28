@@ -1,23 +1,30 @@
 use bevy::prelude::*;
 use broken_divinity::core::state::AppState;
 use broken_divinity::runtime_app::{
-    app_state_for_flow,
-    flow_node_for_app_state,
-    flow_primary_action,
-    flow_primary_label,
-    flow_surface,
-    recap_for_flow,
-    setup_runtime_scene,
+    app_state_for_flow, flow_node_for_app_state, flow_primary_action, flow_primary_label,
+    flow_surface, recap_for_flow, setup_runtime_scene,
 };
 use broken_divinity::runtime_flow::{FlowAction, FlowNode};
 use broken_divinity::save_recap::{RecapRisk, SaveRecapState};
 
 #[test]
 fn runtime_shell_primary_actions_follow_flow() {
-    assert_eq!(flow_primary_action(FlowNode::Menu), Some(FlowAction::StartRun));
-    assert_eq!(flow_primary_action(FlowNode::Colony), Some(FlowAction::TravelToOverworld));
-    assert_eq!(flow_primary_action(FlowNode::Overworld), Some(FlowAction::EnterDungeon));
-    assert_eq!(flow_primary_action(FlowNode::Dungeon), Some(FlowAction::ReturnToColony));
+    assert_eq!(
+        flow_primary_action(FlowNode::Menu),
+        Some(FlowAction::StartRun)
+    );
+    assert_eq!(
+        flow_primary_action(FlowNode::Colony),
+        Some(FlowAction::TravelToOverworld)
+    );
+    assert_eq!(
+        flow_primary_action(FlowNode::Overworld),
+        Some(FlowAction::EnterDungeon)
+    );
+    assert_eq!(
+        flow_primary_action(FlowNode::Dungeon),
+        Some(FlowAction::ReturnToColony)
+    );
 }
 
 #[test]
@@ -77,6 +84,12 @@ fn flow_and_app_state_mappings_cover_runtime_loop() {
 
     assert_eq!(flow_node_for_app_state(AppState::Menu), FlowNode::Menu);
     assert_eq!(flow_node_for_app_state(AppState::Colony), FlowNode::Colony);
-    assert_eq!(flow_node_for_app_state(AppState::Overworld), FlowNode::Overworld);
-    assert_eq!(flow_node_for_app_state(AppState::Dungeon), FlowNode::Dungeon);
+    assert_eq!(
+        flow_node_for_app_state(AppState::Overworld),
+        FlowNode::Overworld
+    );
+    assert_eq!(
+        flow_node_for_app_state(AppState::Dungeon),
+        FlowNode::Dungeon
+    );
 }

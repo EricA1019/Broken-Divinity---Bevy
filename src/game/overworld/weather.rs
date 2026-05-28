@@ -14,9 +14,7 @@ const ASHFALL_TRAVEL_SPEED: f32 = 0.5;
 const STORM_TRAVEL_SPEED: f32 = 0.0;
 const ASHFALL_SANITY_PRESSURE: u32 = 1;
 
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, Reflect,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Default, Serialize, Deserialize, Reflect)]
 pub enum Weather {
     #[default]
     Clear,

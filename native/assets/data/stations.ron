@@ -1,0 +1,22 @@
+[
+    // Workbench
+    (kind: "Workbench", name: "Workbench", tier: 1, worker_slots: 2, build_cost: [(kind: Scrap, amount: 10)], recipe: None, color: (0.85, 0.55, 0.22)),
+    // Cook
+    (kind: "Cook", name: "Cooking Station", tier: 1, worker_slots: 1, build_cost: [(kind: Scrap, amount: 5)], recipe: Some((input: None, output: (kind: Food, amount: 1), tick_interval: 1)), color: (0.85, 0.38, 0.22)),
+    // Purifier
+    (kind: "Purifier", name: "Water Purifier", tier: 1, worker_slots: 1, build_cost: [(kind: Scrap, amount: 8)], recipe: Some((input: None, output: (kind: Water, amount: 1), tick_interval: 1)), color: (0.28, 0.62, 0.9)),
+    // AmmoPress
+    (kind: "AmmoPress", name: "Ammo Press", tier: 1, worker_slots: 1, build_cost: [(kind: Scrap, amount: 15), (kind: Ammo, amount: 5)], recipe: Some((input: Some((kind: Scrap, amount: 1)), output: (kind: Ammo, amount: 2), tick_interval: 1)), color: (0.82, 0.72, 0.28)),
+    // Generator
+    (kind: "Generator", name: "Generator", tier: 1, worker_slots: 1, build_cost: [(kind: Scrap, amount: 20), (kind: Ammo, amount: 10)], recipe: None, color: (0.55, 0.5, 0.92)),
+    // ResearchTable
+    (kind: "ResearchTable", name: "Research Table", tier: 1, worker_slots: 1, build_cost: [(kind: Scrap, amount: 25), (kind: Ammo, amount: 10)], recipe: None, color: (0.32, 0.85, 0.85)),
+    // MedicalBay
+    (kind: "MedicalBay", name: "Medical Bay", tier: 1, worker_slots: 1, build_cost: [(kind: Scrap, amount: 10), (kind: Medicine, amount: 5)], recipe: Some((input: None, output: (kind: Medicine, amount: 1), tick_interval: 3)), color: (0.32, 0.78, 0.42)),
+    // Quarters
+    (kind: "Quarters", name: "Quarters", tier: 1, worker_slots: 0, build_cost: [(kind: Scrap, amount: 8)], recipe: None, color: (0.62, 0.44, 0.88)),
+    // SecurityCheckpoint
+    (kind: "SecurityCheckpoint", name: "Security Checkpoint", tier: 1, worker_slots: 1, build_cost: [(kind: Scrap, amount: 12)], recipe: None, color: (0.88, 0.28, 0.28)),
+    // MilitiaTraining
+    (kind: "MilitiaTraining", name: "Militia Training", tier: 1, worker_slots: 1, build_cost: [(kind: Scrap, amount: 15)], recipe: None, color: (0.72, 0.28, 0.18)),
+]

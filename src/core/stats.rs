@@ -247,10 +247,7 @@ impl PlayerProgression {
             VirtueId::Fortitude,
             legacy_skill_value(skills, SkillId::Toughness),
         );
-        progression.set_legacy_virtue(
-            VirtueId::Thumos,
-            legacy_skill_value(skills, SkillId::Melee),
-        );
+        progression.set_legacy_virtue(VirtueId::Thumos, legacy_skill_value(skills, SkillId::Melee));
         progression.set_legacy_virtue(
             VirtueId::Prudence,
             [SkillId::Awareness, SkillId::Ranged]
@@ -345,7 +342,12 @@ impl PlayerProgression {
     }
 
     pub fn enemy_attack_xp_award(&self, evaded: bool, attacker_skill: u32) -> u32 {
-        calc_xp_award(evaded, false, attacker_skill, self.enemy_attack_dv().max(0) as u32)
+        calc_xp_award(
+            evaded,
+            false,
+            attacker_skill,
+            self.enemy_attack_dv().max(0) as u32,
+        )
     }
 
     pub fn grant_enemy_attack_xp(
@@ -630,20 +632,29 @@ mod tests {
 
     #[test]
     fn pilot_proxies_excludes_legacy_compat_variants() {
-        let pilot_keys: std::collections::HashSet<_> = SkillId::pilot_proxies().iter().copied().collect();
+        let pilot_keys: std::collections::HashSet<_> =
+            SkillId::pilot_proxies().iter().copied().collect();
         let all_keys: std::collections::HashSet<_> = SkillId::all().iter().copied().collect();
-        let legacy_keys: std::collections::HashSet<_> = all_keys
-            .difference(&pilot_keys)
-            .copied()
-            .collect();
+        let legacy_keys: std::collections::HashSet<_> =
+            all_keys.difference(&pilot_keys).copied().collect();
         assert_eq!(
             pilot_keys,
-            [SkillId::Melee, SkillId::Ranged, SkillId::Evasion].into_iter().collect(),
+            [SkillId::Melee, SkillId::Ranged, SkillId::Evasion]
+                .into_iter()
+                .collect(),
             "pilot_proxies must return exactly the three canonical pilot proxy skills"
         );
         assert_eq!(
             legacy_keys,
-            [SkillId::Toughness, SkillId::Stealth, SkillId::Awareness, SkillId::Repair, SkillId::Leadership].into_iter().collect(),
+            [
+                SkillId::Toughness,
+                SkillId::Stealth,
+                SkillId::Awareness,
+                SkillId::Repair,
+                SkillId::Leadership
+            ]
+            .into_iter()
+            .collect(),
             "legacy-compat variants must be exactly the non-pilot skills"
         );
     }

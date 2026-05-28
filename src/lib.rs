@@ -1,44 +1,11 @@
 pub mod recovery;
 
+pub mod core;
+pub mod game;
+pub mod ui;
+
 #[path = "core/escape.rs"]
 pub mod escape;
-
-#[path = "core/gamelog.rs"]
-pub mod gamelog;
-
-#[path = "core/state.rs"]
-pub mod core_state;
-
-#[path = "core/resources.rs"]
-pub mod core_resources;
-
-#[path = "core/save_runtime.rs"]
-pub mod core_save;
-
-#[path = "core/turn_runtime.rs"]
-pub mod core_turn;
-
-#[path = "ui/modal_priority.rs"]
-pub mod modal_priority;
-
-#[path = "ui/objective_prompt.rs"]
-pub mod objective_prompt;
-
-#[path = "ui/help_panel.rs"]
-pub mod help_panel;
-
-#[path = "ui/overworld_panel.rs"]
-pub mod overworld_panel;
-
-#[path = "ui/readability.rs"]
-pub mod readability;
-
-#[path = "ui/menu.rs"]
-pub mod menu;
-
-pub mod runtime_flow;
-
-pub mod runtime_app;
 
 #[path = "ui/primary_cta.rs"]
 pub mod primary_cta;
@@ -52,37 +19,24 @@ pub mod save_recap;
 #[path = "core/qa_profile.rs"]
 pub mod qa_profile;
 
-#[path = "game/overworld/weather.rs"]
-pub mod overworld_weather;
+pub mod runtime_app;
+pub mod runtime_flow;
 
 pub mod alpha_battery;
-
 pub mod alpha_signoff;
 
-pub mod core {
-	pub use crate::core_state as state;
-	pub use crate::core_resources as resources;
-	pub use crate::core_save as save;
-	pub use crate::core_turn as turn;
-	pub use crate::escape;
-	pub use crate::gamelog;
-	pub use crate::qa_profile;
-	pub use crate::save_recap;
-}
+pub use crate::core::gamelog;
+pub use crate::core::resources as core_resources;
+pub use crate::core::save as core_save;
+pub use crate::core::state as core_state;
+pub use crate::core::turn as core_turn;
+pub use crate::game::overworld::weather as overworld_weather;
+pub use crate::ui::help_panel;
+pub use crate::ui::menu;
+pub use crate::ui::modal_priority;
+pub use crate::ui::objective_prompt;
+pub use crate::ui::overworld_panel;
+pub use crate::ui::readability;
 
-pub mod game {
-	pub mod overworld {
-		pub use crate::overworld_weather as weather;
-	}
-}
-
-pub mod ui {
-	pub use crate::copy_catalog;
-	pub use crate::help_panel;
-	pub use crate::menu;
-	pub use crate::modal_priority;
-	pub use crate::objective_prompt;
-	pub use crate::overworld_panel;
-	pub use crate::primary_cta;
-	pub use crate::readability;
-}
+#[cfg(test)]
+mod tests;

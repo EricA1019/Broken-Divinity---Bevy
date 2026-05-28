@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments, clippy::type_complexity)]
+
 //! Overworld travel — movement between nodes, resource consumption, encounters.
 
 use bevy::prelude::*;
@@ -6,10 +8,18 @@ use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 use serde::{Deserialize, Serialize};
 
-use crate::core::components::Player;
-use crate::core::gamelog::{GameLog, LogColor};
+use crate::core::abilities::SprintCooldown;
+use crate::core::components::{Player, Position, TileKind};
+use crate::core::gamelog::{GameLog, LogColor, UxMessage};
+use crate::core::inventory::{Equipment, Inventory, RangedWeaponState};
+use crate::core::movement::MapTiles;
+use crate::core::perks::PlayerPerks;
 use crate::core::resources::{ResourceKind, ShelterResources};
 use crate::core::sanity::RaidExposure;
+use crate::core::save;
+use crate::core::state::AppState;
+use crate::core::stats::{CombatStats, EntityName, PlayerProgression};
+use crate::core::turn::GameTime;
 
 use super::weather::{self, Weather};
 
@@ -96,7 +106,11 @@ pub fn process_travel_day(
 
     // Consume food and water
     if !resources.try_consume(ResourceKind::Food, 1) {
-        log.push("No food for travel! Starving.", LogColor::EnemyHit, travel.day);
+        log.push(
+            "No food for travel! Starving.",
+            LogColor::EnemyHit,
+            travel.day,
+        );
     }
     if !resources.try_consume(ResourceKind::Water, 1) {
         log.push(
@@ -113,7 +127,10 @@ pub fn process_travel_day(
 
     // Roll encounter with deterministic RNG seeded from world_seed + day
     let distance_from_shelter = travel.day as f32 * 2.0;
-    let encounter_seed = travel.world_seed.wrapping_add(travel.day as u64).wrapping_mul(7919);
+    let encounter_seed = travel
+        .world_seed
+        .wrapping_add(travel.day as u64)
+        .wrapping_mul(7919);
     let mut rng = ChaCha8Rng::seed_from_u64(encounter_seed);
     let encounter = roll_encounter(distance_from_shelter, &mut rng);
 
@@ -164,6 +181,76 @@ pub fn process_travel_day(
         LogColor::System,
         travel.day,
     );
+}
+
+pub fn enter_overworld_from_colony(
+    mut commands: Commands,
+    keyboard: Res<ButtonInput<KeyCode>>,
+    mut next_state: ResMut<NextState<AppState>>,
+    player_q: Query<
+        (
+            &Position,
+            &CombatStats,
+            &Inventory,
+            &Equipment,
+            &RangedWeaponState,
+            &RaidExposure,
+            &PlayerPerks,
+            &PlayerProgression,
+            Option<&EntityName>,
+            &SprintCooldown,
+        ),
+        With<Player>,
+    >,
+    map: Option<Res<MapTiles>>,
+    log: Option<ResMut<GameLog>>,
+    time: Option<Res<GameTime>>,
+) {
+    if !keyboard.just_pressed(KeyCode::Enter) {
+        return;
+    }
+
+    let Ok((
+        position,
+        stats,
+        inventory,
+        equipment,
+        ranged_state,
+        sanity,
+        perks,
+        progression,
+        name,
+        sprint_cooldown,
+    )) = player_q.single()
+    else {
+        return;
+    };
+
+    let Some(map) = map else {
+        return;
+    };
+
+    if let Some(TileKind::StairsUp) = map.get_tile(position.x, position.y) {
+        commands.insert_resource(save::PlayerSnapshot(Some(save::snapshot_player_state(
+            position,
+            stats,
+            inventory,
+            equipment,
+            ranged_state,
+            sanity,
+            perks,
+            progression,
+            name,
+            sprint_cooldown.remaining,
+        ))));
+        next_state.set(AppState::Overworld);
+        return;
+    }
+
+    if let Some(mut log) = log {
+        let turn = time.as_ref().map_or(0, |time| time.turn);
+        log.push_ux_message(UxMessage::ColonyGateEnterHint, turn);
+    }
 }
 
 /// Check if travel is complete.

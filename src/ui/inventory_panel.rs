@@ -1,11 +1,11 @@
 //! Toggle-able inventory panel — press I to open/close.
 
 use bevy::prelude::*;
-use bevy_egui::{egui, EguiContexts};
+use bevy_egui::{EguiContexts, egui};
 
 use crate::core::components::Player;
 use crate::core::inventory::{Equipment, Inventory};
-use crate::core::items::{find_item, ItemKind};
+use crate::core::items::{ItemKind, find_item};
 use crate::core::state::AppState;
 use crate::core::turn::{PendingAction, PlayerAction, TurnPhase};
 
@@ -28,7 +28,7 @@ pub enum InventoryUiChoice {
 
 /// Toggle inventory visibility when I is pressed.
 pub fn toggle_inventory(keys: Res<ButtonInput<KeyCode>>, mut open: ResMut<InventoryOpen>) {
-    if keys.just_pressed(KeyCode::KeyI) {
+    if keys.just_pressed(KeyCode::KeyI) || keys.just_pressed(KeyCode::Tab) {
         open.0 = !open.0;
     }
 }
@@ -156,7 +156,9 @@ pub fn process_inventory_action(
     turn_phase: Res<State<TurnPhase>>,
     mut next_turn_phase: ResMut<NextState<TurnPhase>>,
 ) {
-    let Some(choice) = action.0.take() else { return; };
+    let Some(choice) = action.0.take() else {
+        return;
+    };
 
     match choice {
         InventoryUiChoice::Close => {

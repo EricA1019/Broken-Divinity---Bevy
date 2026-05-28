@@ -1,8 +1,4 @@
-use broken_divinity::alpha_signoff::{
-    SignoffDecision,
-    SignoffInput,
-    evaluate_signoff,
-};
+use broken_divinity::alpha_signoff::{SignoffDecision, SignoffInput, evaluate_signoff};
 
 #[test]
 fn signoff_rejects_when_triage_gate_incomplete() {

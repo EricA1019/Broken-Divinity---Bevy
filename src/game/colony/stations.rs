@@ -2,10 +2,14 @@
 
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 
 use crate::core::components::Position;
+use crate::core::components::TileKind;
+use crate::core::movement::MapTiles;
 use crate::core::resources::{ResourceKind, ShelterResources};
 use crate::core::turn::GameTime;
+use crate::game::colony::research::CompletedResearch;
 
 // ---------------------------------------------------------------------------
 // Components
@@ -138,6 +142,55 @@ pub fn spawn_station(commands: &mut Commands, kind: StationType, x: i32, y: i32)
         .id()
 }
 
+pub fn spawn_station_with_state(
+    commands: &mut Commands,
+    station: Station,
+    x: i32,
+    y: i32,
+) -> Entity {
+    commands.spawn((station, Position::new(x, y))).id()
+}
+
+pub fn find_station_anchor(
+    map: &MapTiles,
+    occupied_positions: impl IntoIterator<Item = IVec2>,
+    player_anchor: IVec2,
+) -> Option<IVec2> {
+    let occupied: HashSet<(i32, i32)> = occupied_positions
+        .into_iter()
+        .map(|pos| (pos.x, pos.y))
+        .collect();
+    let max_radius = map.width.max(map.height) as i32;
+
+    for radius in 0..=max_radius {
+        for dy in -radius..=radius {
+            for dx in -radius..=radius {
+                if radius > 0 && dx.abs() != radius && dy.abs() != radius {
+                    continue;
+                }
+
+                let x = player_anchor.x + dx;
+                let y = player_anchor.y + dy;
+                if x < 0 || y < 0 || x as usize >= map.width || y as usize >= map.height {
+                    continue;
+                }
+                if occupied.contains(&(x, y)) {
+                    continue;
+                }
+
+                match map.get_tile(x, y) {
+                    Some(TileKind::Floor) | Some(TileKind::Door) => {
+                        return Some(IVec2::new(x, y));
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    None
+}
+
 // ---------------------------------------------------------------------------
 // Systems
 // ---------------------------------------------------------------------------
@@ -147,6 +200,7 @@ pub fn station_production(
     stations: Query<&Station>,
     mut resources: ResMut<ShelterResources>,
     time: Res<GameTime>,
+    research: Option<Res<CompletedResearch>>,
 ) {
     for station in &stations {
         if station.workers_assigned == 0 {
@@ -158,19 +212,23 @@ pub fn station_production(
         };
 
         // Respect tick interval (e.g. MedicalBay produces every 3 ticks).
-        if !time.turn.is_multiple_of(recipe.tick_interval) {
+        if recipe.tick_interval == 0 || time.turn % recipe.tick_interval != 0 {
             continue;
         }
 
         // Consume input if required; skip production if stockpile insufficient.
         if let Some((res_kind, amount)) = recipe.input
-            && !resources.try_consume(res_kind, amount) {
-                continue;
-            }
+            && !resources.try_consume(res_kind, amount)
+        {
+            continue;
+        }
 
         // Produce output.
         if let Some((res_kind, amount)) = recipe.output {
-            resources.add(res_kind, amount);
+            let multiplier = research
+                .as_ref()
+                .map_or(1, |research| research.production_multiplier(station.kind));
+            resources.add(res_kind, amount.saturating_mul(multiplier));
         }
     }
 }
@@ -193,12 +251,16 @@ mod tests {
         assert_eq!(cook.output, Some((ResourceKind::Food, 1)));
 
         // AmmoPress consumes scrap, produces ammo
-        let ammo = StationType::AmmoPress.recipe().expect("AmmoPress should have recipe");
+        let ammo = StationType::AmmoPress
+            .recipe()
+            .expect("AmmoPress should have recipe");
         assert_eq!(ammo.input, Some((ResourceKind::Scrap, 1)));
         assert_eq!(ammo.output, Some((ResourceKind::Ammo, 2)));
 
         // MedicalBay produces every 3 ticks
-        let med = StationType::MedicalBay.recipe().expect("MedicalBay should have recipe");
+        let med = StationType::MedicalBay
+            .recipe()
+            .expect("MedicalBay should have recipe");
         assert_eq!(med.tick_interval, 3);
         assert_eq!(med.output, Some((ResourceKind::Medicine, 1)));
     }
@@ -217,7 +279,7 @@ mod tests {
             workers_assigned: 0,
         });
 
-        world.run_system_once(station_production);
+        let _ = world.run_system_once(station_production);
 
         let res = world.resource::<ShelterResources>();
         // Food should be unchanged from starting value (10).
@@ -237,7 +299,7 @@ mod tests {
             workers_assigned: 1,
         });
 
-        world.run_system_once(station_production);
+        let _ = world.run_system_once(station_production);
 
         let res = world.resource::<ShelterResources>();
         assert_eq!(res.food, 11); // 10 + 1
@@ -256,7 +318,7 @@ mod tests {
             workers_assigned: 1,
         });
 
-        world.run_system_once(station_production);
+        let _ = world.run_system_once(station_production);
 
         let res = world.resource::<ShelterResources>();
         assert_eq!(res.scrap, 14); // 15 - 1
@@ -299,13 +361,12 @@ mod tests {
             .id();
 
         // Set the action as if the UI wrote it
-        world.resource_mut::<ColonyUiAction>().0 =
-            Some(ColonyUiChoice::AssignToStation {
-                survivor: survivor_entity,
-                station: station_entity,
-            });
+        world.resource_mut::<ColonyUiAction>().0 = Some(ColonyUiChoice::AssignToStation {
+            survivor: survivor_entity,
+            station: station_entity,
+        });
 
-        world.run_system_once(crate::ui::colony_panel::process_colony_action);
+        let _ = world.run_system_once(crate::ui::colony_panel::process_colony_action);
 
         let station = world.entity(station_entity).get::<Station>().unwrap();
         assert_eq!(station.workers_assigned, 1, "workers_assigned should be 1");
@@ -352,12 +413,11 @@ mod tests {
             ))
             .id();
 
-        world.resource_mut::<ColonyUiAction>().0 =
-            Some(ColonyUiChoice::UnassignSurvivor {
-                survivor: survivor_entity,
-            });
+        world.resource_mut::<ColonyUiAction>().0 = Some(ColonyUiChoice::UnassignSurvivor {
+            survivor: survivor_entity,
+        });
 
-        world.run_system_once(crate::ui::colony_panel::process_colony_action);
+        let _ = world.run_system_once(crate::ui::colony_panel::process_colony_action);
 
         let station = world.entity(station_entity).get::<Station>().unwrap();
         assert_eq!(station.workers_assigned, 0, "workers_assigned should be 0");
@@ -398,20 +458,23 @@ mod tests {
 
     #[test]
     fn test_build_station_consumes_resources_and_spawns() {
+        use crate::core::components::TileKind;
         use crate::core::gamelog::GameLog;
+        use crate::core::movement::MapTiles;
         use crate::ui::colony_panel::{ColonyUiAction, ColonyUiChoice};
 
         let mut world = World::new();
         world.insert_resource(GameLog::default());
         world.insert_resource(GameTime { turn: 1 });
         world.insert_resource(ShelterResources::new_game()); // scrap=15
+        world.insert_resource(MapTiles::new(vec![vec![TileKind::Floor; 10]; 10]));
         world.init_resource::<ColonyUiAction>();
 
         // Cook costs 5 scrap
         world.resource_mut::<ColonyUiAction>().0 =
             Some(ColonyUiChoice::BuildStation(StationType::Cook));
 
-        world.run_system_once(crate::ui::colony_panel::process_colony_action);
+        let _ = world.run_system_once(crate::ui::colony_panel::process_colony_action);
 
         let res = world.resource::<ShelterResources>();
         assert_eq!(res.scrap, 10, "should consume 5 scrap to build Cook");
@@ -447,7 +510,7 @@ mod tests {
         world.resource_mut::<ColonyUiAction>().0 =
             Some(ColonyUiChoice::BuildStation(StationType::Cook));
 
-        world.run_system_once(crate::ui::colony_panel::process_colony_action);
+        let _ = world.run_system_once(crate::ui::colony_panel::process_colony_action);
 
         let res = world.resource::<ShelterResources>();
         assert_eq!(res.scrap, 0, "scrap should remain 0 when can't afford");

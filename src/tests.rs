@@ -579,37 +579,37 @@ mod ux_baseline_red {
     use crate::core::inventory::{Equipment, Inventory, RangedWeaponState};
     use crate::core::movement::MapTiles;
     use crate::core::perks::PlayerPerks;
+    use crate::core::resources::WorldSeed;
     use crate::core::sanity::RaidExposure;
-    use crate::core::save::{self, SaveAppState, SaveGame, SaveGameTime};
     use crate::core::save::SaveAndQuitRequested;
+    use crate::core::save::{self, SaveAppState, SaveGame, SaveGameTime};
     use crate::core::state::AppState;
     use crate::core::stats::{CombatStats, PlayerProgression};
     use crate::core::tilemap::init_placeholder_tile_atlas;
     use crate::core::turn::GameTime;
-    use crate::core::resources::WorldSeed;
-    use crate::game::colony::spawn::{GateAffordanceConfig, ShelterGateMarker, setup_shelter};
-    use crate::game::colony::spawn::cleanup_shelter;
     use crate::game::colony::raids::{ActiveRaid, RaidPhase};
+    use crate::game::colony::spawn::cleanup_shelter;
+    use crate::game::colony::spawn::{GateAffordanceConfig, ShelterGateMarker, setup_shelter};
     use crate::game::overworld::travel::enter_overworld_from_colony;
-    use crate::ui::objective_prompt::{
-        ColonyObjectivePromptState, InstructionPriorityPolicy, refresh_colony_objective_prompt,
-    };
-    use crate::ui::help_panel::{HelpOpen, toggle_help};
-    use crate::ui::help_panel::colony_help_shows_secondary_hints;
-    use crate::ui::inventory_panel::{InventoryOpen, toggle_inventory};
-    use crate::ui::modal_priority::{
-        ModalBlockers, ModalPriorityCoordinator, apply_modal_priority_policy,
-    };
-    use crate::ui::menu::{
-        MenuUiAction, MenuUiChoice, load_affordance_for_save_state,
-        menu_readability_snapshot, process_menu_action, seed_helper_text,
-    };
-    use crate::ui::menu::primary_menu_cta_label;
+    use crate::ui::colony_panel::primary_colony_cta_label;
     use crate::ui::colony_panel::{
         colony_objective_indicator_text, colony_readability_snapshot,
         colony_top_bar_objective_presentation,
     };
-    use crate::ui::colony_panel::primary_colony_cta_label;
+    use crate::ui::help_panel::colony_help_shows_secondary_hints;
+    use crate::ui::help_panel::{HelpOpen, toggle_help};
+    use crate::ui::inventory_panel::{InventoryOpen, toggle_inventory};
+    use crate::ui::menu::primary_menu_cta_label;
+    use crate::ui::menu::{
+        MenuUiAction, MenuUiChoice, load_affordance_for_save_state, menu_readability_snapshot,
+        process_menu_action, seed_helper_text,
+    };
+    use crate::ui::modal_priority::{
+        ModalBlockers, ModalPriorityCoordinator, apply_modal_priority_policy,
+    };
+    use crate::ui::objective_prompt::{
+        ColonyObjectivePromptState, InstructionPriorityPolicy, refresh_colony_objective_prompt,
+    };
     use crate::ui::overworld_panel::primary_overworld_cta_label;
 
     const TEST_TURN: u32 = 17;
@@ -717,7 +717,10 @@ mod ux_baseline_red {
         let mut app = App::new();
         app.insert_resource(GameLog::default());
         app.insert_resource(GameTime { turn: TEST_TURN });
-        app.insert_resource(MapTiles::new(vec![vec![TileKind::StairsUp; TEST_MAP_SIZE]; TEST_MAP_SIZE]));
+        app.insert_resource(MapTiles::new(vec![
+            vec![TileKind::StairsUp; TEST_MAP_SIZE];
+            TEST_MAP_SIZE
+        ]));
         app.insert_resource(ButtonInput::<KeyCode>::default());
         app.insert_resource(State::new(AppState::Colony));
         app.insert_resource(NextState::<AppState>::Unchanged);
@@ -802,7 +805,7 @@ mod ux_baseline_red {
     fn critical_modal_has_priority_over_help() {
         let mut world = World::new();
         world.insert_resource(HelpOpen(true));
-        world.insert_resource(ModalPriorityCoordinator::default());
+        world.insert_resource(ModalPriorityCoordinator);
         world.insert_resource(ActiveRaid {
             raider_count: TEST_RAIDER_COUNT,
             raider_strength: TEST_RAIDER_STRENGTH,
@@ -1273,9 +1276,8 @@ mod ux_baseline_red {
         let _ = world.despawn(entity);
 
         let result = validate_brp_entity_access(&world, entity, TEST_BRP_OPERATION);
-        let diagnostics = result.expect_err(
-            "Expected stale BRP entity request to return structured diagnostics",
-        );
+        let diagnostics =
+            result.expect_err("Expected stale BRP entity request to return structured diagnostics");
 
         assert!(
             diagnostics.code.contains("stale_entity"),
@@ -1536,7 +1538,9 @@ mod ux_baseline_red {
         let mut app = App::new();
         app.insert_resource(GameLog::default());
         app.insert_resource(GameTime { turn: TEST_TURN });
-        app.insert_resource(MenuUiAction(Some(MenuUiChoice::NewGame { seed: FT_01_SEED })));
+        app.insert_resource(MenuUiAction(Some(MenuUiChoice::NewGame {
+            seed: FT_01_SEED,
+        })));
         app.insert_resource(NextState::<AppState>::Unchanged);
         app.add_message::<AppExit>();
         app.add_systems(Update, process_menu_action);
@@ -1554,11 +1558,17 @@ mod ux_baseline_red {
 
         app.insert_resource(State::new(AppState::Colony));
         app.insert_resource(NextState::<AppState>::Unchanged);
-        app.insert_resource(MapTiles::new(vec![vec![TileKind::StairsUp; TEST_MAP_SIZE]; TEST_MAP_SIZE]));
+        app.insert_resource(MapTiles::new(vec![
+            vec![TileKind::StairsUp; TEST_MAP_SIZE];
+            TEST_MAP_SIZE
+        ]));
         app.insert_resource(ButtonInput::<KeyCode>::default());
         app.insert_resource(ColonyObjectivePromptState::default());
         app.world_mut().spawn(baseline_player_bundle());
-        app.add_systems(Update, (refresh_colony_objective_prompt, enter_overworld_from_colony));
+        app.add_systems(
+            Update,
+            (refresh_colony_objective_prompt, enter_overworld_from_colony),
+        );
 
         app.update();
 
@@ -1598,11 +1608,14 @@ mod ux_baseline_red {
 
         let log = world.resource::<GameLog>();
         assert!(
-            log_contains_all_terms(&log, &[KEYWORD_OBJECTIVE, KEYWORD_GATE]),
+            log_contains_all_terms(log, &[KEYWORD_OBJECTIVE, KEYWORD_GATE]),
             "Expected load recap to include immediate colony objective recall"
         );
 
-        world.insert_resource(MapTiles::new(vec![vec![TileKind::StairsUp; TEST_MAP_SIZE]; TEST_MAP_SIZE]));
+        world.insert_resource(MapTiles::new(vec![
+            vec![TileKind::StairsUp; TEST_MAP_SIZE];
+            TEST_MAP_SIZE
+        ]));
         world.insert_resource(ButtonInput::<KeyCode>::default());
         world.insert_resource(State::new(AppState::Colony));
         world.insert_resource(NextState::<AppState>::Unchanged);
@@ -1626,7 +1639,9 @@ mod ux_baseline_red {
         let mut app = App::new();
         app.insert_resource(GameLog::default());
         app.insert_resource(GameTime { turn: TEST_TURN });
-        app.insert_resource(MenuUiAction(Some(MenuUiChoice::NewGame { seed: FT_03_SEED })));
+        app.insert_resource(MenuUiAction(Some(MenuUiChoice::NewGame {
+            seed: FT_03_SEED,
+        })));
         app.insert_resource(NextState::<AppState>::Unchanged);
         app.add_message::<AppExit>();
         app.add_systems(Update, process_menu_action);
@@ -1643,9 +1658,19 @@ mod ux_baseline_red {
         app.insert_resource(NextState::<AppState>::Unchanged);
         app.insert_resource(HelpOpen(false));
         app.insert_resource(ButtonInput::<KeyCode>::default());
-        app.insert_resource(MapTiles::new(vec![vec![TileKind::StairsUp; TEST_MAP_SIZE]; TEST_MAP_SIZE]));
+        app.insert_resource(MapTiles::new(vec![
+            vec![TileKind::StairsUp; TEST_MAP_SIZE];
+            TEST_MAP_SIZE
+        ]));
         app.world_mut().spawn(baseline_player_bundle());
-        app.add_systems(Update, (toggle_help, handle_escape_to_menu, enter_overworld_from_colony));
+        app.add_systems(
+            Update,
+            (
+                toggle_help,
+                handle_escape_to_menu,
+                enter_overworld_from_colony,
+            ),
+        );
 
         app.world_mut()
             .resource_mut::<ButtonInput<KeyCode>>()
@@ -1699,7 +1724,7 @@ mod ux_baseline_red {
 
         let log = world.resource::<GameLog>();
         assert!(
-            log_contains_all_terms(&log, &[KEYWORD_OBJECTIVE, KEYWORD_GATE]),
+            log_contains_all_terms(log, &[KEYWORD_OBJECTIVE, KEYWORD_GATE]),
             "Expected colony resume recap to identify immediate gate objective"
         );
     }
@@ -1722,7 +1747,7 @@ mod ux_baseline_red {
 
         let log = world.resource::<GameLog>();
         assert!(
-            log_contains_all_terms(&log, &[KEYWORD_OBJECTIVE, KEYWORD_TRAVEL]),
+            log_contains_all_terms(log, &[KEYWORD_OBJECTIVE, KEYWORD_TRAVEL]),
             "Expected overworld resume recap to identify travel objective"
         );
 
@@ -1739,7 +1764,7 @@ mod ux_baseline_red {
         app.insert_resource(GameTime { turn: TEST_TURN });
         app.insert_resource(HelpOpen(false));
         app.insert_resource(InventoryOpen(false));
-        app.insert_resource(ModalPriorityCoordinator::default());
+        app.insert_resource(ModalPriorityCoordinator);
         app.insert_resource(ModalBlockers::default());
         app.insert_resource(ActiveRaid {
             raider_count: TEST_RAIDER_COUNT,

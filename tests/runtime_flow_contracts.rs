@@ -1,9 +1,4 @@
-use broken_divinity::runtime_flow::{
-    FlowAction,
-    FlowError,
-    FlowNode,
-    RuntimeFlow,
-};
+use broken_divinity::runtime_flow::{FlowAction, FlowError, FlowNode, RuntimeFlow};
 
 #[test]
 fn menu_to_return_flow_is_reachable() {
@@ -50,12 +45,18 @@ fn snapshot_roundtrip_preserves_runtime_node() {
 #[test]
 fn each_reachable_state_supports_snapshot_roundtrip() {
     let menu_snapshot = RuntimeFlow::new().snapshot();
-    assert_eq!(RuntimeFlow::from_snapshot(menu_snapshot).current(), FlowNode::Menu);
+    assert_eq!(
+        RuntimeFlow::from_snapshot(menu_snapshot).current(),
+        FlowNode::Menu
+    );
 
     let mut colony = RuntimeFlow::new();
     let _ = colony.apply(FlowAction::StartRun);
     let colony_snapshot = colony.snapshot();
-    assert_eq!(RuntimeFlow::from_snapshot(colony_snapshot).current(), FlowNode::Colony);
+    assert_eq!(
+        RuntimeFlow::from_snapshot(colony_snapshot).current(),
+        FlowNode::Colony
+    );
 
     let mut overworld = RuntimeFlow::new();
     let _ = overworld.apply(FlowAction::StartRun);
@@ -71,5 +72,8 @@ fn each_reachable_state_supports_snapshot_roundtrip() {
     let _ = dungeon.apply(FlowAction::TravelToOverworld);
     let _ = dungeon.apply(FlowAction::EnterDungeon);
     let dungeon_snapshot = dungeon.snapshot();
-    assert_eq!(RuntimeFlow::from_snapshot(dungeon_snapshot).current(), FlowNode::Dungeon);
+    assert_eq!(
+        RuntimeFlow::from_snapshot(dungeon_snapshot).current(),
+        FlowNode::Dungeon
+    );
 }

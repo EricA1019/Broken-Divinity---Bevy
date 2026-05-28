@@ -1,11 +1,8 @@
-use broken_divinity::gamelog::{
-    FeedbackPolicy,
-    LogSeverity,
-};
+use broken_divinity::gamelog::{FeedbackPolicy, LogSeverity};
 
 #[test]
 fn blocked_action_pattern_contains_required_fields() {
-    let policy = FeedbackPolicy::default();
+    let policy = FeedbackPolicy;
     let message = policy.blocked_action("Door locked", "Missing key", "Find key");
 
     assert!(message.contains("What failed:"));
@@ -15,13 +12,13 @@ fn blocked_action_pattern_contains_required_fields() {
 
 #[test]
 fn blocked_action_defaults_to_warning_severity() {
-    let policy = FeedbackPolicy::default();
+    let policy = FeedbackPolicy;
     assert_eq!(policy.blocked_action_severity(), LogSeverity::Warning);
 }
 
 #[test]
 fn cooldown_is_stable_and_positive() {
-    let policy = FeedbackPolicy::default();
+    let policy = FeedbackPolicy;
 
     let first = policy.cooldown_ticks();
     let second = policy.cooldown_ticks();
