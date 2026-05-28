@@ -1,18 +1,22 @@
+#![allow(clippy::too_many_arguments, clippy::type_complexity)]
+
 //! Grid-based movement system.
 //!
 //! Reads WASD / arrow key input, moves `Position` by 1 tile if the target is walkable.
 //! If the target tile has an enemy, triggers a bump-attack instead of moving.
 //! Runs only in `AppState::Dungeon`.
 
-use bevy::prelude::*;
 use crate::core::abilities::SprintCooldown;
 use crate::core::components::{Enemy, Player, Position, TileKind};
 use crate::core::gamelog::{GameLog, LogColor};
 use crate::core::perks::PendingPerkChoices;
-use crate::core::sanity::{forced_move_direction, should_lose_control, RaidExposure, SanityThreshold};
+use crate::core::sanity::{
+    RaidExposure, SanityThreshold, forced_move_direction, should_lose_control,
+};
 use crate::core::state::AppState;
 use crate::core::turn::{GameTime, TurnPhase};
 use crate::game::dungeon::gabriel::GabrielDialogueState;
+use bevy::prelude::*;
 
 /// Resource holding the current dungeon floor tiles for collision checks.
 #[derive(Resource, Debug, Clone)]
@@ -26,7 +30,11 @@ impl MapTiles {
     pub fn new(tiles: Vec<Vec<TileKind>>) -> Self {
         let height = tiles.len();
         let width = tiles.first().map(|r| r.len()).unwrap_or(0);
-        Self { tiles, width, height }
+        Self {
+            tiles,
+            width,
+            height,
+        }
     }
 
     pub fn is_walkable(&self, x: i32, y: i32) -> bool {
@@ -60,12 +68,23 @@ pub fn grid_movement(
     turn_phase: Res<State<TurnPhase>>,
     mut next_turn_phase: ResMut<NextState<TurnPhase>>,
     mut query: Query<(&mut Position, Option<&RaidExposure>, &mut SprintCooldown), With<Player>>,
-    enemies: Query<&Position, (With<Enemy>, Without<Player>, Without<crate::game::dungeon::gabriel::Gabriel>)>,
+    enemies: Query<
+        &Position,
+        (
+            With<Enemy>,
+            Without<Player>,
+            Without<crate::game::dungeon::gabriel::Gabriel>,
+        ),
+    >,
     mut bump_target: Option<ResMut<crate::game::dungeon::melee::BumpAttackTarget>>,
     mut log: Option<ResMut<GameLog>>,
 ) {
-    let Ok((mut pos, exposure, mut sprint_cd)) = query.single_mut() else { return; };
-    let Some(map) = map else { return; };
+    let Ok((mut pos, exposure, mut sprint_cd)) = query.single_mut() else {
+        return;
+    };
+    let Some(map) = map else {
+        return;
+    };
 
     if pending_perks.is_some_and(|pending| pending.has_pending()) {
         return;
@@ -111,9 +130,7 @@ pub fn grid_movement(
         if let Some(ref mut bt) = bump_target {
             bt.0 = Some(Position::new(nx, ny));
         }
-        if *app_state.get() == AppState::Dungeon
-            && *turn_phase.get() == TurnPhase::AwaitingInput
-        {
+        if *app_state.get() == AppState::Dungeon && *turn_phase.get() == TurnPhase::AwaitingInput {
             next_turn_phase.set(TurnPhase::PlayerTurn);
         }
         return;
@@ -142,9 +159,7 @@ pub fn grid_movement(
             pos.y = ny;
         }
 
-        if *app_state.get() == AppState::Dungeon
-            && *turn_phase.get() == TurnPhase::AwaitingInput
-        {
+        if *app_state.get() == AppState::Dungeon && *turn_phase.get() == TurnPhase::AwaitingInput {
             next_turn_phase.set(TurnPhase::PlayerTurn);
         }
     }
@@ -165,7 +180,6 @@ mod tests {
     use super::*;
     use crate::core::abilities::SprintCooldown;
     use crate::core::components::{Player, Position, TileKind};
-    use crate::core::turn::TurnPhase;
 
     fn floor_map(w: usize, h: usize) -> MapTiles {
         MapTiles::new(vec![vec![TileKind::Floor; w]; h])
@@ -176,36 +190,38 @@ mod tests {
     fn sprint_attempt(app: &mut App, dx: i32, dy: i32, shift: bool) -> Position {
         let map = app.world().resource::<MapTiles>().clone();
 
-        app.world_mut().resource_scope(|world, mut log: Mut<GameLog>| {
-            let mut query = world.query_filtered::<(&mut Position, &mut SprintCooldown), With<Player>>();
-            for (mut pos, mut sprint_cd) in query.iter_mut(world) {
-                let wants_sprint = shift && sprint_cd.remaining == 0;
-                let nx = pos.x + dx;
-                let ny = pos.y + dy;
+        app.world_mut()
+            .resource_scope(|world, mut log: Mut<GameLog>| {
+                let mut query =
+                    world.query_filtered::<(&mut Position, &mut SprintCooldown), With<Player>>();
+                for (mut pos, mut sprint_cd) in query.iter_mut(world) {
+                    let wants_sprint = shift && sprint_cd.remaining == 0;
+                    let nx = pos.x + dx;
+                    let ny = pos.y + dy;
 
-                if map.is_walkable(nx, ny) {
-                    if wants_sprint {
-                        let nx2 = pos.x + dx * 2;
-                        let ny2 = pos.y + dy * 2;
-                        if map.is_walkable(nx2, ny2) {
-                            pos.x = nx2;
-                            pos.y = ny2;
-                            sprint_cd.remaining = 3;
-                            log.push("You sprint forward!", LogColor::System, 0);
+                    if map.is_walkable(nx, ny) {
+                        if wants_sprint {
+                            let nx2 = pos.x + dx * 2;
+                            let ny2 = pos.y + dy * 2;
+                            if map.is_walkable(nx2, ny2) {
+                                pos.x = nx2;
+                                pos.y = ny2;
+                                sprint_cd.remaining = 3;
+                                log.push("You sprint forward!", LogColor::System, 0);
+                            } else {
+                                pos.x = nx;
+                                pos.y = ny;
+                            }
                         } else {
                             pos.x = nx;
                             pos.y = ny;
                         }
-                    } else {
-                        pos.x = nx;
-                        pos.y = ny;
                     }
                 }
-            }
-        });
+            });
 
         let mut query = app.world_mut().query_filtered::<&Position, With<Player>>();
-        query.single(app.world()).unwrap().clone()
+        *query.single(app.world()).unwrap()
     }
 
     #[test]
@@ -217,14 +233,15 @@ mod tests {
         app.insert_resource(map);
         app.insert_resource(GameLog::default());
 
-        app.world_mut().spawn((
-            Player,
-            Position::new(5, 5),
-            SprintCooldown { remaining: 0 },
-        ));
+        app.world_mut()
+            .spawn((Player, Position::new(5, 5), SprintCooldown { remaining: 0 }));
 
         let result_pos = sprint_attempt(&mut app, 1, 0, true);
-        assert_eq!(result_pos, Position::new(7, 5), "Sprint should move 2 tiles");
+        assert_eq!(
+            result_pos,
+            Position::new(7, 5),
+            "Sprint should move 2 tiles"
+        );
     }
 
     #[test]
@@ -236,11 +253,10 @@ mod tests {
         app.insert_resource(map);
         app.insert_resource(GameLog::default());
 
-        let entity = app.world_mut().spawn((
-            Player,
-            Position::new(5, 5),
-            SprintCooldown { remaining: 0 },
-        )).id();
+        let entity = app
+            .world_mut()
+            .spawn((Player, Position::new(5, 5), SprintCooldown { remaining: 0 }))
+            .id();
 
         sprint_attempt(&mut app, 1, 0, true);
 
@@ -257,37 +273,50 @@ mod tests {
         app.insert_resource(map);
         app.insert_resource(GameLog::default());
 
-        app.world_mut().spawn((
-            Player,
-            Position::new(5, 5),
-            SprintCooldown { remaining: 2 },
-        ));
+        app.world_mut()
+            .spawn((Player, Position::new(5, 5), SprintCooldown { remaining: 2 }));
 
         let result_pos = sprint_attempt(&mut app, 1, 0, true);
-        assert_eq!(result_pos, Position::new(6, 5), "Should move only 1 tile on cooldown");
+        assert_eq!(
+            result_pos,
+            Position::new(6, 5),
+            "Should move only 1 tile on cooldown"
+        );
     }
 
     #[test]
     fn cooldown_ticks_down_each_turn() {
-        use bevy::ecs::system::RunSystemOnce;
         use crate::core::turn::tick_sprint_cooldown;
+        use bevy::ecs::system::RunSystemOnce;
 
         let mut app = App::new();
         app.add_plugins(MinimalPlugins);
 
         let entity = app.world_mut().spawn(SprintCooldown { remaining: 3 }).id();
 
-        app.world_mut().run_system_once(tick_sprint_cooldown);
-        assert_eq!(app.world().get::<SprintCooldown>(entity).unwrap().remaining, 2);
+        let _ = app.world_mut().run_system_once(tick_sprint_cooldown);
+        assert_eq!(
+            app.world().get::<SprintCooldown>(entity).unwrap().remaining,
+            2
+        );
 
-        app.world_mut().run_system_once(tick_sprint_cooldown);
-        assert_eq!(app.world().get::<SprintCooldown>(entity).unwrap().remaining, 1);
+        let _ = app.world_mut().run_system_once(tick_sprint_cooldown);
+        assert_eq!(
+            app.world().get::<SprintCooldown>(entity).unwrap().remaining,
+            1
+        );
 
-        app.world_mut().run_system_once(tick_sprint_cooldown);
-        assert_eq!(app.world().get::<SprintCooldown>(entity).unwrap().remaining, 0);
+        let _ = app.world_mut().run_system_once(tick_sprint_cooldown);
+        assert_eq!(
+            app.world().get::<SprintCooldown>(entity).unwrap().remaining,
+            0
+        );
 
-        app.world_mut().run_system_once(tick_sprint_cooldown);
-        assert_eq!(app.world().get::<SprintCooldown>(entity).unwrap().remaining, 0);
+        let _ = app.world_mut().run_system_once(tick_sprint_cooldown);
+        assert_eq!(
+            app.world().get::<SprintCooldown>(entity).unwrap().remaining,
+            0
+        );
     }
 
     #[test]
@@ -300,14 +329,17 @@ mod tests {
         app.insert_resource(map);
         app.insert_resource(GameLog::default());
 
-        let entity = app.world_mut().spawn((
-            Player,
-            Position::new(5, 5),
-            SprintCooldown { remaining: 0 },
-        )).id();
+        let entity = app
+            .world_mut()
+            .spawn((Player, Position::new(5, 5), SprintCooldown { remaining: 0 }))
+            .id();
 
         let result_pos = sprint_attempt(&mut app, 1, 0, true);
-        assert_eq!(result_pos, Position::new(6, 5), "Should fall back to 1-tile move");
+        assert_eq!(
+            result_pos,
+            Position::new(6, 5),
+            "Should fall back to 1-tile move"
+        );
 
         let cd = app.world().get::<SprintCooldown>(entity).unwrap();
         assert_eq!(cd.remaining, 0, "Cooldown should not trigger on fallback");

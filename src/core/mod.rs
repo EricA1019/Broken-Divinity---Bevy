@@ -17,6 +17,11 @@ pub mod status;
 pub mod tilemap;
 pub mod turn;
 
+#[cfg(test)]
+pub mod brp_safety;
+
+pub use crate::escape;
+
 use bevy::prelude::*;
 
 pub fn plugin(app: &mut App) {
@@ -62,6 +67,7 @@ pub fn plugin(app: &mut App) {
         .init_resource::<turn::PlayerAction>()
         .init_resource::<turn::EnemyTurnFrameCounter>()
         .init_resource::<gamelog::GameLog>()
+        .init_resource::<resources::PlaceholderTileAtlas>()
         .init_resource::<perks::PendingPerkChoices>()
         .add_systems(Startup, camera::setup_camera)
         .add_systems(
@@ -81,7 +87,11 @@ pub fn plugin(app: &mut App) {
         )
         .add_systems(
             Update,
-            (turn::reset_action_budgets, turn::tick_sprint_cooldown, status::tick_status_effects)
+            (
+                turn::reset_action_budgets,
+                turn::tick_sprint_cooldown,
+                status::tick_status_effects,
+            )
                 .run_if(in_state(state::AppState::Dungeon))
                 .run_if(in_state(turn::TurnPhase::WorldTick)),
         );

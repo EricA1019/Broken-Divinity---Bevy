@@ -3,8 +3,12 @@ use bevy::prelude::*;
 use broken_divinity::core::state::AppState;
 use broken_divinity::game::overworld::weather::{Weather, roll_weather};
 use broken_divinity::ui::help_panel::{HelpOpen, colony_help_shows_secondary_hints, toggle_help};
-use broken_divinity::ui::modal_priority::{ModalBlockers, ModalPriorityCoordinator, apply_modal_priority_policy};
-use broken_divinity::ui::objective_prompt::{ColonyObjectivePromptState, InstructionPriorityPolicy, refresh_colony_objective_prompt};
+use broken_divinity::ui::modal_priority::{
+    ModalBlockers, ModalPriorityCoordinator, apply_modal_priority_policy,
+};
+use broken_divinity::ui::objective_prompt::{
+    ColonyObjectivePromptState, InstructionPriorityPolicy, refresh_colony_objective_prompt,
+};
 use broken_divinity::ui::overworld_panel::primary_overworld_cta_label;
 use broken_divinity::ui::readability::contrast_ratio;
 
@@ -98,7 +102,9 @@ fn colony_objective_prompt_refresh_tracks_overworld_progress() {
     let _ = world.run_system_once(refresh_colony_objective_prompt);
 
     assert!(
-        world.resource::<ColonyObjectivePromptState>().visible_in_colony,
+        world
+            .resource::<ColonyObjectivePromptState>()
+            .visible_in_colony,
         "expected objective prompt to be visible on fresh colony entry"
     );
 
@@ -106,7 +112,10 @@ fn colony_objective_prompt_refresh_tracks_overworld_progress() {
     let _ = world.run_system_once(refresh_colony_objective_prompt);
 
     let prompt = world.resource::<ColonyObjectivePromptState>();
-    assert!(prompt.has_reached_overworld, "expected overworld milestone to persist");
+    assert!(
+        prompt.has_reached_overworld,
+        "expected overworld milestone to persist"
+    );
     assert!(
         !prompt.visible_in_colony,
         "expected colony prompt to hide once overworld milestone is reached"
@@ -126,7 +135,10 @@ fn weather_roll_is_deterministic_and_ashfall_applies_pressure() {
     let first_roll = roll_weather(WEATHER_TEST_SEED, WEATHER_TEST_DAY);
     let second_roll = roll_weather(WEATHER_TEST_SEED, WEATHER_TEST_DAY);
 
-    assert_eq!(first_roll, second_roll, "expected deterministic weather rolls");
+    assert_eq!(
+        first_roll, second_roll,
+        "expected deterministic weather rolls"
+    );
     assert_eq!(Weather::Ashfall.sanity_pressure(), 1);
     assert!(Weather::Clear.travel_speed() > 0.0);
     assert!(!Weather::Fog.name().is_empty());

@@ -1,9 +1,4 @@
-use broken_divinity::save_recap::{
-    RecapRisk,
-    SaveRecapState,
-    legacy_recap,
-    recap_for_state,
-};
+use broken_divinity::save_recap::{RecapRisk, SaveRecapState, legacy_recap, recap_for_state};
 
 #[test]
 fn recap_for_colony_has_low_risk_and_next_step() {

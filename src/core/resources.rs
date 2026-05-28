@@ -3,10 +3,67 @@
 use bevy::prelude::*;
 use serde::{Deserialize, Serialize};
 
+const COLONY_TICK_SECONDS: f32 = 0.5;
+const TRAVEL_DAY_SECONDS: f32 = 0.5;
+
 /// World seed used for deterministic procgen across a run.
 #[derive(Resource, Debug, Clone, Copy, Reflect)]
 #[reflect(Resource)]
 pub struct WorldSeed(pub u64);
+
+/// Placeholder atlas handle for tilemaps until authored art is wired back in.
+#[derive(Resource, Debug, Clone, Default)]
+pub struct PlaceholderTileAtlas(pub Handle<Image>);
+
+#[derive(Resource, Debug, Clone, Reflect)]
+#[reflect(Resource)]
+pub struct ColonyTickTimer(pub Timer);
+
+impl Default for ColonyTickTimer {
+    fn default() -> Self {
+        Self(Timer::from_seconds(
+            COLONY_TICK_SECONDS,
+            TimerMode::Repeating,
+        ))
+    }
+}
+
+#[derive(Resource, Debug, Clone, Reflect)]
+#[reflect(Resource)]
+pub struct TravelDayTimer(pub Timer);
+
+impl Default for TravelDayTimer {
+    fn default() -> Self {
+        Self(Timer::from_seconds(
+            TRAVEL_DAY_SECONDS,
+            TimerMode::Repeating,
+        ))
+    }
+}
+
+pub fn reset_colony_tick_timer(mut timer: ResMut<ColonyTickTimer>) {
+    timer.0.reset();
+}
+
+pub fn tick_colony_timer(time: Res<Time>, mut timer: ResMut<ColonyTickTimer>) {
+    timer.0.tick(time.delta());
+}
+
+pub fn colony_tick_ready(timer: Res<ColonyTickTimer>) -> bool {
+    timer.0.just_finished()
+}
+
+pub fn reset_travel_day_timer(mut timer: ResMut<TravelDayTimer>) {
+    timer.0.reset();
+}
+
+pub fn tick_travel_day_timer(time: Res<Time>, mut timer: ResMut<TravelDayTimer>) {
+    timer.0.tick(time.delta());
+}
+
+pub fn travel_day_ready(timer: Res<TravelDayTimer>) -> bool {
+    timer.0.just_finished()
+}
 
 /// Global shelter resource stockpile.
 #[derive(Resource, Debug, Clone, Default, Serialize, Deserialize, Reflect)]

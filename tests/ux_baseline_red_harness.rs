@@ -13,7 +13,9 @@ mod ux_baseline_red {
     use broken_divinity::save_recap::SaveRecapState;
     use broken_divinity::ui::help_panel::{HelpOpen, toggle_help};
     use broken_divinity::ui::menu::{MenuUiAction, MenuUiChoice, process_menu_action};
-    use broken_divinity::ui::modal_priority::{ModalBlockers, ModalPriorityCoordinator, apply_modal_priority_policy};
+    use broken_divinity::ui::modal_priority::{
+        ModalBlockers, ModalPriorityCoordinator, apply_modal_priority_policy,
+    };
 
     const EXPECTED_SCENARIO_COUNT: usize = 8;
     const MIN_EXECUTED_TESTS: usize = 1;
@@ -98,7 +100,9 @@ mod ux_baseline_red {
         let mut app = App::new();
         app.insert_resource(GameLog::default());
         app.insert_resource(GameTime { turn: TEST_TURN });
-        app.insert_resource(MenuUiAction(Some(MenuUiChoice::NewGame { seed: TEST_SEED })));
+        app.insert_resource(MenuUiAction(Some(MenuUiChoice::NewGame {
+            seed: TEST_SEED,
+        })));
         app.insert_resource(NextState::<AppState>::Unchanged);
         app.add_message::<AppExit>();
         app.add_systems(Update, process_menu_action);
@@ -178,7 +182,9 @@ mod ux_baseline_red {
 
         assert_eq!(save.app_state.into_runtime_state(), AppState::Colony);
         assert_eq!(
-            recap_for_flow(FlowNode::Colony).expect("colony recap").state,
+            recap_for_flow(FlowNode::Colony)
+                .expect("colony recap")
+                .state,
             SaveRecapState::Colony
         );
         assert!(load_success_message().to_lowercase().contains("load"));
@@ -221,7 +227,9 @@ mod ux_baseline_red {
 
         assert_eq!(save.app_state.into_runtime_state(), AppState::Dungeon);
         assert_eq!(
-            recap_for_flow(FlowNode::Dungeon).expect("dungeon recap").state,
+            recap_for_flow(FlowNode::Dungeon)
+                .expect("dungeon recap")
+                .state,
             SaveRecapState::Dungeon
         );
 

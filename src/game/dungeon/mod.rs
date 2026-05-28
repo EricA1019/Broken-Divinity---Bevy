@@ -12,9 +12,9 @@ pub mod ranged;
 pub mod spawn;
 pub mod theme;
 
-use bevy::prelude::*;
 use crate::core::state::AppState;
 use crate::core::turn::TurnPhase;
+use bevy::prelude::*;
 
 pub fn plugin(app: &mut App) {
     // --- Type registration for BRP reflection ---
@@ -40,7 +40,10 @@ pub fn plugin(app: &mut App) {
         .init_resource::<gabriel::GabrielDialogueState>()
         .init_resource::<lore::LoreJournal>()
         .add_systems(OnEnter(AppState::Dungeon), spawn::setup_dungeon)
-        .add_systems(OnExit(AppState::Dungeon), (spawn::cleanup_dungeon, reset_turn_phase_on_exit))
+        .add_systems(
+            OnExit(AppState::Dungeon),
+            (spawn::cleanup_dungeon, reset_turn_phase_on_exit),
+        )
         .add_systems(
             Update,
             (gabriel::start_gabriel_encounter, spawn::handle_stairs)
@@ -62,14 +65,19 @@ pub fn plugin(app: &mut App) {
         )
         .add_systems(
             Update,
-            (ranged::resolve_ranged_attack, loot::pickup_items, hazards::check_hazard_tiles, lore::pickup_lore, consumables::resolve_consumable_use)
+            (
+                ranged::resolve_ranged_attack,
+                loot::pickup_items,
+                hazards::check_hazard_tiles,
+                lore::pickup_lore,
+                consumables::resolve_consumable_use,
+            )
                 .run_if(in_state(AppState::Dungeon))
                 .run_if(in_state(TurnPhase::PlayerTurn)),
         )
         .add_systems(
             Update,
-            anomalies::check_anomaly_proximity
-                .run_if(in_state(AppState::Dungeon)),
+            anomalies::check_anomaly_proximity.run_if(in_state(AppState::Dungeon)),
         )
         .add_systems(
             Update,
@@ -79,7 +87,11 @@ pub fn plugin(app: &mut App) {
         )
         .add_systems(
             Update,
-            (gabriel::gabriel_turn, ai::enemy_ai_turn, melee::resolve_enemy_melee)
+            (
+                gabriel::gabriel_turn,
+                ai::enemy_ai_turn,
+                melee::resolve_enemy_melee,
+            )
                 .chain()
                 .run_if(in_state(AppState::Dungeon))
                 .run_if(in_state(TurnPhase::EnemyTurn)),

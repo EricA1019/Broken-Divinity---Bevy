@@ -93,7 +93,6 @@ pub fn resolve_consumable_use(
 mod tests {
     use super::*;
     use crate::core::inventory::Inventory;
-    use crate::core::items::ItemStack;
     use crate::core::stats::{SkillId, SkillState};
     use bevy::ecs::system::RunSystemOnce;
     use std::collections::HashMap;
@@ -124,7 +123,8 @@ mod tests {
     fn default_combat_stats_uses_only_canonical_skill_proxies() {
         let stats = default_combat_stats(10, 20);
         let keys: std::collections::HashSet<_> = stats.skills.keys().copied().collect();
-        let expected: std::collections::HashSet<_> = SkillId::pilot_proxies().iter().copied().collect();
+        let expected: std::collections::HashSet<_> =
+            SkillId::pilot_proxies().iter().copied().collect();
         assert_eq!(keys, expected);
     }
 
@@ -146,7 +146,7 @@ mod tests {
             ActionBudget::new(1),
         ));
 
-        app.world_mut().run_system_once(resolve_consumable_use);
+        let _ = app.world_mut().run_system_once(resolve_consumable_use);
 
         let (inv, stats, budget) = app
             .world_mut()
@@ -179,7 +179,7 @@ mod tests {
             ActionBudget::new(1),
         ));
 
-        app.world_mut().run_system_once(resolve_consumable_use);
+        let _ = app.world_mut().run_system_once(resolve_consumable_use);
 
         let stats = app
             .world_mut()
@@ -208,7 +208,7 @@ mod tests {
             ActionBudget::new(1),
         ));
 
-        app.world_mut().run_system_once(resolve_consumable_use);
+        let _ = app.world_mut().run_system_once(resolve_consumable_use);
 
         let inv = app
             .world_mut()
@@ -239,7 +239,7 @@ mod tests {
             ActionBudget::new(1),
         ));
 
-        app.world_mut().run_system_once(resolve_consumable_use);
+        let _ = app.world_mut().run_system_once(resolve_consumable_use);
 
         let (inv, stats, budget) = app
             .world_mut()

@@ -29,7 +29,7 @@ impl Defect {
 }
 
 pub fn triage_gate_passes(defects: &[Defect]) -> bool {
-    !defects
-        .iter()
-        .any(|defect| defect.open && matches!(defect.severity, DefectSeverity::P0 | DefectSeverity::P1))
+    !defects.iter().any(|defect| {
+        defect.open && matches!(defect.severity, DefectSeverity::P0 | DefectSeverity::P1)
+    })
 }

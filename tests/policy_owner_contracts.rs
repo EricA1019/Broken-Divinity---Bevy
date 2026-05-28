@@ -1,14 +1,10 @@
 use broken_divinity::escape::{EscapeAction, EscapeContext, resolve_escape_action};
 use broken_divinity::gamelog::{
-    LogSeverity,
-    blocked_action_message,
-    default_feedback_cooldown_ticks,
+    LogSeverity, blocked_action_message, default_feedback_cooldown_ticks,
 };
 use broken_divinity::modal_priority::{ModalKind, ModalPriorityDecision, resolve_modal_priority};
 use broken_divinity::objective_prompt::{
-    InstructionPriority,
-    ObjectivePromptPolicy,
-    select_primary_instruction,
+    InstructionPriority, ObjectivePromptPolicy, select_primary_instruction,
 };
 
 #[test]

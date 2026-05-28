@@ -5,10 +5,28 @@ edition = "2024"
 rust-version = "1.85"
 
 [dependencies]
-bevy = { version = "0.18.1", default-features = false, features = ["2d"] }
+bevy = { version = "0.18.1", default-features = false, features = ["2d", "bevy_remote"] }
 bevy_ecs_tilemap = "0.18.1"
 bevy_egui = "0.39.1"
+pathfinding = "4.14.0"
 rand = "0.10.0"
+ron = "0.12.0"
 rand_chacha = "0.10.0"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+
+[[bin]]
+name = "broken_divinity"
+path = "src/main.rs"
+
+[[bin]]
+name = "ux_prototypes"
+path = "src/bin/ux_prototypes.rs"
+
+[features]
+dev = ["bevy/dynamic_linking", "dep:bevy_brp_extras"]
+brp = ["dep:bevy_brp_extras"]
+
+[dependencies.bevy_brp_extras]
+version = "0.18"
+optional = true

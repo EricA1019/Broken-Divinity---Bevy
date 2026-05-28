@@ -1,15 +1,17 @@
 use bevy::prelude::*;
-use bevy_egui::{egui, EguiContexts, EguiPlugin, EguiPrimaryContextPass};
+use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 
 use crate::core::state::AppState;
 use crate::core::turn::GameTime;
-use crate::escape::{resolve_escape_action, EscapeAction, EscapeContext, EscapeGuidanceEngine, EscapeGuidanceEvent};
+use crate::escape::{
+    EscapeAction, EscapeContext, EscapeGuidanceEngine, EscapeGuidanceEvent, resolve_escape_action,
+};
 use crate::gamelog::GameLog;
 use crate::objective_prompt::{InstructionEvent, ObjectivePromptEngine, ObjectivePromptPolicy};
 use crate::primary_cta::{AppSurface, CtaPolicy, PrimaryCta};
 use crate::runtime_flow::{FlowAction, FlowNode, RuntimeFlow};
-use crate::save_recap::{recap_for_state, SaveRecap, SaveRecapState};
-use crate::ui::menu::{draw_main_menu, process_menu_action, MenuUiAction, MenuUiChoice};
+use crate::save_recap::{SaveRecap, SaveRecapState, recap_for_state};
+use crate::ui::menu::{MenuUiAction, MenuUiChoice, draw_main_menu, process_menu_action};
 
 const DEFAULT_RUNTIME_SEED: u64 = 20_260_527;
 
@@ -191,7 +193,6 @@ fn draw_runtime_shell(
     mut flow: ResMut<RuntimeFlow>,
     mut shell: ResMut<RuntimeShellState>,
 ) {
-
     let Ok(ctx) = contexts.ctx_mut() else {
         return;
     };

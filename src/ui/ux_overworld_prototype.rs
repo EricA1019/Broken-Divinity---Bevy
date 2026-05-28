@@ -3,9 +3,8 @@
 //! Run with: `cargo run --bin ux_overworld_prototype`
 //!
 //! Controls:
-//!   WASD   — pan the map
-//!   Tab    — cycle focus node
-//!   R      — reset pan
+//!   Tab    — cycle expedition report
+//!   R      — reset to first expedition
 //!   Esc    — quit
 
 use bevy::prelude::*;
@@ -16,9 +15,10 @@ use super::ux_style_contract::{style_for, VariantStyle};
 
 // ── fake overworld graph data ─────────────────────────────────────────────────
 
-const NODE_COUNT: usize = 9;
+pub(crate) const NODE_COUNT: usize = 9;
+pub(crate) const COLONY_NODE: usize = 0;
 const NODE_NAMES: [&str; 9] = [
-    "Shelter Iris",
+    "Mock Colony",
     "Forest Crossroads",
     "Shattered Labs",
     "Ruins of Malkov",
@@ -32,23 +32,22 @@ const NODE_TYPES: [&str; 9] = [
     "Shelter", "Crossroads", "Dungeon", "Ruins", "Landmark",
     "Dungeon", "Crossroads", "Ruins", "Dungeon",
 ];
-// layout x,y in a more organic, Qud-like positioning
+// layout x,y centered on the colony with nearby and distant POIs
 const NODE_POS: [(f32, f32); 9] = [
-    (180.0, 440.0),  // Shelter Iris - slightly offset
-    (420.0, 320.0),  // Forest Crossroads - more organic
-    (620.0, 280.0),  // Shattered Labs - asymmetric
-    (360.0, 460.0),  // Ruins of Malkov - irregular
-    (540.0, 440.0),  // Sunken Pass - varied spacing
-    (680.0, 380.0),  // Ember Vein - non-grid
-    (460.0, 180.0),  // The Still Gate - scattered
-    (700.0, 160.0),  // Ashen Bazaar - asymmetric
-    (840.0, 300.0),  // Hollow Spire - irregular placement
+    (480.0, 300.0),  // Mock Colony - centered anchor
+    (560.0, 250.0),  // Forest Crossroads - visible
+    (615.0, 205.0),  // Shattered Labs - near edge of fog
+    (405.0, 370.0),  // Ruins of Malkov - visible
+    (360.0, 245.0),  // Sunken Pass - visible
+    (700.0, 340.0),  // Ember Vein - beyond fog, reported only
+    (525.0, 420.0),  // The Still Gate - visible
+    (290.0, 175.0),  // Ashen Bazaar - beyond fog, reported only
+    (770.0, 230.0),  // Hollow Spire - beyond fog, reported only
 ];
 // road pairs (from, to)
-const ROADS: [(usize, usize); 11] = [
-    (0, 1), (1, 2), (1, 3), (3, 4), (4, 5),
-    (1, 6), (6, 7), (2, 5), (6, 2),
-    (7, 8), (5, 8),
+const ROADS: [(usize, usize); 10] = [
+    (0, 1), (0, 3), (0, 4), (1, 2), (1, 5),
+    (3, 6), (4, 7), (5, 8), (2, 5), (6, 2),
 ];
 
 fn node_glyph(nt: &str) -> &'static str {
@@ -114,6 +113,17 @@ fn biome_char(b: u8) -> &'static str {
     }
 }
 
+fn biome_color(b: u8) -> egui::Color32 {
+    match b {
+        1 => egui::Color32::from_rgb(111, 174, 104),
+        2 => egui::Color32::from_rgb(164, 150, 108),
+        3 => egui::Color32::from_rgb(78, 156, 190),
+        4 => egui::Color32::from_rgb(186, 123, 91),
+        5 => egui::Color32::from_rgb(199, 163, 104),
+        _ => egui::Color32::from_rgb(120, 114, 98),
+    }
+}
+
 // ── fog of war visibility system ─────────────────────────────────────────────
 
 fn is_visible_overworld(focus_x: f32, focus_y: f32, tile_x: i32, tile_y: i32, _elapsed: f32) -> bool {
@@ -138,6 +148,63 @@ fn get_fog_glyph(tile_x: i32, tile_y: i32, focus_x: f32, focus_y: f32, elapsed: 
     let alpha = 1.0 - (ring / 8.0);
     (echo, alpha)
 }
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum RevealState {
+    Visible,
+    Reported,
+    Hidden,
+}
+
+fn reveal_state(focus_x: f32, focus_y: f32, tile_x: i32, tile_y: i32) -> RevealState {
+    if is_visible_overworld(focus_x, focus_y, tile_x, tile_y, 0.0) {
+        RevealState::Visible
+    } else {
+        let dx = tile_x as f32 - focus_x;
+        let dy = tile_y as f32 - focus_y;
+        let dist2 = dx * dx + dy * dy;
+        if dist2 <= 400.0 {
+        RevealState::Reported
+        } else {
+            RevealState::Hidden
+        }
+    }
+}
+
+fn tile_tint(state: RevealState, base: egui::Color32, fog: egui::Color32) -> egui::Color32 {
+    match state {
+        RevealState::Visible => base,
+        RevealState::Reported => base.gamma_multiply(0.35),
+        RevealState::Hidden => fog,
+    }
+}
+
+fn second_leg_target(from: usize) -> Option<usize> {
+    if from == COLONY_NODE {
+        return None;
+    }
+
+    ROADS
+        .iter()
+        .filter_map(|&(a, b)| {
+            let n = if a == from {
+                b
+            } else if b == from {
+                a
+            } else {
+                return None;
+            };
+            if n == COLONY_NODE {
+                return None;
+            }
+            let (fx, fy) = NODE_POS[from];
+            let (nx, ny) = NODE_POS[n];
+            let dist2 = (nx - fx) * (nx - fx) + (ny - fy) * (ny - fy);
+            Some((n, dist2))
+        })
+        .min_by(|(_, da), (_, db)| da.partial_cmp(db).unwrap_or(std::cmp::Ordering::Equal))
+        .map(|(n, _)| n)
+}
 // biome_color removed — inline gamma_multiply in painter calls instead
 
 // ── state ─────────────────────────────────────────────────────────────────────
@@ -146,7 +213,6 @@ fn get_fog_glyph(tile_x: i32, tile_y: i32, focus_x: f32, focus_y: f32, elapsed: 
 pub(crate) struct OverworldProtoState {
     pub(crate) focus_node: usize,
     pub(crate) elapsed: f32,
-    pub(crate) pan: (f32, f32),
 }
 
 pub struct OverworldPrototypePlugin;
@@ -154,9 +220,8 @@ pub struct OverworldPrototypePlugin;
 impl Plugin for OverworldPrototypePlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(OverworldProtoState {
-            focus_node: 0,
+            focus_node: 1,
             elapsed: 0.0,
-            pan: (0.0, 0.0),
         })
         .add_systems(Startup, setup_camera)
         .add_systems(Update, (tick, handle_input))
@@ -183,17 +248,14 @@ fn handle_input(
     }
 
     if keys.just_pressed(KeyCode::Tab) {
-        state.focus_node = (state.focus_node + 1) % NODE_COUNT;
+        state.focus_node += 1;
+        if state.focus_node >= NODE_COUNT {
+            state.focus_node = 1;
+        }
     }
     if keys.just_pressed(KeyCode::KeyR) {
-        state.pan = (0.0, 0.0);
+        state.focus_node = 1;
     }
-
-    let s = 24.0;
-    if keys.pressed(KeyCode::KeyA) || keys.pressed(KeyCode::ArrowLeft)  { state.pan.0 += s; }
-    if keys.pressed(KeyCode::KeyD) || keys.pressed(KeyCode::ArrowRight) { state.pan.0 -= s; }
-    if keys.pressed(KeyCode::KeyW) || keys.pressed(KeyCode::ArrowUp)    { state.pan.1 += s; }
-    if keys.pressed(KeyCode::KeyS) || keys.pressed(KeyCode::ArrowDown)  { state.pan.1 -= s; }
 }
 
 // ── shared helpers ────────────────────────────────────────────────────────────
@@ -216,7 +278,7 @@ fn draw_overworld_prototype(mut contexts: EguiContexts, state: Res<OverworldProt
             ui.label(dng_styled(
                 &s,
                 format!(
-                    " Overworld Map  |  Focus: {}  |  WASD pan  Tab focus  R reset  Esc quit",
+                    " Mission Board  |  Expedition: {}  |  Tab cycle report  R reset report  Esc quit",
                     NODE_NAMES[state.focus_node],
                 ).as_str(),
                 11.0,
@@ -246,20 +308,13 @@ fn draw_overworld_prototype(mut contexts: EguiContexts, state: Res<OverworldProt
 const TILE_W: f32 = 13.0;
 const TILE_H: f32 = 16.0;
 
-fn draw_terrain_tile(ui: &mut egui::Ui, s: &VariantStyle, state: &OverworldProtoState) {
+pub(crate) fn draw_terrain_tile(ui: &mut egui::Ui, s: &VariantStyle, state: &OverworldProtoState) {
     let t = state.elapsed;
     let focus = state.focus_node;
-    let mut pan = state.pan;
+    let colony_pos = NODE_POS[COLONY_NODE];
     let focus_node_type = NODE_TYPES[focus];
     let focus_name = NODE_NAMES[focus];
     let focus_pos = NODE_POS[focus];
-    
-    // Auto-center map on focus node
-    let rect = ui.available_rect_before_wrap();
-    let center_x = rect.width() / 2.0;
-    let center_y = rect.height() / 2.0;
-    pan.0 = center_x - focus_pos.0;
-    pan.1 = center_y - focus_pos.1;
 
     // neighbors for route preview
     let neighbors: Vec<usize> = ROADS
@@ -305,120 +360,94 @@ fn draw_terrain_tile(ui: &mut egui::Ui, s: &VariantStyle, state: &OverworldProto
             cols[0].allocate_rect(rect, egui::Sense::hover());
             let painter = cols[0].painter();
 
+            // Keep camera fixed on colony for mission-planning board feel.
+            let camera_pan = (
+                rect.center().x - colony_pos.0,
+                rect.center().y - colony_pos.1,
+            );
+
             // biome backdrop with fog of war — organic Qud-style rendering
             let cols_visible = ((rect.width() / TILE_W).ceil() as i32).max(1);
             let rows_visible = ((rect.height() / TILE_H).ceil() as i32).max(1);
-            let ox = (-pan.0 / TILE_W).floor() as i32;
-            let oy = (-pan.1 / TILE_H).floor() as i32;
-
-            let mut map_str = String::with_capacity((cols_visible * rows_visible) as usize * 2);
+            let ox = (-camera_pan.0 / TILE_W).floor() as i32;
+            let oy = (-camera_pan.1 / TILE_H).floor() as i32;
             let focus_world_x = focus_pos.0 / TILE_W;
             let focus_world_y = focus_pos.1 / TILE_H;
-            
-            // Add organic background texture for Qud aesthetic
-            let organic_noise = ((t * 0.5).sin() * 0.3 + 0.7) as f32;
             
             for row in oy..oy + rows_visible {
                 for col in ox..ox + cols_visible {
                     let gx = col.rem_euclid(MAP_W as i32) as usize;
                     let gy = row.rem_euclid(MAP_H as i32) as usize;
                     let b = BIOME[gy][gx];
-                    
-                    if is_visible_overworld(focus_world_x, focus_world_y, col, row, t) {
-                        let base_char = biome_char(b);
-                        // Add organic variation for Qud feel
-                        let variation = if (gx + gy + t as usize) % 7 == 0 {
+                    let reveal = reveal_state(focus_world_x, focus_world_y, col, row);
+                    let screen = egui::pos2(
+                        rect.left() + (col as f32 * TILE_W) + camera_pan.0,
+                        rect.top() + (row as f32 * TILE_H) + camera_pan.1,
+                    );
+                    if reveal == RevealState::Hidden {
+                        continue;
+                    }
+
+                    let glyph = if reveal == RevealState::Visible {
+                        if (gx + gy + t as usize) % 7 == 0 {
                             match b {
-                                1 => "♠", // forest variation
-                                2 => "♦", // mountain variation  
-                                3 => "≈", // water variation
-                                4 => "◈", // ruins variation
-                                5 => "∴", // ash variation
-                                _ => base_char,
+                                1 => "♠",
+                                2 => "♦",
+                                3 => "≈",
+                                4 => "◈",
+                                5 => "∴",
+                                _ => biome_char(b),
                             }
                         } else {
-                            base_char
-                        };
-                        map_str.push_str(variation);
+                            biome_char(b)
+                        }
                     } else {
                         let (fog_char, _alpha) = get_fog_glyph(col, row, focus_world_x, focus_world_y, t);
-                        map_str.push(fog_char);
-                    }
-                }
-                map_str.push('\n');
-            }
-            
-            // Render with organic, slightly irregular spacing for Qud aesthetic
-            let font_size = TILE_W - 2.0 + (t.sin() * 0.5); // Subtle size variation
-            let color = s.subtitle_color.gamma_multiply(0.3 * organic_noise);
-            painter.text(
-                rect.left_top(),
-                egui::Align2::LEFT_TOP,
-                &map_str,
-                egui::FontId::monospace(font_size),
-                color,
-            );
+                        &fog_char.to_string()
+                    };
 
-            // roads between nodes with fog of war
+                    let color = tile_tint(
+                        reveal,
+                        biome_color(b),
+                        s.subtitle_color.gamma_multiply(0.35),
+                    );
+
+                    painter.text(
+                        screen,
+                        egui::Align2::LEFT_TOP,
+                        glyph,
+                        egui::FontId::monospace(TILE_W - 2.0),
+                        color,
+                    );
+                }
+            }
+
+            // route-plan lines only: colony -> selected expedition -> optional second leg
             let screens: Vec<egui::Pos2> = NODE_POS
                 .iter()
-                .map(|&(nx, ny)| egui::pos2(nx + pan.0, ny + pan.1))
+                .map(|&(nx, ny)| egui::pos2(nx + camera_pan.0, ny + camera_pan.1))
                 .collect();
 
-            for &(a, b) in &ROADS {
-                let pa = screens[a];
-                let pb = screens[b];
-                if (pa.x < rect.left() - 50.0 && pb.x < rect.left() - 50.0)
-                    || (pa.x > rect.right() + 50.0 && pb.x > rect.right() + 50.0)
-                    || (pa.y < rect.top() - 50.0 && pb.y < rect.top() - 50.0)
-                    || (pa.y > rect.bottom() + 50.0 && pb.y > rect.bottom() + 50.0)
-                {
-                    continue;
-                }
-                
-                // Check if both nodes are visible
-                let node_a_world_x = NODE_POS[a].0 / TILE_W;
-                let node_a_world_y = NODE_POS[a].1 / TILE_H;
-                let node_b_world_x = NODE_POS[b].0 / TILE_W;
-                let node_b_world_y = NODE_POS[b].1 / TILE_H;
-                
-                let a_visible = is_visible_overworld(focus_world_x, focus_world_y, node_a_world_x as i32, node_a_world_y as i32, t);
-                let b_visible = is_visible_overworld(focus_world_x, focus_world_y, node_b_world_x as i32, node_b_world_y as i32, t);
-                
-                // Only draw road if at least one node is visible
-                if !a_visible && !b_visible {
-                    continue;
-                }
-                
-                let highlight = a == focus || b == focus;
-                let mut road_color = if highlight {
-                    s.accent_color
-                } else {
-                    s.subtitle_color.gamma_multiply(0.45)
-                };
-                
-                // Apply fog alpha if only one node is visible
-                if a_visible && !b_visible {
-                    let (_, alpha) = get_fog_glyph(node_b_world_x as i32, node_b_world_y as i32, focus_world_x, focus_world_y, t);
-                    road_color = road_color.gamma_multiply(alpha);
-                } else if !a_visible && b_visible {
-                    let (_, alpha) = get_fog_glyph(node_a_world_x as i32, node_a_world_y as i32, focus_world_x, focus_world_y, t);
-                    road_color = road_color.gamma_multiply(alpha);
-                }
-                
-                if highlight {
-                    painter.line_segment([pa, pb], egui::Stroke::new(2.0, road_color));
-                } else {
-                    let steps = 8;
+            if focus != COLONY_NODE {
+                let start = screens[COLONY_NODE];
+                let mid = screens[focus];
+                painter.line_segment(
+                    [start, mid],
+                    egui::Stroke::new(2.6, s.accent_color.gamma_multiply(0.85)),
+                );
+
+                if let Some(next) = second_leg_target(focus) {
+                    let end = screens[next];
+                    let steps = 10;
                     for i in 0..steps {
                         let u1 = i as f32 / steps as f32;
-                        let u2 = (i as f32 + 0.6) / steps as f32;
+                        let u2 = (i as f32 + 0.55) / steps as f32;
                         painter.line_segment(
                             [
-                                egui::pos2(pa.x + (pb.x - pa.x) * u1, pa.y + (pb.y - pa.y) * u1),
-                                egui::pos2(pa.x + (pb.x - pa.x) * u2, pa.y + (pb.y - pa.y) * u2),
+                                egui::pos2(mid.x + (end.x - mid.x) * u1, mid.y + (end.y - mid.y) * u1),
+                                egui::pos2(mid.x + (end.x - mid.x) * u2, mid.y + (end.y - mid.y) * u2),
                             ],
-                            egui::Stroke::new(1.2, road_color),
+                            egui::Stroke::new(1.5, s.info_color.gamma_multiply(0.7)),
                         );
                     }
                 }
@@ -435,10 +464,9 @@ fn draw_terrain_tile(ui: &mut egui::Ui, s: &VariantStyle, state: &OverworldProto
                 // Check if node is visible based on fog of war
                 let node_world_x = NODE_POS[idx].0 / TILE_W;
                 let node_world_y = NODE_POS[idx].1 / TILE_H;
-                let is_visible = is_visible_overworld(focus_world_x, focus_world_y, node_world_x as i32, node_world_y as i32, t);
-                
-                if !is_visible && idx != focus {
-                    continue; // Skip rendering invisible nodes (except focus)
+                let reveal = reveal_state(focus_world_x, focus_world_y, node_world_x as i32, node_world_y as i32);
+                if matches!(reveal, RevealState::Hidden) && idx != focus && idx != COLONY_NODE {
+                    continue;
                 }
                 
                 let is_focus = idx == focus;
@@ -448,12 +476,20 @@ fn draw_terrain_tile(ui: &mut egui::Ui, s: &VariantStyle, state: &OverworldProto
                     1.0
                 };
                 let glyph = node_glyph(NODE_TYPES[idx]);
-                let mut node_color = if is_focus { s.title_color } else { s.warn_color };
+                let mut node_color = if idx == COLONY_NODE {
+                    s.success_color
+                } else if is_focus {
+                    s.title_color
+                } else {
+                    s.warn_color
+                };
                 
-                // Apply fog alpha to non-focus nodes
                 if !is_focus {
-                    let (_, alpha) = get_fog_glyph(node_world_x as i32, node_world_y as i32, focus_world_x, focus_world_y, t);
-                    node_color = node_color.gamma_multiply(alpha);
+                    node_color = match reveal {
+                        RevealState::Visible => node_color,
+                        RevealState::Reported => node_color.gamma_multiply(0.35),
+                        RevealState::Hidden => node_color.gamma_multiply(0.15),
+                    };
                 }
 
                 let r = if is_focus { 10.0 } else { 7.0 };
@@ -470,13 +506,21 @@ fn draw_terrain_tile(ui: &mut egui::Ui, s: &VariantStyle, state: &OverworldProto
                 );
 
                 // name below if focus or nearby
-                if is_focus || (pos - screens[focus]).length() < 120.0 {
+                if is_focus || idx == COLONY_NODE || matches!(reveal, RevealState::Visible) {
                     painter.text(
                         egui::pos2(pos.x, pos.y + 16.0),
                         egui::Align2::CENTER_TOP,
                         NODE_NAMES[idx],
                         egui::FontId::proportional(11.0),
                         node_color,
+                    );
+                } else if matches!(reveal, RevealState::Reported) {
+                    painter.text(
+                        egui::pos2(pos.x, pos.y + 16.0),
+                        egui::Align2::CENTER_TOP,
+                        "reported",
+                        egui::FontId::proportional(10.0),
+                        node_color.gamma_multiply(0.8),
                     );
                 }
             }
@@ -487,6 +531,13 @@ fn draw_terrain_tile(ui: &mut egui::Ui, s: &VariantStyle, state: &OverworldProto
                 screens[focus],
                 ring_r,
                 egui::Stroke::new(1.5, s.title_color.gamma_multiply(0.5)),
+            );
+
+            // Colony anchor ring stays stable at screen center.
+            painter.circle_stroke(
+                screens[COLONY_NODE],
+                12.0,
+                egui::Stroke::new(1.8, s.success_color.gamma_multiply(0.85)),
             );
             
             // Add organic aura effect for Qud feel
@@ -547,7 +598,8 @@ fn draw_terrain_tile(ui: &mut egui::Ui, s: &VariantStyle, state: &OverworldProto
 
         cols[1].add_space(6.0 * s.spacing);
         draw_section(&mut cols[1], s, " Actions ");
-        cols[1].label(dng_styled(s, " [Tab]  Travel Route", s.body_size, s.title_color));
+        cols[1].label(dng_styled(s, " [Tab]  Cycle Expedition Report", s.body_size, s.title_color));
+        cols[1].label(dng_styled(s, " [R]    Reset Report Selection", s.body_size, s.info_color));
         cols[1].label(dng_styled(s, " [X]    Inspect Node", s.body_size, s.info_color));
         cols[1].label(dng_styled(s, " [W]    Check Weather", s.body_size, s.info_color));
         cols[1].label(dng_styled(s, " [C]    Camp / Rest", s.body_size, s.info_color));

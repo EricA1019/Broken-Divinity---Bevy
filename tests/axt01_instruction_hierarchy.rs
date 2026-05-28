@@ -1,8 +1,5 @@
 use broken_divinity::objective_prompt::{
-    InstructionEvent,
-    InstructionPriority,
-    ObjectivePromptEngine,
-    ObjectivePromptPolicy,
+    InstructionEvent, InstructionPriority, ObjectivePromptEngine, ObjectivePromptPolicy,
 };
 
 #[test]

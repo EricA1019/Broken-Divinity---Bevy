@@ -1,5 +1,6 @@
 use bevy::prelude::*;
 
+use crate::game::colony::raids::ActiveRaid;
 use crate::modal_priority::ModalBlockers;
 use crate::objective_prompt::{ColonyObjectivePromptState, InstructionPriorityPolicy};
 
@@ -11,15 +12,17 @@ pub struct HelpOpen(pub bool);
 pub fn toggle_help(
     keyboard: Res<ButtonInput<KeyCode>>,
     blockers: Option<Res<ModalBlockers>>,
+    active_raid: Option<Res<ActiveRaid>>,
     mut help_open: ResMut<HelpOpen>,
 ) {
     if !keyboard.just_pressed(HELP_TOGGLE_KEY) {
         return;
     }
 
-    if blockers
-        .as_ref()
-        .is_some_and(|blockers| blockers.critical_modal_active)
+    if active_raid.is_some()
+        || blockers
+            .as_ref()
+            .is_some_and(|blockers| blockers.critical_modal_active)
     {
         help_open.0 = false;
         return;

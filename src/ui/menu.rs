@@ -90,8 +90,7 @@ pub(crate) fn resolve_menu_seed(seed_text: &str, unix_seed_fallback: u64) -> u64
         .enumerate()
         .fold(0u64, |hash, (index, byte)| {
             hash.wrapping_add(
-                (byte as u64)
-                    .wrapping_mul(MENU_SEED_HASH_MULTIPLIER.wrapping_pow(index as u32)),
+                (byte as u64).wrapping_mul(MENU_SEED_HASH_MULTIPLIER.wrapping_pow(index as u32)),
             )
         })
 }
@@ -174,8 +173,8 @@ pub fn draw_main_menu(
                     ui.label(egui::RichText::new("Seed:").color(rgb(MENU_SEED_LABEL_RGB)));
                     ui.text_edit_singleline(&mut *seed_text);
                 });
-                let resolved_seed = (!seed_text.is_empty())
-                    .then(|| resolve_menu_seed(seed_text.as_str(), 0));
+                let resolved_seed =
+                    (!seed_text.is_empty()).then(|| resolve_menu_seed(seed_text.as_str(), 0));
                 ui.label(
                     egui::RichText::new(seed_helper_text(resolved_seed))
                         .size(MENU_HELPER_FONT_SIZE),
@@ -192,10 +191,10 @@ pub fn draw_main_menu(
                                 .size(20.0)
                                 .strong(),
                         )
-                            .min_size(egui::vec2(
-                                MENU_NEW_GAME_BUTTON_WIDTH,
-                                MENU_NEW_GAME_BUTTON_HEIGHT,
-                            )),
+                        .min_size(egui::vec2(
+                            MENU_NEW_GAME_BUTTON_WIDTH,
+                            MENU_NEW_GAME_BUTTON_HEIGHT,
+                        )),
                     )
                     .clicked()
                 {
@@ -227,11 +226,9 @@ pub fn draw_main_menu(
                 if !*quit_confirmation_pending {
                     if ui
                         .add(
-                            egui::Button::new(egui::RichText::new("Quit").size(16.0))
-                                .min_size(egui::vec2(
-                                    MENU_NEW_GAME_BUTTON_WIDTH,
-                                    MENU_QUIT_BUTTON_HEIGHT,
-                                )),
+                            egui::Button::new(egui::RichText::new("Quit").size(16.0)).min_size(
+                                egui::vec2(MENU_NEW_GAME_BUTTON_WIDTH, MENU_QUIT_BUTTON_HEIGHT),
+                            ),
                         )
                         .clicked()
                     {
@@ -303,30 +300,27 @@ pub fn process_menu_action(
             );
             next_state.set(AppState::Colony);
         }
-        MenuUiChoice::LoadGame => {
-            match crate::core::save::load_game_detailed() {
-                Ok(save) => {
-                    commands.insert_resource(WorldSeed(save.seed));
-                    commands.insert_resource(crate::core::save::PlayerSnapshot(Some(
-                        save.player.clone(),
-                    )));
-                    crate::core::save::queue_loaded_game(&mut commands, save.clone());
-                    log.push(
-                        crate::core::save::load_success_message(),
-                        LogColor::System,
-                        turn,
-                    );
-                    next_state.set(save.app_state.into_runtime_state());
-                }
-                Err(error) => {
-                    log.push(
-                        crate::core::save::load_error_message(error),
-                        LogColor::Status,
-                        turn,
-                    );
-                }
+        MenuUiChoice::LoadGame => match crate::core::save::load_game_detailed() {
+            Ok(save) => {
+                commands.insert_resource(WorldSeed(save.seed));
+                commands
+                    .insert_resource(crate::core::save::PlayerSnapshot(Some(save.player.clone())));
+                crate::core::save::queue_loaded_game(&mut commands, save.clone());
+                log.push(
+                    crate::core::save::load_success_message(),
+                    LogColor::System,
+                    turn,
+                );
+                next_state.set(save.app_state.into_runtime_state());
             }
-        }
+            Err(error) => {
+                log.push(
+                    crate::core::save::load_error_message(error),
+                    LogColor::Status,
+                    turn,
+                );
+            }
+        },
         MenuUiChoice::Quit | MenuUiChoice::ConfirmQuit => {
             exit.write(AppExit::Success);
         }
@@ -355,6 +349,9 @@ mod tests {
 
     #[test]
     fn resolve_menu_seed_uses_fallback_for_empty_seed() {
-        assert_eq!(resolve_menu_seed("", TEST_FALLBACK_SEED), TEST_FALLBACK_SEED);
+        assert_eq!(
+            resolve_menu_seed("", TEST_FALLBACK_SEED),
+            TEST_FALLBACK_SEED
+        );
     }
 }

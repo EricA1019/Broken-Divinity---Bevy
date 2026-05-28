@@ -145,12 +145,14 @@ pub fn reset_action_budgets(mut budgets: Query<&mut ActionBudget>) {
     }
 }
 
+pub fn advance_game_time(mut game_time: ResMut<GameTime>) {
+    game_time.turn = game_time.turn.saturating_add(1);
+}
+
 /// Ticks down `SprintCooldown` by 1 each turn, clamped to 0.
 ///
 /// Runs during `WorldTick`.
-pub fn tick_sprint_cooldown(
-    mut query: Query<&mut crate::core::abilities::SprintCooldown>,
-) {
+pub fn tick_sprint_cooldown(mut query: Query<&mut crate::core::abilities::SprintCooldown>) {
     for mut cd in query.iter_mut() {
         if cd.remaining > 0 {
             cd.remaining -= 1;

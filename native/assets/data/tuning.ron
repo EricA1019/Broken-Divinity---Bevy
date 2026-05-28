@@ -1,0 +1,34 @@
+(
+    player: (
+        starting_hp: 50,
+        starting_hp_max: 50,
+        starting_speed: 1,
+        starting_ar: 5,
+        starting_md: 2,
+        starting_viewshed_range: 8,
+        starting_weapon_id: "iron_pipe",
+    ),
+    shelter: (
+        starting_food: 10,
+        starting_water: 10,
+        starting_scrap: 15,
+        starting_medicine: 3,
+        starting_ammo: 10,
+    ),
+    virtues: (
+        temperance: 1,
+        justice: 1,
+        prudence: 2,
+        fortitude: 3,
+        thumos: 2,
+        metis: 1,
+    ),
+    proficiencies: (
+        melee_training: 12,
+        ranged_training: 12,
+        quiet_movement: 6,
+        medicine: 6,
+        repair: 0,
+        ritecraft: 0,
+    ),
+)

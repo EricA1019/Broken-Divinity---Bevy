@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments, clippy::type_complexity)]
+
 //! Save/load system — JSON-based checkpoint on shelter return.
 
 use bevy::prelude::*;
@@ -50,6 +52,12 @@ pub struct PlayerSnapshot(pub Option<SavePlayerState>);
 /// Request resource toggled by UI when the player wants to save and return to the menu.
 #[derive(Resource, Debug, Clone, Default)]
 pub struct SaveAndQuitRequested(pub bool);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum LoadGameError {
+    MissingSave,
+    InvalidData,
+}
 
 #[derive(Serialize, Deserialize, Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum SaveAppState {
@@ -367,6 +375,43 @@ pub fn restore_persistent_run_resources(commands: &mut Commands, save: &SaveGame
         commands.insert_resource(travel);
     } else {
         commands.remove_resource::<TravelState>();
+    }
+
+    let recap_message = format!(
+        "Load recap: restored turn {} in {:?}.",
+        save.game_time.turn, save.app_state
+    );
+    let objective_message = load_objective_message(save);
+    commands.queue(move |world: &mut World| {
+        let turn = world.resource::<GameTime>().turn;
+        let Some(mut log) = world.get_resource_mut::<GameLog>() else {
+            return;
+        };
+        log.push(recap_message, crate::core::gamelog::LogColor::Status, turn);
+        log.push(
+            objective_message,
+            crate::core::gamelog::LogColor::Status,
+            turn,
+        );
+    });
+}
+
+fn load_objective_message(save: &SaveGame) -> String {
+    if save.colony.resources.food == 0 || save.colony.resources.water == 0 {
+        return "Objective: secure food and water immediately.".to_string();
+    }
+
+    match save.app_state {
+        SaveAppState::Overworld => {
+            "Objective: choose a travel destination and continue across connected routes."
+                .to_string()
+        }
+        SaveAppState::Dungeon | SaveAppState::Combat => {
+            "Objective: continue progression through the dungeon safely.".to_string()
+        }
+        SaveAppState::Colony | SaveAppState::Menu | SaveAppState::GameOver => {
+            "Objective: reach the shelter gate when you are ready to travel.".to_string()
+        }
     }
 }
 
@@ -793,7 +838,8 @@ impl SaveGame {
 
     fn sync_derived_fields(&mut self) {
         if self.player.progression.is_empty() {
-            self.player.progression = PlayerProgression::from_legacy_skills(&self.player.stats.skills);
+            self.player.progression =
+                PlayerProgression::from_legacy_skills(&self.player.stats.skills);
         } else {
             self.player.progression.ensure_complete();
         }
@@ -881,6 +927,27 @@ pub fn load_game() -> Option<SaveGame> {
     let raw = std::fs::read_to_string(save_path()).ok()?;
     let save: SaveGame = serde_json::from_str(&raw).ok()?;
     Some(save.normalize_loaded())
+}
+
+pub fn load_game_detailed() -> Result<SaveGame, LoadGameError> {
+    let raw = std::fs::read_to_string(save_path()).map_err(|_| LoadGameError::MissingSave)?;
+    let save: SaveGame = serde_json::from_str(&raw).map_err(|_| LoadGameError::InvalidData)?;
+    Ok(save.normalize_loaded())
+}
+
+pub fn load_success_message() -> String {
+    "Load complete. Recap restored for the active run.".to_string()
+}
+
+pub fn load_error_message(error: LoadGameError) -> String {
+    match error {
+        LoadGameError::MissingSave => {
+            "Load failed: no save file was found for this run.".to_string()
+        }
+        LoadGameError::InvalidData => {
+            "Load failed: the save data could not be read safely.".to_string()
+        }
+    }
 }
 
 /// Queue a loaded save for future state restoration.
@@ -1087,6 +1154,7 @@ pub fn autosave(
 pub fn handle_save_and_quit(
     request: Option<ResMut<SaveAndQuitRequested>>,
     mut next_state: ResMut<NextState<AppState>>,
+    log: Option<ResMut<GameLog>>,
     app_state: Option<Res<State<AppState>>>,
     player_q: Query<
         (
@@ -1226,6 +1294,14 @@ pub fn handle_save_and_quit(
 
     save.sync_derived_fields();
     if write_save(&save) {
+        let turn = time.as_ref().map_or(0, |time| time.turn);
+        if let Some(mut log) = log {
+            log.push(
+                "Save complete. Progress saved; returning to menu.",
+                crate::core::gamelog::LogColor::Status,
+                turn,
+            );
+        }
         next_state.set(AppState::Menu);
     }
 }
@@ -1340,9 +1416,13 @@ mod tests {
 
     #[test]
     fn test_normalize_loaded_infers_missing_player_progression() {
-        let mut save = SaveGame::default();
-        save.player = sample_player_state();
-        save.player.progression = PlayerProgression::default();
+        let save = SaveGame {
+            player: SavePlayerState {
+                progression: PlayerProgression::default(),
+                ..sample_player_state()
+            },
+            ..Default::default()
+        };
 
         let loaded = save.normalize_loaded();
 
@@ -1365,9 +1445,13 @@ mod tests {
 
     #[test]
     fn test_normalize_loaded_syncs_pilot_skill_proxies_from_progression() {
-        let mut save = SaveGame::default();
-        save.player = sample_player_state();
-        save.player.progression = PlayerProgression::new_game();
+        let mut save = SaveGame {
+            player: SavePlayerState {
+                progression: PlayerProgression::new_game(),
+                ..sample_player_state()
+            },
+            ..Default::default()
+        };
         save.player.stats.skills.insert(
             SkillId::Melee,
             SkillState {
@@ -1397,27 +1481,21 @@ mod tests {
 
         assert_eq!(
             loaded.player.stats.skills[&SkillId::Melee].effective(),
-            loaded
-                .player
-                .progression
-                .action_rating(
-                    crate::core::stats::VirtueId::Thumos,
-                    crate::core::stats::ProficiencyId::MeleeTraining,
-                    0,
-                    0,
-                ) as u32
+            loaded.player.progression.action_rating(
+                crate::core::stats::VirtueId::Thumos,
+                crate::core::stats::ProficiencyId::MeleeTraining,
+                0,
+                0,
+            ) as u32
         );
         assert_eq!(
             loaded.player.stats.skills[&SkillId::Ranged].effective(),
-            loaded
-                .player
-                .progression
-                .action_rating(
-                    crate::core::stats::VirtueId::Prudence,
-                    crate::core::stats::ProficiencyId::RangedTraining,
-                    0,
-                    0,
-                ) as u32
+            loaded.player.progression.action_rating(
+                crate::core::stats::VirtueId::Prudence,
+                crate::core::stats::ProficiencyId::RangedTraining,
+                0,
+                0,
+            ) as u32
         );
         assert_eq!(
             loaded.player.stats.skills[&SkillId::Evasion].effective(),

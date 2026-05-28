@@ -7,7 +7,7 @@ use crate::core::components::{Player, Position, Viewshed};
 use crate::core::inventory::{Equipment, Inventory, RangedWeaponState};
 use crate::core::perks::PlayerPerks;
 use crate::core::sanity::RaidExposure;
-use crate::core::stats::{CombatStats, EntityName, PlayerProgression, SkillId, SkillState};
+use crate::core::stats::{CombatStats, EntityName, PlayerProgression};
 use crate::core::status::StatusEffects;
 use crate::core::turn::ActionBudget;
 use bevy::prelude::*;
@@ -84,7 +84,7 @@ impl PlayerBundle {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::stats::{ProficiencyId, VirtueId};
+    use crate::core::stats::{ProficiencyId, SkillId, VirtueId};
 
     #[test]
     fn test_player_bundle_new_does_not_insert_retired_skill_proxies() {
@@ -116,10 +116,12 @@ mod tests {
         );
         assert_eq!(
             bundle.stats.skill_level(SkillId::Ranged),
-            bundle
-                .progression
-                .action_rating(VirtueId::Prudence, ProficiencyId::RangedTraining, 0, 0)
-                as u32
+            bundle.progression.action_rating(
+                VirtueId::Prudence,
+                ProficiencyId::RangedTraining,
+                0,
+                0
+            ) as u32
         );
         assert_eq!(
             bundle.stats.skill_level(SkillId::Evasion),

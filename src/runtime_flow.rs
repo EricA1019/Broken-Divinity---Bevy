@@ -59,7 +59,9 @@ impl RuntimeFlow {
     }
 
     pub fn from_snapshot(snapshot: FlowSnapshot) -> Self {
-        Self { node: snapshot.node }
+        Self {
+            node: snapshot.node,
+        }
     }
 }
 

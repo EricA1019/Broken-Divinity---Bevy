@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments, clippy::type_complexity)]
+
 //! Colony UI — resource bar and survivor management panel.
 
 use bevy::prelude::*;
@@ -121,8 +123,7 @@ pub fn draw_resource_bar(
     }
     let readability = colony_readability_snapshot();
     debug_assert!(
-        readability.urgency_banner_contrast_ratio
-            >= readability.minimum_banner_contrast_ratio,
+        readability.urgency_banner_contrast_ratio >= readability.minimum_banner_contrast_ratio,
         "Colony urgency banner readability baseline violated"
     );
     let Ok(ctx) = contexts.ctx_mut() else { return };
@@ -200,7 +201,9 @@ pub fn draw_resource_bar(
                         primary_response.on_hover_text(hover_detail);
                     }
                     if let Some(inline_detail) = presentation.inline_detail {
-                        ui.label(egui::RichText::new(inline_detail).color(rgb(OBJECTIVE_INDICATOR_RGB)));
+                        ui.label(
+                            egui::RichText::new(inline_detail).color(rgb(OBJECTIVE_INDICATOR_RGB)),
+                        );
                     }
                 }
 
@@ -225,7 +228,7 @@ pub fn process_colony_action(
     mut resources: ResMut<ShelterResources>,
     mut log: ResMut<GameLog>,
     time: Res<GameTime>,
-    mut research: ResMut<CompletedResearch>,
+    research: Option<ResMut<CompletedResearch>>,
     map: Option<Res<MapTiles>>,
     players: Query<&Position, With<Player>>,
 ) {
@@ -354,6 +357,19 @@ pub fn process_colony_action(
             );
         }
         ColonyUiChoice::StartResearch(project) => {
+            let Some(mut research) = research else {
+                log.push(
+                    blocked_action_message(
+                        "Start Research",
+                        "Research state is unavailable",
+                        "Initialize colony research systems and retry",
+                    ),
+                    LogColor::Status,
+                    time.turn,
+                );
+                return;
+            };
+
             if research.active.is_some() {
                 log.push(
                     blocked_action_message(
@@ -575,10 +591,7 @@ pub fn draw_research_panel(
                     continue;
                 }
 
-                if research
-                    .active
-                    .is_some_and(|(active, _)| active == project)
-                {
+                if research.active.is_some_and(|(active, _)| active == project) {
                     continue; // Shown in progress bar above
                 }
 
@@ -774,10 +787,18 @@ mod tests {
         };
 
         let warnings = collect_resource_warnings(&resources);
-        let labels: Vec<_> = warnings.iter().map(|warning| warning.label.as_str()).collect();
+        let labels: Vec<_> = warnings
+            .iter()
+            .map(|warning| warning.label.as_str())
+            .collect();
         assert_eq!(
             labels,
-            vec!["Food LOW", "Water CRITICAL", "Medicine LOW", "Ammo CRITICAL"]
+            vec![
+                "Food LOW",
+                "Water CRITICAL",
+                "Medicine LOW",
+                "Ammo CRITICAL"
+            ]
         );
     }
 }

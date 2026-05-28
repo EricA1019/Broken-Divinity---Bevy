@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments, clippy::type_complexity)]
+
 //! Dungeon spawn system.
 //!
 //! On entering `AppState::Dungeon`: generate floor, spawn tilemap, spawn player at entry,
@@ -5,8 +7,8 @@
 
 use bevy::prelude::*;
 use bevy_ecs_tilemap::prelude::*;
-use rand::SeedableRng;
 use rand::RngExt;
+use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
 
 use crate::core::components::{Enemy, Player, Position, TileKind};
@@ -262,18 +264,14 @@ pub fn setup_dungeon(
         .or_else(|| pending_dungeon_state.map(|state| state.seed))
         .or_else(|| world_seed.map(|seed| seed.0))
         .unwrap_or(42u64);
-    let floor_number = loaded_save
-        .as_ref()
-        .map_or_else(
-            || pending_dungeon_state.map_or(1u32, |state| state.floor_number.max(1)),
-            |save| save.dungeon.floor_number.max(1),
-        );
-    let max_floors = loaded_save
-        .as_ref()
-        .map_or_else(
-            || pending_dungeon_state.map_or(5u32, |state| state.max_floors.max(floor_number)),
-            |save| save.dungeon.max_floors.max(floor_number),
-        );
+    let floor_number = loaded_save.as_ref().map_or_else(
+        || pending_dungeon_state.map_or(1u32, |state| state.floor_number.max(1)),
+        |save| save.dungeon.floor_number.max(1),
+    );
+    let max_floors = loaded_save.as_ref().map_or_else(
+        || pending_dungeon_state.map_or(5u32, |state| state.max_floors.max(floor_number)),
+        |save| save.dungeon.max_floors.max(floor_number),
+    );
     let theme = loaded_save
         .as_ref()
         .and_then(|save| save.dungeon.theme)
@@ -320,12 +318,18 @@ pub fn setup_dungeon(
     // Spawn player — validate spawn point is walkable
     let (px, py, spawn_adjusted) = floor.validated_spawn_point();
     if spawn_adjusted {
-        warn!("Spawn point {:?} was invalid, adjusted to ({}, {})", floor.spawn_point, px, py);
+        warn!(
+            "Spawn point {:?} was invalid, adjusted to ({}, {})",
+            floor.spawn_point, px, py
+        );
         log.push("Warning: spawn point adjusted", LogColor::System, 0);
     }
     if let Some(save) = loaded_save.as_ref() {
         save::spawn_player_from_save(&mut commands, &save.player);
-    } else if let Some(snapshot) = player_snapshot.as_ref().and_then(|snapshot| snapshot.0.clone()) {
+    } else if let Some(snapshot) = player_snapshot
+        .as_ref()
+        .and_then(|snapshot| snapshot.0.clone())
+    {
         save::spawn_player_from_save_at(&mut commands, &snapshot, Some((px, py)));
         // Consume snapshot so it's not reused on unexpected re-entry
         commands.insert_resource(save::PlayerSnapshot::default());
@@ -359,6 +363,7 @@ pub fn handle_stairs(
             &RangedWeaponState,
             &RaidExposure,
             &PlayerPerks,
+            &crate::core::stats::PlayerProgression,
             Option<&EntityName>,
             &crate::core::abilities::SprintCooldown,
         ),
@@ -380,8 +385,22 @@ pub fn handle_stairs(
     mut next_app_state: ResMut<NextState<crate::core::state::AppState>>,
     gabriel_state: Res<GabrielState>,
 ) {
-    let Some(dungeon_state) = dungeon_state else { return };
-    let Ok((pos, stats, inventory, equipment, ranged_state, sanity, perks, name, sprint_cd)) = player_q.single() else {
+    let Some(dungeon_state) = dungeon_state else {
+        return;
+    };
+    let Ok((
+        pos,
+        stats,
+        inventory,
+        equipment,
+        ranged_state,
+        sanity,
+        perks,
+        progression,
+        name,
+        sprint_cd,
+    )) = player_q.single()
+    else {
         return;
     };
 
@@ -399,7 +418,11 @@ pub fn handle_stairs(
     match tile {
         Some(TileKind::StairsDown) => {
             if dungeon_state.floor_number >= dungeon_state.max_floors {
-                log.push("These stairs lead nowhere — this is the deepest floor.", crate::core::gamelog::LogColor::System, time.turn);
+                log.push(
+                    "These stairs lead nowhere — this is the deepest floor.",
+                    crate::core::gamelog::LogColor::System,
+                    time.turn,
+                );
                 return;
             }
 
@@ -407,19 +430,32 @@ pub fn handle_stairs(
             let new_theme = dungeon_state.theme;
             let new_seed = dungeon_state.seed.wrapping_add(new_floor as u64 * 1000);
             let floor_data = bsp::generate_floor(80, 60, new_seed);
-            let story_room = if gabriel_state.should_stage_intro(new_floor, dungeon_state.story_tag) {
+            let story_room = if gabriel_state.should_stage_intro(new_floor, dungeon_state.story_tag)
+            {
                 gabriel::select_intro_room(&floor_data)
             } else {
                 None
             };
 
             // Despawn current floor entities (NOT the player)
-            for e in tilemaps.iter() { commands.entity(e).despawn(); }
-            for e in enemies_q.iter() { commands.entity(e).despawn(); }
-            for e in gabriel_q.iter() { commands.entity(e).despawn(); }
-            for e in items_q.iter() { commands.entity(e).despawn(); }
-            for e in anomalies_q.iter() { commands.entity(e).despawn(); }
-            for e in hazards_q.iter() { commands.entity(e).despawn(); }
+            for e in tilemaps.iter() {
+                commands.entity(e).despawn();
+            }
+            for e in enemies_q.iter() {
+                commands.entity(e).despawn();
+            }
+            for e in gabriel_q.iter() {
+                commands.entity(e).despawn();
+            }
+            for e in items_q.iter() {
+                commands.entity(e).despawn();
+            }
+            for e in anomalies_q.iter() {
+                commands.entity(e).despawn();
+            }
+            for e in hazards_q.iter() {
+                commands.entity(e).despawn();
+            }
             commands.remove_resource::<MapTiles>();
 
             commands.insert_resource(DungeonState {
@@ -477,10 +513,15 @@ pub fn handle_stairs(
                     ranged_state,
                     sanity,
                     perks,
+                    progression,
                     name,
                     sprint_cd.remaining,
                 ))));
-                log.push("You climb back to the surface.", crate::core::gamelog::LogColor::System, time.turn);
+                log.push(
+                    "You climb back to the surface.",
+                    crate::core::gamelog::LogColor::System,
+                    time.turn,
+                );
                 next_app_state.set(crate::core::state::AppState::Overworld);
                 return;
             }
@@ -489,18 +530,31 @@ pub fn handle_stairs(
             let new_theme = dungeon_state.theme;
             let new_seed = dungeon_state.seed.wrapping_add(new_floor as u64 * 1000);
             let floor_data = bsp::generate_floor(80, 60, new_seed);
-            let story_room = if gabriel_state.should_stage_intro(new_floor, dungeon_state.story_tag) {
+            let story_room = if gabriel_state.should_stage_intro(new_floor, dungeon_state.story_tag)
+            {
                 gabriel::select_intro_room(&floor_data)
             } else {
                 None
             };
 
-            for e in tilemaps.iter() { commands.entity(e).despawn(); }
-            for e in enemies_q.iter() { commands.entity(e).despawn(); }
-            for e in gabriel_q.iter() { commands.entity(e).despawn(); }
-            for e in items_q.iter() { commands.entity(e).despawn(); }
-            for e in anomalies_q.iter() { commands.entity(e).despawn(); }
-            for e in hazards_q.iter() { commands.entity(e).despawn(); }
+            for e in tilemaps.iter() {
+                commands.entity(e).despawn();
+            }
+            for e in enemies_q.iter() {
+                commands.entity(e).despawn();
+            }
+            for e in gabriel_q.iter() {
+                commands.entity(e).despawn();
+            }
+            for e in items_q.iter() {
+                commands.entity(e).despawn();
+            }
+            for e in anomalies_q.iter() {
+                commands.entity(e).despawn();
+            }
+            for e in hazards_q.iter() {
+                commands.entity(e).despawn();
+            }
             commands.remove_resource::<MapTiles>();
 
             commands.insert_resource(DungeonState {
