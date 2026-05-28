@@ -16,4 +16,5 @@ pub mod ux_colony_prototype;
 pub mod ux_dungeon_map_prototypes;
 pub mod ux_dungeon_style_prototype;
 pub mod ux_style_contract;
+pub mod ux_unified_prototype;
 pub mod ux_prototypes;

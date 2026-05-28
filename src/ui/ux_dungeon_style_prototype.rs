@@ -35,13 +35,13 @@ const DUNGEON: [&str; 16] = [
 ];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ProtoScreen {
+pub(crate) enum ProtoScreen {
     MainMenu,
     Dungeon,
 }
 
 impl ProtoScreen {
-    fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> &'static str {
         match self {
             Self::MainMenu => "Main Menu",
             Self::Dungeon => "Dungeon",
@@ -50,11 +50,11 @@ impl ProtoScreen {
 }
 
 #[derive(Resource)]
-struct DungeonStyleState {
-    screen: ProtoScreen,
-    elapsed: f32,
-    player_x: i32,
-    player_y: i32,
+pub(crate) struct DungeonStyleState {
+    pub(crate) screen: ProtoScreen,
+    pub(crate) elapsed: f32,
+    pub(crate) player_x: i32,
+    pub(crate) player_y: i32,
 }
 
 pub struct DungeonStylePrototypePlugin;
@@ -153,7 +153,7 @@ fn draw_dungeon_style_prototype(mut contexts: EguiContexts, state: Res<DungeonSt
         });
 }
 
-fn draw_main_menu(ui: &mut egui::Ui, s: &VariantStyle, palette: &DungeonPalette) {
+pub(crate) fn draw_main_menu(ui: &mut egui::Ui, s: &VariantStyle, palette: &DungeonPalette) {
     draw_border(ui, palette, " Main Menu :: Locked Direction ");
 
     ui.add_space(8.0 * s.spacing);
@@ -184,7 +184,7 @@ fn draw_main_menu(ui: &mut egui::Ui, s: &VariantStyle, palette: &DungeonPalette)
     ));
 }
 
-fn draw_dungeon(
+pub(crate) fn draw_dungeon(
     ui: &mut egui::Ui,
     s: &VariantStyle,
     palette: &DungeonPalette,
@@ -209,7 +209,7 @@ fn draw_dungeon(
     }
 }
 
-fn draw_legend(ui: &mut egui::Ui, s: &VariantStyle, palette: &DungeonPalette) {
+pub(crate) fn draw_legend(ui: &mut egui::Ui, s: &VariantStyle, palette: &DungeonPalette) {
     draw_border(ui, palette, " Legend ");
     ui.label(styled(s, "# wall", s.body_size, palette.wall));
     ui.label(styled(s, ". floor", s.body_size, palette.floor));
@@ -226,7 +226,7 @@ fn draw_legend(ui: &mut egui::Ui, s: &VariantStyle, palette: &DungeonPalette) {
     ));
 }
 
-fn draw_border(ui: &mut egui::Ui, palette: &DungeonPalette, label: &str) {
+pub(crate) fn draw_border(ui: &mut egui::Ui, palette: &DungeonPalette, label: &str) {
     let line = format!("{} {} {}", "=".repeat(18), label, "=".repeat(18));
     ui.label(
         egui::RichText::new(line)
@@ -236,7 +236,7 @@ fn draw_border(ui: &mut egui::Ui, palette: &DungeonPalette, label: &str) {
     );
 }
 
-fn styled(style: &VariantStyle, text: &str, size: f32, color: egui::Color32) -> egui::RichText {
+pub(crate) fn styled(style: &VariantStyle, text: &str, size: f32, color: egui::Color32) -> egui::RichText {
     let mut rt = egui::RichText::new(text).size(size).color(color);
     if style.mono_all {
         rt = rt.monospace();
@@ -272,7 +272,7 @@ fn draw_backdrop(ui: &mut egui::Ui, palette: &DungeonPalette, t: f32) {
     painter.circle_filled(rect.center(), 26.0, orb_color);
 }
 
-fn base_colorize(ch: char, p: &DungeonPalette) -> (char, egui::Color32) {
+pub(crate) fn base_colorize(ch: char, p: &DungeonPalette) -> (char, egui::Color32) {
     match ch {
         '#' => (ch, p.wall),
         '.' => (ch, p.floor),
@@ -286,7 +286,7 @@ fn base_colorize(ch: char, p: &DungeonPalette) -> (char, egui::Color32) {
     }
 }
 
-fn pattern_glyph(
+pub(crate) fn pattern_glyph(
     state: &DungeonStyleState,
     ch: char,
     x: i32,
@@ -317,29 +317,29 @@ fn pattern_glyph(
     (echo, palette.ui_grid.gamma_multiply(0.9))
 }
 
-fn is_visible(state: &DungeonStyleState, x: i32, y: i32) -> bool {
+pub(crate) fn is_visible(state: &DungeonStyleState, x: i32, y: i32) -> bool {
     let dx = x - state.player_x;
     let dy = y - state.player_y;
     let dist2 = dx * dx + dy * dy;
     dist2 <= 64
 }
 
-struct DungeonPalette {
-    background: egui::Color32,
-    wall: egui::Color32,
-    floor: egui::Color32,
-    enemy: egui::Color32,
-    hazard: egui::Color32,
-    trap: egui::Color32,
-    objective: egui::Color32,
-    exit: egui::Color32,
-    player: egui::Color32,
-    ui_subtle: egui::Color32,
-    ui_accent: egui::Color32,
-    ui_grid: egui::Color32,
+pub(crate) struct DungeonPalette {
+    pub(crate) background: egui::Color32,
+    pub(crate) wall: egui::Color32,
+    pub(crate) floor: egui::Color32,
+    pub(crate) enemy: egui::Color32,
+    pub(crate) hazard: egui::Color32,
+    pub(crate) trap: egui::Color32,
+    pub(crate) objective: egui::Color32,
+    pub(crate) exit: egui::Color32,
+    pub(crate) player: egui::Color32,
+    pub(crate) ui_subtle: egui::Color32,
+    pub(crate) ui_accent: egui::Color32,
+    pub(crate) ui_grid: egui::Color32,
 }
 
-fn ember_palette() -> DungeonPalette {
+pub(crate) fn ember_palette() -> DungeonPalette {
     DungeonPalette {
         background: egui::Color32::from_rgb(14, 4, 5),
         wall: egui::Color32::from_rgb(147, 74, 63),
@@ -356,7 +356,7 @@ fn ember_palette() -> DungeonPalette {
     }
 }
 
-fn tile_at(x: i32, y: i32) -> char {
+pub(crate) fn tile_at(x: i32, y: i32) -> char {
     if x < 0 || y < 0 {
         return '#';
     }
@@ -368,6 +368,6 @@ fn tile_at(x: i32, y: i32) -> char {
     DUNGEON[uy].chars().nth(ux).unwrap_or('#')
 }
 
-fn is_walkable(x: i32, y: i32) -> bool {
+pub(crate) fn is_walkable(x: i32, y: i32) -> bool {
     !matches!(tile_at(x, y), '#')
 }

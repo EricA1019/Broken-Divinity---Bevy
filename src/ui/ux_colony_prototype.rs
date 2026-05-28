@@ -13,7 +13,7 @@ use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
 use super::ux_style_contract::{style_for, VariantStyle};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum ColonyLayout {
+pub(crate) enum ColonyLayout {
     SettlementView,
     WorkPriorities,
     DistrictOps,
@@ -23,7 +23,7 @@ enum ColonyLayout {
 }
 
 impl ColonyLayout {
-    fn label(self) -> &'static str {
+    pub(crate) fn label(self) -> &'static str {
         match self {
             Self::SettlementView => "Settlement View",
             Self::WorkPriorities => "Work Priorities",
@@ -150,10 +150,10 @@ const COLONISTS: [Colonist; 7] = [
 ];
 
 #[derive(Resource)]
-struct ColonyProtoState {
-    layout: ColonyLayout,
-    selected_building: usize,
-    elapsed: f32,
+pub(crate) struct ColonyProtoState {
+    pub(crate) layout: ColonyLayout,
+    pub(crate) selected_building: usize,
+    pub(crate) elapsed: f32,
 }
 
 pub struct ColonyPrototypePlugin;
@@ -247,7 +247,7 @@ fn draw_colony_prototype(mut contexts: EguiContexts, state: Res<ColonyProtoState
         });
 }
 
-fn draw_settlement_view(ui: &mut egui::Ui, s: &VariantStyle, state: &ColonyProtoState) {
+pub(crate) fn draw_settlement_view(ui: &mut egui::Ui, s: &VariantStyle, state: &ColonyProtoState) {
     draw_section(ui, s, " Approach A: Map-first settlement (RimWorld-inspired) ");
 
     ui.columns(2, |cols| {
@@ -311,7 +311,7 @@ fn draw_settlement_view(ui: &mut egui::Ui, s: &VariantStyle, state: &ColonyProto
     });
 }
 
-fn draw_work_priorities(ui: &mut egui::Ui, s: &VariantStyle, state: &ColonyProtoState) {
+pub(crate) fn draw_work_priorities(ui: &mut egui::Ui, s: &VariantStyle, state: &ColonyProtoState) {
     draw_section(ui, s, " Approach B: Job priority matrix (Song of Syx-like macro control) ");
 
     let selected = BUILDINGS[state.selected_building].id;
@@ -341,7 +341,7 @@ fn draw_work_priorities(ui: &mut egui::Ui, s: &VariantStyle, state: &ColonyProto
     ));
 }
 
-fn draw_district_ops(ui: &mut egui::Ui, s: &VariantStyle, state: &ColonyProtoState) {
+pub(crate) fn draw_district_ops(ui: &mut egui::Ui, s: &VariantStyle, state: &ColonyProtoState) {
     draw_section(ui, s, " Approach C: District + throughput overlay (macro readability) ");
 
     let target = BUILDINGS[state.selected_building];
@@ -387,7 +387,7 @@ fn draw_district_ops(ui: &mut egui::Ui, s: &VariantStyle, state: &ColonyProtoSta
     });
 }
 
-fn draw_selection_mode(ui: &mut egui::Ui, s: &VariantStyle, state: &ColonyProtoState) {
+pub(crate) fn draw_selection_mode(ui: &mut egui::Ui, s: &VariantStyle, state: &ColonyProtoState) {
     draw_section(ui, s, " Approach D: Selection-gizmo flow (object commands first) ");
     let b = BUILDINGS[state.selected_building];
 
@@ -440,7 +440,7 @@ fn draw_selection_mode(ui: &mut egui::Ui, s: &VariantStyle, state: &ColonyProtoS
     });
 }
 
-fn draw_build_mode(ui: &mut egui::Ui, s: &VariantStyle, state: &ColonyProtoState) {
+pub(crate) fn draw_build_mode(ui: &mut egui::Ui, s: &VariantStyle, state: &ColonyProtoState) {
     draw_section(ui, s, " Approach E: Build mode with room designation from placed stations ");
 
     let station = BUILDINGS[state.selected_building];
@@ -575,7 +575,7 @@ fn draw_sparkline(
     }
 }
 
-fn draw_command_center(ui: &mut egui::Ui, s: &VariantStyle, state: &ColonyProtoState) {
+pub(crate) fn draw_command_center(ui: &mut egui::Ui, s: &VariantStyle, state: &ColonyProtoState) {
     let t = state.elapsed;
 
     // ── Row 1: Trend sparklines ─────────────────────────────────────────────
@@ -695,7 +695,7 @@ fn draw_command_center(ui: &mut egui::Ui, s: &VariantStyle, state: &ColonyProtoS
     });
 }
 
-fn draw_bottom_command_bar(ui: &mut egui::Ui, s: &VariantStyle) {
+pub(crate) fn draw_bottom_command_bar(ui: &mut egui::Ui, s: &VariantStyle) {
     draw_section(ui, s, " Command Bar ");
     ui.horizontal(|ui| {
         for cmd in [
@@ -714,7 +714,7 @@ fn draw_bottom_command_bar(ui: &mut egui::Ui, s: &VariantStyle) {
     });
 }
 
-fn draw_backdrop(ui: &mut egui::Ui, s: &VariantStyle, t: f32) {
+pub(crate) fn draw_backdrop(ui: &mut egui::Ui, s: &VariantStyle, t: f32) {
     let rect = ui.max_rect();
     let painter = ui.painter();
 
@@ -737,7 +737,7 @@ fn draw_backdrop(ui: &mut egui::Ui, s: &VariantStyle, t: f32) {
     painter.circle_filled(rect.center(), 24.0, s.accent_color.gamma_multiply(0.08 + pulse * 0.08));
 }
 
-fn status_color(s: &VariantStyle, status: &str) -> egui::Color32 {
+pub(crate) fn status_color(s: &VariantStyle, status: &str) -> egui::Color32 {
     match status {
         "Peak" => s.warn_color,
         "Busy" => s.info_color,
@@ -747,12 +747,12 @@ fn status_color(s: &VariantStyle, status: &str) -> egui::Color32 {
     }
 }
 
-fn draw_section(ui: &mut egui::Ui, s: &VariantStyle, label: &str) {
+pub(crate) fn draw_section(ui: &mut egui::Ui, s: &VariantStyle, label: &str) {
     let line = format!("{} {} {}", "─".repeat(12), label, "─".repeat(12));
     ui.label(styled(s, &line, s.small_size, s.accent_color));
 }
 
-fn styled(style: &VariantStyle, text: &str, size: f32, color: egui::Color32) -> egui::RichText {
+pub(crate) fn styled(style: &VariantStyle, text: &str, size: f32, color: egui::Color32) -> egui::RichText {
     let mut rt = egui::RichText::new(text).size(size).color(color);
     if style.mono_all {
         rt = rt.monospace();
