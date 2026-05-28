@@ -12,6 +12,7 @@ pub mod objective_prompt;
 pub mod overworld_panel;
 pub mod perk_choice_panel;
 pub mod readability;
+pub mod ux_colony_prototype;
 pub mod ux_dungeon_map_prototypes;
 pub mod ux_dungeon_style_prototype;
 pub mod ux_style_contract;
