@@ -20,9 +20,21 @@ use bevy_egui::{egui, EguiContexts, EguiPrimaryContextPass};
 
 use super::ux_colony_prototype as col;
 use super::ux_dungeon_style_prototype as dng;
+use super::unified_action_language::UnifiedActionLanguage;
+use super::unified_character_beats::UnifiedCharacterBeatState;
+use super::unified_thematic_copy::UnifiedThematicCopyCatalog;
+use super::input_hints::{
+    UNIFIED_CONTROL_CLUSTER_HINT_TEXT, UNIFIED_SCREEN_SWITCH_HINT_TEXT,
+};
 use super::ux_inventory_equipment_prototype as inv;
 use super::ux_overworld_prototype as ow;
 use super::ux_style_contract::style_for;
+use super::unified_continuity::{UnifiedContinuityScreen, UnifiedContinuityState};
+
+const HEADER_FONT_SIZE: f32 = 11.0;
+const CONTINUITY_CUE_LABEL: &str = "continuity cue";
+const CHARACTER_BEAT_LABEL: &str = "character beat";
+const THEMATIC_CUE_LABEL: &str = "thematic cue";
 
 // ── unified screen enum ──────────────────────────────────────────────────────
 
@@ -36,19 +48,6 @@ enum UnifiedScreen {
     InventoryEquipment,
 }
 
-impl UnifiedScreen {
-    fn label(self, state: &UnifiedState) -> String {
-        match self {
-            Self::MainMenu => "Main Menu".into(),
-            Self::Dungeon => "Dungeon (Echo Grid)".into(),
-            Self::Colony => format!("Colony [{}]", state.colony_layout.label()),
-            Self::Overworld => "Overworld (Mission Board)".into(),
-            Self::Dossier => format!("Dossier [{}]", state.dossier_tab.label()),
-            Self::InventoryEquipment => "Inventory + Equipment".into(),
-        }
-    }
-}
-
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DossierTab {
     Summary,
@@ -56,18 +55,6 @@ enum DossierTab {
     Proficiencies,
     Perks,
     Kleos,
-}
-
-impl DossierTab {
-    fn label(self) -> &'static str {
-        match self {
-            Self::Summary => "Summary",
-            Self::Virtues => "Virtues",
-            Self::Proficiencies => "Proficiencies",
-            Self::Perks => "Perks",
-            Self::Kleos => "Kleos",
-        }
-    }
 }
 
 // ── unified state resource ───────────────────────────────────────────────────
@@ -107,6 +94,8 @@ impl Plugin for UnifiedPrototypePlugin {
             dossier_tab: DossierTab::Summary,
             inventory_state: inv::inventory_seed_state(),
         })
+        .insert_resource(UnifiedContinuityState::default())
+        .insert_resource(UnifiedCharacterBeatState::default())
         .add_systems(Startup, setup_camera)
         .add_systems(Update, (tick, handle_input))
         .add_systems(EguiPrimaryContextPass, draw_unified_prototype);
@@ -126,8 +115,11 @@ fn tick(time: Res<Time>, mut state: ResMut<UnifiedState>) {
 fn handle_input(
     keys: Res<ButtonInput<KeyCode>>,
     mut state: ResMut<UnifiedState>,
+    mut continuity: ResMut<UnifiedContinuityState>,
+    mut character_beats: ResMut<UnifiedCharacterBeatState>,
     mut exit: MessageWriter<AppExit>,
 ) {
+    let previous_screen = state.screen;
     if keys.just_pressed(KeyCode::Escape) {
         exit.write(AppExit::Success);
         return;
@@ -242,11 +234,32 @@ fn handle_input(
             }
         }
     }
+
+    let current_screen = continuity_screen_for(state.screen);
+    let previous_continuity_screen = continuity_screen_for(previous_screen);
+    continuity.update(current_screen);
+    character_beats.on_transition(previous_continuity_screen, current_screen);
+}
+
+fn continuity_screen_for(screen: UnifiedScreen) -> UnifiedContinuityScreen {
+    match screen {
+        UnifiedScreen::MainMenu => UnifiedContinuityScreen::MainMenu,
+        UnifiedScreen::Dungeon => UnifiedContinuityScreen::Dungeon,
+        UnifiedScreen::Colony => UnifiedContinuityScreen::Colony,
+        UnifiedScreen::Overworld => UnifiedContinuityScreen::Overworld,
+        UnifiedScreen::Dossier => UnifiedContinuityScreen::Dossier,
+        UnifiedScreen::InventoryEquipment => UnifiedContinuityScreen::InventoryEquipment,
+    }
 }
 
 // ── main draw dispatch ───────────────────────────────────────────────────────
 
-fn draw_unified_prototype(mut contexts: EguiContexts, mut state: ResMut<UnifiedState>) {
+fn draw_unified_prototype(
+    mut contexts: EguiContexts,
+    mut state: ResMut<UnifiedState>,
+    continuity: Res<UnifiedContinuityState>,
+    character_beats: Res<UnifiedCharacterBeatState>,
+) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
     let s = style_for();
     let palette = dng::ember_palette();
@@ -276,11 +289,45 @@ fn draw_unified_prototype(mut contexts: EguiContexts, mut state: ResMut<UnifiedS
             };
             ui.label(
                 egui::RichText::new(format!(
-                    " Unified UX Proto  |  Screen [{}]  |  M main-menu  D dungeon  C colony  O overworld  P dossier  I inventory  1-6 tabs/layouts  Tab/R/WASD  Esc quit",
-                    state.screen.label(&state)
+                    " Unified UX Proto | Screen [{}] | {} | {}",
+                    UnifiedActionLanguage::current_context_for(continuity_screen_for(state.screen)),
+                    UNIFIED_SCREEN_SWITCH_HINT_TEXT,
+                    UNIFIED_CONTROL_CLUSTER_HINT_TEXT,
                 ))
                 .monospace()
-                .size(11.0)
+                .size(HEADER_FONT_SIZE)
+                .color(header_color),
+            );
+            ui.label(
+                egui::RichText::new(format!(
+                    " {CONTINUITY_CUE_LABEL} | now: {} | from: {} | next: {}",
+                    continuity.current_context(),
+                    continuity.previous_context(),
+                    continuity.next_action(),
+                ))
+                .monospace()
+                .size(HEADER_FONT_SIZE)
+                .color(header_color),
+            );
+            if let Some(active_beat) = character_beats.active_character_beat() {
+                ui.label(
+                    egui::RichText::new(format!(
+                        " {CHARACTER_BEAT_LABEL} | {active_beat}",
+                    ))
+                    .monospace()
+                    .size(HEADER_FONT_SIZE)
+                    .color(header_color),
+                );
+            }
+            let thematic_line = UnifiedThematicCopyCatalog::line_for_screen(continuity_screen_for(
+                state.screen,
+            ));
+            ui.label(
+                egui::RichText::new(format!(
+                    " {THEMATIC_CUE_LABEL} | {thematic_line}",
+                ))
+                .monospace()
+                .size(HEADER_FONT_SIZE)
                 .color(header_color),
             );
             ui.separator();

@@ -27,6 +27,14 @@ pub mod ux_inventory_equipment_prototype;
 pub mod ux_overworld_prototype;
 pub mod ux_style_contract;
 #[cfg(feature = "ux-prototypes")]
+pub mod unified_continuity;
+#[cfg(feature = "ux-prototypes")]
+pub mod unified_character_beats;
+#[cfg(feature = "ux-prototypes")]
+pub mod unified_thematic_copy;
+#[cfg(feature = "ux-prototypes")]
+pub mod unified_action_language;
+#[cfg(feature = "ux-prototypes")]
 pub mod ux_unified_prototype;
 #[cfg(feature = "ux-prototypes")]
 pub mod ux_prototypes;

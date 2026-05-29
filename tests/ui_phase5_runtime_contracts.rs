@@ -49,6 +49,25 @@ const MENU_SHORTCUT_HINT_DECLARATION: &str = "pub const MENU_SHORTCUT_HINT_TEXT:
 const SAVE_AND_QUIT_LABEL_DECLARATION: &str = "pub const SAVE_AND_QUIT_LABEL: &str";
 const SAVE_AND_QUIT_HINT_DECLARATION: &str = "pub const SAVE_AND_QUIT_HINT_TEXT: &str";
 const JOURNAL_TOGGLE_HINT_DECLARATION: &str = "pub const JOURNAL_TOGGLE_HINT_TEXT: &str";
+const UNIFIED_CONTINUITY_MODULE_DECLARATION: &str =
+    "pub mod unified_continuity;";
+const UNIFIED_CONTINUITY_RESOURCE_MARKER: &str = "UnifiedContinuityState";
+const UNIFIED_CONTINUITY_CUE_MARKER: &str = "continuity cue";
+const UNIFIED_SCREEN_SWITCH_HINT_DECLARATION: &str =
+    "pub const UNIFIED_SCREEN_SWITCH_HINT_TEXT: &str";
+const UNIFIED_CONTROL_CLUSTER_HINT_DECLARATION: &str =
+    "pub const UNIFIED_CONTROL_CLUSTER_HINT_TEXT: &str";
+const UNIFIED_CHARACTER_BEATS_MODULE_DECLARATION: &str =
+    "pub mod unified_character_beats;";
+const UNIFIED_CHARACTER_BEAT_STATE_MARKER: &str = "UnifiedCharacterBeatState";
+const UNIFIED_CHARACTER_BEAT_FN_MARKER: &str = "active_character_beat";
+const UNIFIED_THEMATIC_COPY_MODULE_DECLARATION: &str =
+    "pub mod unified_thematic_copy;";
+const UNIFIED_THEMATIC_COPY_RESOURCE_MARKER: &str = "UnifiedThematicCopyCatalog";
+const UNIFIED_THEMATIC_LINE_MARKER: &str = "thematic cue";
+const UNIFIED_ACTION_LANGUAGE_MODULE_DECLARATION: &str =
+    "pub mod unified_action_language;";
+const UNIFIED_ACTION_LANGUAGE_RESOURCE_MARKER: &str = "UnifiedActionLanguage";
 
 #[test]
 fn runtime_main_does_not_register_prototype_draw_paths() {
@@ -190,5 +209,134 @@ fn dev_feature_enables_unified_prototype_cutover() {
     assert!(
         cargo_toml.contains(DEV_FEATURE_MARKER),
         "dev feature must enable ux-prototypes for cutover launcher"
+    );
+}
+
+#[test]
+fn ui_module_exports_unified_continuity_owner() {
+    let ui_mod_source = include_str!("../src/ui/mod.rs");
+
+    assert!(
+        ui_mod_source.contains(PROTOTYPE_FEATURE_ATTR),
+        "ui module should keep prototype exports feature-gated"
+    );
+    assert!(
+        ui_mod_source.contains(UNIFIED_CONTINUITY_MODULE_DECLARATION),
+        "ui module must export a dedicated unified continuity module"
+    );
+}
+
+#[test]
+fn unified_prototype_uses_continuity_owner_and_cues() {
+    let unified_source = include_str!("../src/ui/ux_unified_prototype.rs");
+
+    assert!(
+        unified_source.contains(UNIFIED_CONTINUITY_RESOURCE_MARKER),
+        "unified prototype should depend on shared continuity state resource"
+    );
+    assert!(
+        unified_source.to_lowercase().contains(UNIFIED_CONTINUITY_CUE_MARKER),
+        "unified prototype should render explicit continuity cues"
+    );
+}
+
+#[test]
+fn unified_header_hints_are_sourced_from_shared_tokens() {
+    let hints_source = include_str!("../src/ui/input_hints.rs");
+    let unified_source = include_str!("../src/ui/ux_unified_prototype.rs");
+
+    assert!(
+        hints_source.contains(UNIFIED_SCREEN_SWITCH_HINT_DECLARATION),
+        "input_hints must define unified screen-switch hint token"
+    );
+    assert!(
+        hints_source.contains(UNIFIED_CONTROL_CLUSTER_HINT_DECLARATION),
+        "input_hints must define unified control-cluster hint token"
+    );
+    assert!(
+        unified_source.contains("UNIFIED_SCREEN_SWITCH_HINT_TEXT"),
+        "unified prototype header should consume shared screen-switch hint token"
+    );
+    assert!(
+        unified_source.contains("UNIFIED_CONTROL_CLUSTER_HINT_TEXT"),
+        "unified prototype header should consume shared control-cluster hint token"
+    );
+}
+
+#[test]
+fn ui_module_exports_unified_character_beats_extension() {
+    let ui_mod_source = include_str!("../src/ui/mod.rs");
+
+    assert!(
+        ui_mod_source.contains(UNIFIED_CHARACTER_BEATS_MODULE_DECLARATION),
+        "ui module must export dedicated unified character beat extension module"
+    );
+}
+
+#[test]
+fn unified_prototype_uses_character_beat_state_extension() {
+    let unified_source = include_str!("../src/ui/ux_unified_prototype.rs");
+
+    assert!(
+        unified_source.contains(UNIFIED_CHARACTER_BEAT_STATE_MARKER),
+        "unified prototype should use shared character beat state"
+    );
+    assert!(
+        unified_source.contains(UNIFIED_CHARACTER_BEAT_FN_MARKER),
+        "unified prototype should query active character beat output"
+    );
+}
+
+#[test]
+fn ui_module_exports_unified_thematic_copy_registry() {
+    let ui_mod_source = include_str!("../src/ui/mod.rs");
+
+    assert!(
+        ui_mod_source.contains(UNIFIED_THEMATIC_COPY_MODULE_DECLARATION),
+        "ui module must export unified thematic copy registry module"
+    );
+}
+
+#[test]
+fn unified_prototype_uses_thematic_copy_catalog() {
+    let unified_source = include_str!("../src/ui/ux_unified_prototype.rs");
+
+    assert!(
+        unified_source.contains(UNIFIED_THEMATIC_COPY_RESOURCE_MARKER),
+        "unified prototype should use centralized thematic copy catalog"
+    );
+    assert!(
+        unified_source.contains(UNIFIED_THEMATIC_LINE_MARKER),
+        "unified prototype should render a thematic cue line"
+    );
+}
+
+#[test]
+fn ui_module_exports_unified_action_language_source() {
+    let ui_mod_source = include_str!("../src/ui/mod.rs");
+
+    assert!(
+        ui_mod_source.contains(UNIFIED_ACTION_LANGUAGE_MODULE_DECLARATION),
+        "ui module must export unified action language source of truth"
+    );
+}
+
+#[test]
+fn unified_continuity_uses_shared_action_language() {
+    let continuity_source = include_str!("../src/ui/unified_continuity.rs");
+
+    assert!(
+        continuity_source.contains(UNIFIED_ACTION_LANGUAGE_RESOURCE_MARKER),
+        "continuity owner should draw from shared action language"
+    );
+}
+
+#[test]
+fn unified_prototype_uses_shared_action_language_in_headers() {
+    let unified_source = include_str!("../src/ui/ux_unified_prototype.rs");
+
+    assert!(
+        unified_source.contains(UNIFIED_ACTION_LANGUAGE_RESOURCE_MARKER),
+        "unified prototype should use shared action language for screen labels and cues"
     );
 }
