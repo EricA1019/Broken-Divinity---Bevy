@@ -7,6 +7,7 @@ use crate::core::components::Player;
 use crate::core::perks::{PendingPerkChoices, PlayerPerks};
 use crate::core::state::AppState;
 use crate::core::stats::{PlayerProgression, ProficiencyId, VirtueId};
+use crate::ui::input_hints::{STATS_TOGGLE_HINT_TEXT, STATS_TOGGLE_KEY};
 
 #[derive(Resource, Default)]
 pub struct StatsProgressionOpen(pub bool);
@@ -15,7 +16,7 @@ pub fn toggle_stats_progression(
     keys: Res<ButtonInput<KeyCode>>,
     mut open: ResMut<StatsProgressionOpen>,
 ) {
-    if keys.just_pressed(KeyCode::KeyK) {
+    if keys.just_pressed(STATS_TOGGLE_KEY) {
         open.0 = !open.0;
     }
 }
@@ -57,7 +58,7 @@ pub fn draw_stats_progression_panel(
                     .color(egui::Color32::from_rgb(190, 190, 190)),
             );
             ui.label(
-                egui::RichText::new("[K] toggle  |  Core model from progression docs")
+                egui::RichText::new(STATS_TOGGLE_HINT_TEXT)
                     .small()
                     .color(egui::Color32::from_rgb(130, 130, 130)),
             );

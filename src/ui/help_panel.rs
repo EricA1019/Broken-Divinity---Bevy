@@ -3,8 +3,7 @@ use bevy::prelude::*;
 use crate::game::colony::raids::ActiveRaid;
 use crate::modal_priority::ModalBlockers;
 use crate::objective_prompt::{ColonyObjectivePromptState, InstructionPriorityPolicy};
-
-const HELP_TOGGLE_KEY: KeyCode = KeyCode::F1;
+use crate::ui::input_hints::HELP_TOGGLE_KEY;
 
 #[derive(Resource, Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct HelpOpen(pub bool);

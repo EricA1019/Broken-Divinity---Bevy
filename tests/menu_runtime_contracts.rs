@@ -1,4 +1,5 @@
 use bevy::prelude::*;
+use broken_divinity::core::save::{LoadGameError, load_error_message, load_success_message};
 use broken_divinity::core::resources::WorldSeed;
 use broken_divinity::core::state::AppState;
 use broken_divinity::core::turn::GameTime;
@@ -73,4 +74,24 @@ fn confirm_quit_emits_exit_message() {
         !app.world().resource::<Messages<AppExit>>().is_empty(),
         "expected confirm quit to emit an AppExit message"
     );
+}
+
+#[test]
+fn load_success_message_is_explicit_about_recap_restore() {
+    let message = load_success_message().to_lowercase();
+
+    assert!(message.contains("load"));
+    assert!(message.contains("recap"));
+    assert!(message.contains("restored"));
+}
+
+#[test]
+fn load_error_messages_are_specific_to_failure_mode() {
+    let missing_save_message = load_error_message(LoadGameError::MissingSave).to_lowercase();
+    let invalid_data_message = load_error_message(LoadGameError::InvalidData).to_lowercase();
+
+    assert!(missing_save_message.contains("load failed"));
+    assert!(missing_save_message.contains("no save file"));
+    assert!(invalid_data_message.contains("load failed"));
+    assert!(invalid_data_message.contains("could not be read safely"));
 }

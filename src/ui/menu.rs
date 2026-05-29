@@ -7,15 +7,12 @@ use crate::core::gamelog::{GameLog, LogColor};
 use crate::core::resources::WorldSeed;
 use crate::core::state::AppState;
 use crate::core::turn::GameTime;
+use crate::ui::input_hints::MENU_SHORTCUT_HINT_TEXT;
 use crate::ui::readability::contrast_ratio;
+use crate::ui::ux_style_contract::runtime_style_adapter;
 
-const MENU_BACKGROUND_RGB: (u8, u8, u8) = (10, 10, 15);
-const MENU_TITLE_RGB: (u8, u8, u8) = (208, 174, 96);
-const MENU_SUBTITLE_RGB: (u8, u8, u8) = (188, 188, 188);
-const MENU_SEED_LABEL_RGB: (u8, u8, u8) = (226, 226, 226);
 const MENU_SUBTITLE_FONT_SIZE: f32 = 14.0;
 const MENU_TITLE_FONT_SIZE: f32 = 40.0;
-const MENU_MIN_CONTRAST_RATIO: f32 = 4.5;
 const MENU_ROOT_TOP_SPACING: f32 = 80.0;
 const MENU_TITLE_SUBTITLE_SPACING: f32 = 10.0;
 const MENU_SECTION_SPACING: f32 = 40.0;
@@ -37,7 +34,6 @@ const MENU_NO_HELPER_TEXT: &str = "";
 const MENU_QUIT_CONFIRM_PROMPT_TEXT: &str = "Quit the game?";
 const MENU_QUIT_CONFIRM_LABEL: &str = "Confirm";
 const MENU_QUIT_CANCEL_LABEL: &str = "Cancel";
-
 pub(crate) fn primary_menu_cta_label() -> &'static str {
     "New Game"
 }
@@ -103,10 +99,17 @@ pub(crate) struct MenuReadabilitySnapshot {
 }
 
 pub(crate) fn menu_readability_snapshot() -> MenuReadabilitySnapshot {
+    let adapter = runtime_style_adapter();
     MenuReadabilitySnapshot {
-        minimum_contrast_ratio: MENU_MIN_CONTRAST_RATIO,
-        subtitle_contrast_ratio: contrast_ratio(MENU_SUBTITLE_RGB, MENU_BACKGROUND_RGB),
-        seed_row_contrast_ratio: contrast_ratio(MENU_SEED_LABEL_RGB, MENU_BACKGROUND_RGB),
+        minimum_contrast_ratio: adapter.menu_min_contrast_ratio,
+        subtitle_contrast_ratio: contrast_ratio(
+            adapter.menu_subtitle_rgb,
+            adapter.menu_background_rgb,
+        ),
+        seed_row_contrast_ratio: contrast_ratio(
+            adapter.menu_seed_label_rgb,
+            adapter.menu_background_rgb,
+        ),
     }
 }
 
@@ -147,31 +150,35 @@ pub fn draw_main_menu(
             && readability.seed_row_contrast_ratio >= readability.minimum_contrast_ratio,
         "Menu readability baseline violated"
     );
+    let style = runtime_style_adapter();
     let Ok(ctx) = contexts.ctx_mut() else { return };
+    let load_affordance = load_affordance_for_save_state(crate::core::save::save_exists());
+    let mut seed_input_has_focus = false;
 
     egui::CentralPanel::default()
-        .frame(egui::Frame::NONE.fill(rgb(MENU_BACKGROUND_RGB)))
+        .frame(egui::Frame::NONE.fill(rgb(style.menu_background_rgb)))
         .show(ctx, |ui| {
             ui.vertical_centered(|ui| {
                 ui.add_space(MENU_ROOT_TOP_SPACING);
                 ui.heading(
                     egui::RichText::new("BROKEN DIVINITY")
                         .size(MENU_TITLE_FONT_SIZE)
-                        .color(rgb(MENU_TITLE_RGB))
+                        .color(rgb(style.menu_title_rgb))
                         .strong(),
                 );
                 ui.add_space(MENU_TITLE_SUBTITLE_SPACING);
                 ui.label(
                     egui::RichText::new("A post-apocalyptic roguelike")
                         .size(MENU_SUBTITLE_FONT_SIZE)
-                        .color(rgb(MENU_SUBTITLE_RGB)),
+                        .color(rgb(style.menu_subtitle_rgb)),
                 );
                 ui.add_space(MENU_SECTION_SPACING);
 
                 // Seed input
                 ui.horizontal(|ui| {
-                    ui.label(egui::RichText::new("Seed:").color(rgb(MENU_SEED_LABEL_RGB)));
-                    ui.text_edit_singleline(&mut *seed_text);
+                    ui.label(egui::RichText::new("Seed:").color(rgb(style.menu_seed_label_rgb)));
+                    let seed_input_response = ui.text_edit_singleline(&mut *seed_text);
+                    seed_input_has_focus = seed_input_response.has_focus();
                 });
                 let resolved_seed =
                     (!seed_text.is_empty()).then(|| resolve_menu_seed(seed_text.as_str(), 0));
@@ -179,10 +186,8 @@ pub fn draw_main_menu(
                     egui::RichText::new(seed_helper_text(resolved_seed))
                         .size(MENU_HELPER_FONT_SIZE),
                 );
+                ui.label(egui::RichText::new(MENU_SHORTCUT_HINT_TEXT).size(MENU_HELPER_FONT_SIZE));
                 ui.add_space(MENU_SEED_ROW_BOTTOM_SPACING);
-
-                let load_affordance =
-                    load_affordance_for_save_state(crate::core::save::save_exists());
 
                 if ui
                     .add(
@@ -267,6 +272,38 @@ pub fn draw_main_menu(
                 }
             });
         });
+
+    let (new_game_pressed, load_pressed, quit_pressed, confirm_pressed, cancel_pressed) =
+        ctx.input(|input| {
+            (
+                input.key_pressed(egui::Key::Enter) || input.key_pressed(egui::Key::N),
+                input.key_pressed(egui::Key::L),
+                input.key_pressed(egui::Key::Q),
+                input.key_pressed(egui::Key::Y),
+                input.key_pressed(egui::Key::Escape),
+            )
+        });
+
+    if action.0.is_none() {
+        if *quit_confirmation_pending {
+            if confirm_pressed {
+                action.0 = Some(MenuUiChoice::ConfirmQuit);
+                *quit_confirmation_pending = false;
+            } else if cancel_pressed {
+                action.0 = Some(MenuUiChoice::CancelQuit);
+                *quit_confirmation_pending = false;
+            }
+        } else if !seed_input_has_focus {
+            if new_game_pressed {
+                let seed = resolve_menu_seed(seed_text.as_str(), current_unix_seed());
+                action.0 = Some(MenuUiChoice::NewGame { seed });
+            } else if load_pressed && load_affordance.is_enabled {
+                action.0 = Some(MenuUiChoice::LoadGame);
+            } else if quit_pressed {
+                *quit_confirmation_pending = true;
+            }
+        }
+    }
 }
 
 fn rgb((red, green, blue): (u8, u8, u8)) -> egui::Color32 {

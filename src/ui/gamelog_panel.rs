@@ -5,6 +5,10 @@ use bevy_egui::{EguiContexts, egui};
 
 use crate::core::gamelog::GameLog;
 use crate::core::state::AppState;
+use crate::ui::ux_style_contract::style_for;
+
+const GAMELOG_MIN_HEIGHT: f32 = 100.0;
+const GAMELOG_ENTRY_FONT_SIZE: f32 = 13.0;
 
 /// Draw the game log panel at the bottom of the screen.
 pub fn draw_gamelog_panel(
@@ -19,10 +23,15 @@ pub fn draw_gamelog_panel(
     let Ok(ctx) = contexts.ctx_mut() else {
         return;
     };
+    let style = style_for();
 
     egui::TopBottomPanel::bottom("game_log").show(ctx, |ui| {
-        ui.set_min_height(100.0);
-        ui.label(egui::RichText::new("Game Log").strong());
+        ui.set_min_height(GAMELOG_MIN_HEIGHT);
+        ui.label(
+            egui::RichText::new("Game Log")
+                .strong()
+                .color(style.title_color),
+        );
         ui.separator();
 
         egui::ScrollArea::vertical()
@@ -35,10 +44,14 @@ pub fn draw_gamelog_panel(
                         ui.label(
                             egui::RichText::new(format!("{} x{}", entry.text, entry.count))
                                 .color(color)
-                                .size(13.0),
+                                .size(GAMELOG_ENTRY_FONT_SIZE),
                         );
                     } else {
-                        ui.label(egui::RichText::new(&entry.text).color(color).size(13.0));
+                        ui.label(
+                            egui::RichText::new(&entry.text)
+                                .color(color)
+                                .size(GAMELOG_ENTRY_FONT_SIZE),
+                        );
                     }
                 }
             });

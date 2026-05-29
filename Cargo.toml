@@ -3,6 +3,7 @@ name = "broken_divinity"
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
+autobins = false
 
 [dependencies]
 bevy = { version = "0.18.1", default-features = false, features = ["2d", "bevy_remote"] }
@@ -22,10 +23,42 @@ path = "src/main.rs"
 [[bin]]
 name = "ux_prototypes"
 path = "src/bin/ux_prototypes.rs"
+required-features = ["ux-prototypes"]
+
+[[bin]]
+name = "ux_inventory_equipment_prototype"
+path = "src/bin/ux_inventory_equipment_prototype.rs"
+required-features = ["ux-prototypes"]
+
+[[bin]]
+name = "ux_unified_prototype"
+path = "src/bin/ux_unified_prototype.rs"
+required-features = ["ux-prototypes"]
+
+[[bin]]
+name = "ux_overworld_prototype"
+path = "src/bin/ux_overworld_prototype.rs"
+required-features = ["ux-prototypes"]
+
+[[bin]]
+name = "ux_dungeon_style_prototype"
+path = "src/bin/ux_dungeon_style_prototype.rs"
+required-features = ["ux-prototypes"]
+
+[[bin]]
+name = "ux_dungeon_map_prototypes"
+path = "src/bin/ux_dungeon_map_prototypes.rs"
+required-features = ["ux-prototypes"]
+
+[[bin]]
+name = "ux_colony_prototype"
+path = "src/bin/ux_colony_prototype.rs"
+required-features = ["ux-prototypes"]
 
 [features]
-dev = ["bevy/dynamic_linking", "dep:bevy_brp_extras"]
+dev = ["bevy/dynamic_linking", "dep:bevy_brp_extras", "ux-prototypes"]
 brp = ["dep:bevy_brp_extras"]
+ux-prototypes = []
 
 [dependencies.bevy_brp_extras]
 version = "0.18"

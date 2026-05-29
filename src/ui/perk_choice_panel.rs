@@ -4,6 +4,11 @@ use bevy_egui::{EguiContexts, egui};
 use crate::core::gamelog::{GameLog, LogColor};
 use crate::core::perks::{PendingPerkChoices, PerkId, PlayerPerks};
 use crate::core::turn::GameTime;
+use crate::ui::ux_style_contract::style_for;
+
+const PERK_TITLE_FONT_SIZE: f32 = 18.0;
+const PERK_DETAIL_SPACING: f32 = 6.0;
+const PERK_ACTION_SPACING: f32 = 10.0;
 
 // ---------------------------------------------------------------------------
 // Action resource
@@ -36,6 +41,7 @@ pub fn draw_perk_choice_panel(
     let Some(perk) = pending.pending.first().copied() else {
         return;
     };
+    let style = style_for();
 
     egui::Window::new("Perk Unlocked")
         .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
@@ -45,22 +51,22 @@ pub fn draw_perk_choice_panel(
             ui.label(
                 egui::RichText::new(perk.name())
                     .strong()
-                    .size(18.0)
-                    .color(egui::Color32::from_rgb(230, 210, 120)),
+                    .size(PERK_TITLE_FONT_SIZE)
+                    .color(style.title_color),
             );
             ui.label(
                 egui::RichText::new(format!("Tier {}", perk.tier()))
-                    .color(egui::Color32::LIGHT_GRAY),
+                    .color(style.subtitle_color),
             );
             let lane_color = if perk.lane_label().contains("Legacy") {
-                egui::Color32::from_rgb(220, 140, 90)
+                style.warn_color
             } else {
-                egui::Color32::from_rgb(150, 190, 210)
+                style.info_color
             };
             ui.label(egui::RichText::new(perk.lane_label()).color(lane_color));
-            ui.add_space(6.0);
+            ui.add_space(PERK_DETAIL_SPACING);
             ui.label(perk.description());
-            ui.add_space(10.0);
+            ui.add_space(PERK_ACTION_SPACING);
 
             if ui.button(format!("Unlock {}", perk.name())).clicked() {
                 action.0 = Some(PerkChoiceUiChoice::Unlock(perk));

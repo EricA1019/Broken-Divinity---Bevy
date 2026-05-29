@@ -13,6 +13,7 @@ use crate::core::state::AppState;
 use crate::core::stats::{CombatStats, PlayerProgression, ProficiencyId, VirtueId};
 use crate::core::turn::{ActionBudget, GameTime};
 use crate::game::dungeon::spawn::DungeonState;
+use crate::ui::ux_style_contract::runtime_shell_layout;
 
 /// Draw the top HUD bar showing HP, AP, turn, weapon, and armor status.
 pub fn draw_hud(
@@ -46,12 +47,16 @@ pub fn draw_hud(
     else {
         return;
     };
+    let shell_layout = runtime_shell_layout();
 
     egui::TopBottomPanel::top("hud_panel")
         .frame(
             egui::Frame::NONE
                 .fill(egui::Color32::from_rgb(20, 20, 25))
-                .inner_margin(egui::Margin::symmetric(8, 4)),
+                .inner_margin(egui::Margin::symmetric(
+                    shell_layout.header_to_content_spacing as i8,
+                    shell_layout.action_to_hint_spacing as i8,
+                )),
         )
         .show(ctx, |ui| {
             // Row 1: HP bar, AP, Turn

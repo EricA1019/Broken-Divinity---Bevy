@@ -4,6 +4,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 
 use crate::game::dungeon::lore::LoreJournal;
+use crate::ui::input_hints::JOURNAL_TOGGLE_KEY;
 
 /// Resource: whether the journal panel is currently visible.
 #[derive(Resource, Default)]
@@ -11,7 +12,7 @@ pub struct JournalOpen(pub bool);
 
 /// Toggle journal on J key press.
 pub fn toggle_journal(keys: Res<ButtonInput<KeyCode>>, mut open: ResMut<JournalOpen>) {
-    if keys.just_pressed(KeyCode::KeyJ) {
+    if keys.just_pressed(JOURNAL_TOGGLE_KEY) {
         open.0 = !open.0;
     }
 }

@@ -1,22 +1,111 @@
 use bevy::prelude::*;
+#[cfg(not(feature = "dev"))]
 use bevy_ecs_tilemap::TilemapPlugin;
-use bevy_egui::{EguiPlugin, EguiPrimaryContextPass};
+use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 #[cfg(feature = "dev")]
 use bevy::remote::RemotePlugin;
 #[cfg(feature = "dev")]
 use bevy::remote::http::RemoteHttpPlugin;
 #[cfg(feature = "dev")]
 use bevy_brp_extras::BrpExtrasPlugin;
+#[cfg(feature = "dev")]
+use broken_divinity::ui::ux_unified_prototype::UnifiedPrototypePlugin;
+#[cfg(not(feature = "dev"))]
 use broken_divinity::core::escape::handle_escape_to_menu;
+#[cfg(not(feature = "dev"))]
 use broken_divinity::core::state::AppState;
+#[cfg(not(feature = "dev"))]
 use broken_divinity::core::turn::TurnPhase;
+#[cfg(not(feature = "dev"))]
 use broken_divinity::game::overworld::travel::enter_overworld_from_colony;
 
+#[cfg(feature = "dev")]
+const WINDOW_TITLE_DEV: &str = "Broken Divinity [DEV: Unified UI]";
+#[cfg(not(feature = "dev"))]
+const WINDOW_TITLE_RUNTIME: &str = "Broken Divinity [RUNTIME: Rollback UI]";
+
+fn print_launch_banner(mode: &str, command_hint: &str) {
+    println!("================ BROKEN DIVINITY LAUNCH MODE ================");
+    println!("Mode: {mode}");
+    println!("Hint: {command_hint}");
+    println!("=============================================================");
+}
+
+fn draw_launch_mode_badge(mut contexts: EguiContexts) {
+    let Ok(ctx) = contexts.ctx_mut() else { return };
+    let mode = if cfg!(feature = "dev") {
+        "Launch Mode: DEV unified UI"
+    } else {
+        "Launch Mode: RUNTIME rollback UI"
+    };
+
+    egui::Area::new("launch_mode_badge".into())
+        .anchor(egui::Align2::LEFT_TOP, [12.0, 12.0])
+        .interactable(false)
+        .show(ctx, |ui| {
+            let frame = egui::Frame::new()
+                .fill(egui::Color32::from_black_alpha(180))
+                .corner_radius(egui::CornerRadius::same(4))
+                .inner_margin(egui::Margin::symmetric(8, 6));
+
+            frame.show(ui, |ui| {
+                ui.label(
+                    egui::RichText::new(mode)
+                        .monospace()
+                        .size(11.0)
+                        .color(egui::Color32::from_rgb(255, 224, 160)),
+                );
+            });
+        });
+}
+
+#[cfg(feature = "dev")]
 fn main() {
+    print_launch_banner(
+        "DEV feature enabled -> Unified prototype UI path",
+        "Use `cargo run --bin broken_divinity --features dev` for this mode.",
+    );
+
     let mut app = App::new();
-    app.add_plugins(DefaultPlugins)
+    app.add_plugins(DefaultPlugins.set(WindowPlugin {
+        primary_window: Some(Window {
+            title: WINDOW_TITLE_DEV.to_string(),
+            ..default()
+        }),
+        ..default()
+    }))
+        .add_plugins(EguiPlugin::default())
+        .add_plugins(UnifiedPrototypePlugin)
+        .add_systems(EguiPrimaryContextPass, draw_launch_mode_badge);
+
+    #[cfg(feature = "dev")]
+    {
+        app.add_plugins(RemotePlugin::default());
+        app.add_plugins(RemoteHttpPlugin::default());
+        app.add_plugins(BrpExtrasPlugin);
+    }
+
+    app.run();
+}
+
+#[cfg(not(feature = "dev"))]
+fn main() {
+    print_launch_banner(
+        "DEV feature disabled -> Runtime rollback UI path",
+        "Use `cargo run --bin broken_divinity` for this mode.",
+    );
+
+    let mut app = App::new();
+    app.add_plugins(DefaultPlugins.set(WindowPlugin {
+        primary_window: Some(Window {
+            title: WINDOW_TITLE_RUNTIME.to_string(),
+            ..default()
+        }),
+        ..default()
+    }))
         .add_plugins(TilemapPlugin)
         .add_plugins(EguiPlugin::default())
+    .add_systems(EguiPrimaryContextPass, draw_launch_mode_badge)
         .add_plugins(broken_divinity::core::plugin)
         .add_plugins(broken_divinity::game::colony::plugin)
         .add_plugins(broken_divinity::game::combat::plugin)
@@ -30,6 +119,7 @@ fn main() {
         .init_resource::<broken_divinity::ui::gabriel_dialogue_panel::GabrielDialogueUiAction>()
         .init_resource::<broken_divinity::ui::inventory_panel::InventoryOpen>()
         .init_resource::<broken_divinity::ui::inventory_panel::InventoryUiAction>()
+        .init_resource::<broken_divinity::ui::inventory_panel::InventoryUiStatus>()
         .init_resource::<broken_divinity::ui::journal_panel::JournalOpen>()
         .init_resource::<broken_divinity::ui::menu::MenuUiAction>()
         .init_resource::<broken_divinity::ui::overworld_panel::OverworldUiAction>()
@@ -173,13 +263,6 @@ fn main() {
             broken_divinity::core::save::handle_save_and_quit
                 .run_if(in_state(AppState::Colony).or(in_state(AppState::Overworld))),
         );
-
-    #[cfg(feature = "dev")]
-    {
-        app.add_plugins(RemotePlugin::default());
-        app.add_plugins(RemoteHttpPlugin::default());
-        app.add_plugins(BrpExtrasPlugin);
-    }
 
     app.run();
 }

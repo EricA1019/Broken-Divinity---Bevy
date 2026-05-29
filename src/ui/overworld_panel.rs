@@ -8,6 +8,10 @@ use crate::core::state::AppState;
 use crate::game::overworld::graphgen::NodeType;
 use crate::game::overworld::map::{PlayerMapPosition, WorldMap};
 use crate::game::overworld::travel::TravelState;
+use crate::ui::input_hints::OVERWORLD_RETURN_HINT_TEXT;
+use crate::ui::ux_style_contract::runtime_shell_layout;
+
+const ACTION_TO_HINT_SPACING_MULTIPLIER: f32 = 2.0;
 
 #[derive(Resource, Default)]
 pub struct OverworldUiAction(pub Option<OverworldUiChoice>);
@@ -42,6 +46,7 @@ pub fn draw_overworld_panel(
     let Some(pos) = player_pos else {
         return;
     };
+    let shell_layout = runtime_shell_layout();
 
     egui::SidePanel::left("overworld_panel")
         .default_width(220.0)
@@ -117,9 +122,9 @@ pub fn draw_overworld_panel(
 
             ui.separator();
             ui.label(egui::RichText::new(primary_overworld_cta_label()).strong());
-            ui.label("Press Esc to return to colony shelter.");
+            ui.label(OVERWORLD_RETURN_HINT_TEXT);
 
-            ui.add_space(12.0);
+            ui.add_space(shell_layout.section_to_section_spacing * ACTION_TO_HINT_SPACING_MULTIPLIER);
             if ui.button("Save & Quit").clicked() {
                 action.0 = Some(OverworldUiChoice::SaveAndQuit);
             }

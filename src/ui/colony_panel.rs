@@ -18,13 +18,12 @@ use crate::game::colony::stations::{Station, StationType, find_station_anchor, s
 use crate::game::colony::survivors::{Survivor, SurvivorNeeds, SurvivorTask};
 use crate::ui::objective_prompt::{COLONY_OBJECTIVE_PROMPT_TEXT, ColonyObjectivePromptState};
 use crate::ui::readability::contrast_ratio;
+use crate::ui::ux_style_contract::runtime_shell_layout;
 
 const RESOURCE_BAR_BACKGROUND_RGB: (u8, u8, u8) = (25, 30, 20);
 const URGENCY_BANNER_CRITICAL_RGB: (u8, u8, u8) = (235, 128, 128);
 const URGENCY_BANNER_LOW_RGB: (u8, u8, u8) = (238, 214, 140);
 const RESOURCE_BAR_MIN_CONTRAST_RATIO: f32 = 4.5;
-const RESOURCE_BAR_X_MARGIN: i8 = 8;
-const RESOURCE_BAR_Y_MARGIN: i8 = 4;
 const URGENCY_LABEL_PREFIX: &str = "Urgent:";
 const OBJECTIVE_INDICATOR_RGB: (u8, u8, u8) = (200, 185, 120);
 const OBJECTIVE_DETAIL_INLINE_BY_DEFAULT: bool = false;
@@ -128,14 +127,15 @@ pub fn draw_resource_bar(
     );
     let Ok(ctx) = contexts.ctx_mut() else { return };
     let Some(res) = resources else { return };
+    let shell_layout = runtime_shell_layout();
 
     egui::TopBottomPanel::top("resource_bar")
         .frame(
             egui::Frame::NONE
                 .fill(rgb(RESOURCE_BAR_BACKGROUND_RGB))
                 .inner_margin(egui::Margin::symmetric(
-                    RESOURCE_BAR_X_MARGIN,
-                    RESOURCE_BAR_Y_MARGIN,
+                    shell_layout.header_to_content_spacing as i8,
+                    shell_layout.action_to_hint_spacing as i8,
                 )),
         )
         .show(ctx, |ui| {

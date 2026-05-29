@@ -4,7 +4,7 @@
 //!
 //! Controls:
 //!   M/C/D/O   — switch screen (Menu / Colony / Dungeon HUD / Overworld)
-//!   1/2/3     — switch animation profile (Subtle / Drift / Scanline)
+//!   1/2/3     — switch animation profile (Subtle / Pulse / Scanline)
 //!   Esc       — quit
 
 use bevy::prelude::*;
