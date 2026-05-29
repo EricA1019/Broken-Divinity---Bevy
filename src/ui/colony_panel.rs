@@ -16,6 +16,7 @@ use crate::core::turn::GameTime;
 use crate::game::colony::research::{CompletedResearch, ResearchProject};
 use crate::game::colony::stations::{Station, StationType, find_station_anchor, spawn_station};
 use crate::game::colony::survivors::{Survivor, SurvivorNeeds, SurvivorTask};
+use crate::ui::input_hints::{SAVE_AND_QUIT_HINT_TEXT, SAVE_AND_QUIT_LABEL};
 use crate::ui::objective_prompt::{COLONY_OBJECTIVE_PROMPT_TEXT, ColonyObjectivePromptState};
 use crate::ui::readability::contrast_ratio;
 use crate::ui::ux_style_contract::runtime_shell_layout;
@@ -208,9 +209,10 @@ pub fn draw_resource_bar(
                 }
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if ui.button("Save & Quit").clicked() {
+                    if ui.button(SAVE_AND_QUIT_LABEL).clicked() {
                         action.0 = Some(ColonyUiChoice::SaveAndQuit);
                     }
+                    ui.label(SAVE_AND_QUIT_HINT_TEXT);
                 });
             });
         });

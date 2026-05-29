@@ -4,7 +4,7 @@ use bevy::prelude::*;
 use bevy_egui::{EguiContexts, egui};
 
 use crate::game::dungeon::lore::LoreJournal;
-use crate::ui::input_hints::JOURNAL_TOGGLE_KEY;
+use crate::ui::input_hints::{JOURNAL_TOGGLE_HINT_TEXT, JOURNAL_TOGGLE_KEY};
 
 /// Resource: whether the journal panel is currently visible.
 #[derive(Resource, Default)]
@@ -36,6 +36,9 @@ pub fn draw_journal_panel(
         .resizable(true)
         .collapsible(true)
         .show(ctx, |ui| {
+            ui.label(egui::RichText::new(JOURNAL_TOGGLE_HINT_TEXT).small());
+            ui.separator();
+
             let Some(journal) = &journal else {
                 ui.label("No journal available.");
                 return;

@@ -8,10 +8,15 @@ use crate::core::state::AppState;
 use crate::game::overworld::graphgen::NodeType;
 use crate::game::overworld::map::{PlayerMapPosition, WorldMap};
 use crate::game::overworld::travel::TravelState;
-use crate::ui::input_hints::OVERWORLD_RETURN_HINT_TEXT;
+use crate::ui::input_hints::{OVERWORLD_RETURN_HINT_TEXT, SAVE_AND_QUIT_HINT_TEXT, SAVE_AND_QUIT_LABEL};
 use crate::ui::ux_style_contract::runtime_shell_layout;
 
 const ACTION_TO_HINT_SPACING_MULTIPLIER: f32 = 2.0;
+const SUPPLY_RISK_FOOD_AND_WATER_TEXT: &str =
+    "Supplies critical: secure food and water before long travel.";
+const SUPPLY_RISK_FOOD_TEXT: &str = "Supplies critical: secure food before long travel.";
+const SUPPLY_RISK_WATER_TEXT: &str =
+    "Supplies critical: secure water before long travel.";
 
 #[derive(Resource, Default)]
 pub struct OverworldUiAction(pub Option<OverworldUiChoice>);
@@ -23,6 +28,15 @@ pub enum OverworldUiChoice {
 
 pub fn primary_overworld_cta_label() -> &'static str {
     "Click a connected node to travel."
+}
+
+pub(crate) fn overworld_supply_status_summary(resources: &ShelterResources) -> Option<&'static str> {
+    match (resources.food == 0, resources.water == 0) {
+        (true, true) => Some(SUPPLY_RISK_FOOD_AND_WATER_TEXT),
+        (true, false) => Some(SUPPLY_RISK_FOOD_TEXT),
+        (false, true) => Some(SUPPLY_RISK_WATER_TEXT),
+        (false, false) => None,
+    }
 }
 
 pub fn draw_overworld_panel(
@@ -84,6 +98,9 @@ pub fn draw_overworld_panel(
                 let has_supply_warning = resources.food == 0 || resources.water == 0;
                 if has_supply_warning {
                     ui.heading("Supply Risk");
+                    if let Some(summary) = overworld_supply_status_summary(resources.as_ref()) {
+                        ui.label(egui::RichText::new(summary).strong());
+                    }
                     let danger = egui::Color32::from_rgb(220, 96, 96);
                     if resources.food == 0 {
                         ui.colored_label(danger, "No food: travel encounters become much riskier.");
@@ -125,9 +142,10 @@ pub fn draw_overworld_panel(
             ui.label(OVERWORLD_RETURN_HINT_TEXT);
 
             ui.add_space(shell_layout.section_to_section_spacing * ACTION_TO_HINT_SPACING_MULTIPLIER);
-            if ui.button("Save & Quit").clicked() {
+            if ui.button(SAVE_AND_QUIT_LABEL).clicked() {
                 action.0 = Some(OverworldUiChoice::SaveAndQuit);
             }
+            ui.label(SAVE_AND_QUIT_HINT_TEXT);
         });
 }
 
@@ -150,5 +168,48 @@ fn node_type_label(node_type: NodeType) -> &'static str {
         NodeType::Ruins => "Ruins",
         NodeType::Crossroads => "Crossroads",
         NodeType::Landmark => "Landmark",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::overworld_supply_status_summary;
+    use crate::core::resources::ShelterResources;
+
+    #[test]
+    fn overworld_supply_summary_calls_out_missing_food_and_water() {
+        let resources = ShelterResources {
+            food: 0,
+            water: 0,
+            ..ShelterResources::default()
+        };
+
+        assert_eq!(
+            overworld_supply_status_summary(&resources),
+            Some("Supplies critical: secure food and water before long travel."),
+        );
+    }
+
+    #[test]
+    fn overworld_supply_summary_calls_out_single_missing_resource() {
+        let food_risk = ShelterResources {
+            food: 0,
+            water: 2,
+            ..ShelterResources::default()
+        };
+        let water_risk = ShelterResources {
+            food: 3,
+            water: 0,
+            ..ShelterResources::default()
+        };
+
+        assert_eq!(
+            overworld_supply_status_summary(&food_risk),
+            Some("Supplies critical: secure food before long travel."),
+        );
+        assert_eq!(
+            overworld_supply_status_summary(&water_risk),
+            Some("Supplies critical: secure water before long travel."),
+        );
     }
 }

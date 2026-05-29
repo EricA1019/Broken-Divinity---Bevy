@@ -45,6 +45,9 @@ const CUTOVER_MAIN_MARKERS: [&str; 3] = [
 
 const DEV_FEATURE_MARKER: &str = "dev = [\"bevy/dynamic_linking\", \"dep:bevy_brp_extras\", \"ux-prototypes\"]";
 const MENU_SHORTCUT_HINT_DECLARATION: &str = "pub const MENU_SHORTCUT_HINT_TEXT: &str";
+const SAVE_AND_QUIT_LABEL_DECLARATION: &str = "pub const SAVE_AND_QUIT_LABEL: &str";
+const SAVE_AND_QUIT_HINT_DECLARATION: &str = "pub const SAVE_AND_QUIT_HINT_TEXT: &str";
+const JOURNAL_TOGGLE_HINT_DECLARATION: &str = "pub const JOURNAL_TOGGLE_HINT_TEXT: &str";
 
 #[test]
 fn runtime_main_does_not_register_prototype_draw_paths() {
@@ -141,6 +144,8 @@ fn migrated_panels_use_shared_input_hint_tokens() {
     let help_panel_source = include_str!("../src/ui/help_panel.rs");
     let input_hints_source = include_str!("../src/ui/input_hints.rs");
     let menu_source = include_str!("../src/ui/menu.rs");
+    let colony_panel_source = include_str!("../src/ui/colony_panel.rs");
+    let overworld_panel_source = include_str!("../src/ui/overworld_panel.rs");
 
     assert!(inventory_panel_source.contains("INVENTORY_TOGGLE_PRIMARY_KEY"));
     assert!(inventory_panel_source.contains("INVENTORY_TOGGLE_SECONDARY_KEY"));
@@ -149,8 +154,16 @@ fn migrated_panels_use_shared_input_hint_tokens() {
     assert!(stats_panel_source.contains("STATS_TOGGLE_HINT_TEXT"));
     assert!(help_panel_source.contains("HELP_TOGGLE_KEY"));
     assert!(input_hints_source.contains(MENU_SHORTCUT_HINT_DECLARATION));
+    assert!(input_hints_source.contains(SAVE_AND_QUIT_LABEL_DECLARATION));
+    assert!(input_hints_source.contains(SAVE_AND_QUIT_HINT_DECLARATION));
+    assert!(input_hints_source.contains(JOURNAL_TOGGLE_HINT_DECLARATION));
     assert!(menu_source.contains("MENU_SHORTCUT_HINT_TEXT"));
     assert!(menu_source.contains("use crate::ui::input_hints::MENU_SHORTCUT_HINT_TEXT;"));
+    assert!(journal_panel_source.contains("JOURNAL_TOGGLE_HINT_TEXT"));
+    assert!(colony_panel_source.contains("SAVE_AND_QUIT_LABEL"));
+    assert!(colony_panel_source.contains("SAVE_AND_QUIT_HINT_TEXT"));
+    assert!(overworld_panel_source.contains("SAVE_AND_QUIT_LABEL"));
+    assert!(overworld_panel_source.contains("SAVE_AND_QUIT_HINT_TEXT"));
 }
 
 #[test]

@@ -9,6 +9,8 @@ pub const OVERWORLD_RETURN_KEY: KeyCode = KeyCode::Escape;
 
 pub const MENU_SHORTCUT_HINT_TEXT: &str =
 	"Shortcuts: Enter/N new game | L load | Q quit | Y confirm | Esc cancel";
+pub const SAVE_AND_QUIT_LABEL: &str = "Save & Quit";
+pub const SAVE_AND_QUIT_HINT_TEXT: &str = "Save progress and return to the menu.";
 
 pub const INVENTORY_TOGGLE_HINT_TEXT: &str = concat!(
 	"Press ",
@@ -16,6 +18,12 @@ pub const INVENTORY_TOGGLE_HINT_TEXT: &str = concat!(
 	" or ",
 	"Tab",
 	" to toggle inventory.",
+);
+
+pub const JOURNAL_TOGGLE_HINT_TEXT: &str = concat!(
+	"Press ",
+	"J",
+	" to open or close the lore journal.",
 );
 
 pub const STATS_TOGGLE_HINT_TEXT: &str = concat!(

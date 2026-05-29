@@ -29,6 +29,16 @@ const STATUS_NOT_EQUIPPABLE: &str = "Action blocked: item cannot be equipped.";
 const STATUS_INVALID_SLOT: &str = "Action blocked: inventory slot is invalid.";
 const STATUS_NOTHING_EQUIPPED: &str = "Action blocked: no item in that equipment slot.";
 const STATUS_MISSING_EQUIPMENT: &str = "Action blocked: equipment data unavailable.";
+const EQUIPMENT_SECTION_LABEL: &str = "Equipment";
+const EQUIPMENT_SECTION_HINT_TEXT: &str =
+    "Equip items from inventory to fill weapon, armor, and accessory slots.";
+const EQUIPMENT_SLOT_WEAPON_LABEL: &str = "Weapon";
+const EQUIPMENT_SLOT_ARMOR_LABEL: &str = "Armor";
+const EQUIPMENT_SLOT_ACCESSORY_LABEL: &str = "Accessory";
+const EQUIPMENT_SLOT_EMPTY_VALUE: &str = "—";
+const UNEQUIP_WEAPON_LABEL: &str = "Unequip Weapon";
+const UNEQUIP_ARMOR_LABEL: &str = "Unequip Armor";
+const UNEQUIP_ACCESSORY_LABEL: &str = "Unequip Accessory";
 
 /// Whether the inventory panel is currently open.
 #[derive(Resource, Default)]
@@ -172,7 +182,8 @@ pub fn draw_inventory_panel(
 
             // Equipment section
             ui.separator();
-            ui.label(egui::RichText::new("Equipment").strong());
+            ui.label(egui::RichText::new(EQUIPMENT_SECTION_LABEL).strong());
+            ui.label(egui::RichText::new(EQUIPMENT_SECTION_HINT_TEXT).small());
 
             if let Some(equip) = equipment {
                 let weapon_name = equip
@@ -180,30 +191,30 @@ pub fn draw_inventory_panel(
                     .as_ref()
                     .and_then(|id| find_item(id))
                     .map(|d| d.name)
-                    .unwrap_or("—");
+                    .unwrap_or(EQUIPMENT_SLOT_EMPTY_VALUE);
                 let armor_name = equip
                     .armor
                     .as_ref()
                     .and_then(|id| find_item(id))
                     .map(|d| d.name)
-                    .unwrap_or("—");
+                    .unwrap_or(EQUIPMENT_SLOT_EMPTY_VALUE);
                 let accessory_name = equip
                     .accessory
                     .as_ref()
                     .and_then(|id| find_item(id))
                     .map(|d| d.name)
-                    .unwrap_or("—");
+                    .unwrap_or(EQUIPMENT_SLOT_EMPTY_VALUE);
 
-                ui.label(format!("⚔ Weapon: {}", weapon_name));
-                if equip.weapon.is_some() && ui.small_button("Unequip Weapon").clicked() {
+                ui.label(format!("⚔ {}", equipment_slot_row_text(EQUIPMENT_SLOT_WEAPON_LABEL, weapon_name)));
+                if equip.weapon.is_some() && ui.small_button(UNEQUIP_WEAPON_LABEL).clicked() {
                     action.0 = Some(InventoryUiChoice::Unequip(EquipmentSlot::Weapon));
                 }
-                ui.label(format!("🛡 Armor:  {}", armor_name));
-                if equip.armor.is_some() && ui.small_button("Unequip Armor").clicked() {
+                ui.label(format!("🛡 {}", equipment_slot_row_text(EQUIPMENT_SLOT_ARMOR_LABEL, armor_name)));
+                if equip.armor.is_some() && ui.small_button(UNEQUIP_ARMOR_LABEL).clicked() {
                     action.0 = Some(InventoryUiChoice::Unequip(EquipmentSlot::Armor));
                 }
-                ui.label(format!("💎 Acc:    {}", accessory_name));
-                if equip.accessory.is_some() && ui.small_button("Unequip Accessory").clicked() {
+                ui.label(format!("💎 {}", equipment_slot_row_text(EQUIPMENT_SLOT_ACCESSORY_LABEL, accessory_name)));
+                if equip.accessory.is_some() && ui.small_button(UNEQUIP_ACCESSORY_LABEL).clicked() {
                     action.0 = Some(InventoryUiChoice::Unequip(EquipmentSlot::Accessory));
                 }
             } else {
@@ -323,4 +334,27 @@ fn status_color(status: &InventoryUiStatus) -> egui::Color32 {
 
 fn rgb(rgb: (u8, u8, u8)) -> egui::Color32 {
     egui::Color32::from_rgb(rgb.0, rgb.1, rgb.2)
+}
+
+fn equipment_slot_row_text(slot_label: &str, equipped_name: &str) -> String {
+    format!("{slot_label} slot: {equipped_name}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{EQUIPMENT_SECTION_HINT_TEXT, equipment_slot_row_text};
+
+    #[test]
+    fn equipment_section_hint_text_names_all_slot_types() {
+        assert!(EQUIPMENT_SECTION_HINT_TEXT.contains("weapon"));
+        assert!(EQUIPMENT_SECTION_HINT_TEXT.contains("armor"));
+        assert!(EQUIPMENT_SECTION_HINT_TEXT.contains("accessory"));
+    }
+
+    #[test]
+    fn equipment_slot_row_text_formats_named_slot_summary() {
+        assert_eq!(equipment_slot_row_text("Weapon", "Iron Pipe"), "Weapon slot: Iron Pipe");
+        assert_eq!(equipment_slot_row_text("Armor", "—"), "Armor slot: —");
+        assert_eq!(equipment_slot_row_text("Accessory", "Charm of Witness"), "Accessory slot: Charm of Witness");
+    }
 }
