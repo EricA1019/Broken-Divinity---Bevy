@@ -56,6 +56,7 @@ path = "src/bin/ux_colony_prototype.rs"
 required-features = ["ux-prototypes"]
 
 [features]
+default = ["ux-prototypes"]
 dev = ["bevy/dynamic_linking", "dep:bevy_brp_extras", "ux-prototypes"]
 brp = ["dep:bevy_brp_extras"]
 ux-prototypes = []

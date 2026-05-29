@@ -38,12 +38,13 @@ const MIGRATED_RUNTIME_PANELS: [&str; 7] = [
 ];
 
 const CUTOVER_MAIN_MARKERS: [&str; 3] = [
-    "#[cfg(feature = \"dev\")]",
+    "fn configure_launch_app(app: &mut App)",
     "broken_divinity::ui::ux_unified_prototype::UnifiedPrototypePlugin",
-    "#[cfg(not(feature = \"dev\"))]",
+    "BD_UI_MODE",
 ];
 
 const DEV_FEATURE_MARKER: &str = "dev = [\"bevy/dynamic_linking\", \"dep:bevy_brp_extras\", \"ux-prototypes\"]";
+const DEFAULT_FEATURE_MARKER: &str = "default = [\"ux-prototypes\"]";
 const MENU_SHORTCUT_HINT_DECLARATION: &str = "pub const MENU_SHORTCUT_HINT_TEXT: &str";
 const SAVE_AND_QUIT_LABEL_DECLARATION: &str = "pub const SAVE_AND_QUIT_LABEL: &str";
 const SAVE_AND_QUIT_HINT_DECLARATION: &str = "pub const SAVE_AND_QUIT_HINT_TEXT: &str";
@@ -53,10 +54,10 @@ const JOURNAL_TOGGLE_HINT_DECLARATION: &str = "pub const JOURNAL_TOGGLE_HINT_TEX
 fn runtime_main_does_not_register_prototype_draw_paths() {
     let main_source = include_str!("../src/main.rs");
     let Some(legacy_section) = main_source
-        .split("#[cfg(not(feature = \"dev\"))]\nfn main()")
+        .split("fn configure_rollback_runtime_app(app: &mut App)")
         .nth(1)
     else {
-        panic!("expected non-dev runtime branch in main.rs");
+        panic!("expected rollback runtime helper in main.rs");
     };
 
     assert!(
@@ -182,6 +183,10 @@ fn dev_cutover_entrypoint_is_explicit_about_unified_prototype_default() {
 fn dev_feature_enables_unified_prototype_cutover() {
     let cargo_toml = include_str!("../Cargo.toml");
 
+    assert!(
+        cargo_toml.contains(DEFAULT_FEATURE_MARKER),
+        "default feature set must include ux-prototypes for unified launcher"
+    );
     assert!(
         cargo_toml.contains(DEV_FEATURE_MARKER),
         "dev feature must enable ux-prototypes for cutover launcher"

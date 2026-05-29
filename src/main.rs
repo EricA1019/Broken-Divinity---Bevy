@@ -1,5 +1,4 @@
 use bevy::prelude::*;
-#[cfg(not(feature = "dev"))]
 use bevy_ecs_tilemap::TilemapPlugin;
 use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 #[cfg(feature = "dev")]
@@ -8,21 +7,15 @@ use bevy::remote::RemotePlugin;
 use bevy::remote::http::RemoteHttpPlugin;
 #[cfg(feature = "dev")]
 use bevy_brp_extras::BrpExtrasPlugin;
-#[cfg(feature = "dev")]
 use broken_divinity::ui::ux_unified_prototype::UnifiedPrototypePlugin;
-#[cfg(not(feature = "dev"))]
 use broken_divinity::core::escape::handle_escape_to_menu;
-#[cfg(not(feature = "dev"))]
 use broken_divinity::core::state::AppState;
-#[cfg(not(feature = "dev"))]
 use broken_divinity::core::turn::TurnPhase;
-#[cfg(not(feature = "dev"))]
 use broken_divinity::game::overworld::travel::enter_overworld_from_colony;
 
-#[cfg(feature = "dev")]
-const WINDOW_TITLE_DEV: &str = "Broken Divinity [DEV: Unified UI]";
-#[cfg(not(feature = "dev"))]
-const WINDOW_TITLE_RUNTIME: &str = "Broken Divinity [RUNTIME: Rollback UI]";
+const WINDOW_TITLE_UNIFIED: &str = "Broken Divinity [Unified UI]";
+const WINDOW_TITLE_ROLLBACK: &str = "Broken Divinity [Rollback Runtime UI]";
+const UI_MODE_ENV_VAR: &str = "BD_UI_MODE";
 
 fn print_launch_banner(mode: &str, command_hint: &str) {
     println!("================ BROKEN DIVINITY LAUNCH MODE ================");
@@ -33,10 +26,12 @@ fn print_launch_banner(mode: &str, command_hint: &str) {
 
 fn draw_launch_mode_badge(mut contexts: EguiContexts) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    let mode = if cfg!(feature = "dev") {
-        "Launch Mode: DEV unified UI"
+    let mode = if rollback_mode_enabled() {
+        "Launch Mode: Rollback runtime UI"
+    } else if cfg!(feature = "dev") {
+        "Launch Mode: Unified UI (dev tooling enabled)"
     } else {
-        "Launch Mode: RUNTIME rollback UI"
+        "Launch Mode: Unified UI"
     };
 
     egui::Area::new("launch_mode_badge".into())
@@ -59,24 +54,26 @@ fn draw_launch_mode_badge(mut contexts: EguiContexts) {
         });
 }
 
-#[cfg(feature = "dev")]
 fn main() {
-    print_launch_banner(
-        "DEV feature enabled -> Unified prototype UI path",
-        "Use `cargo run --bin broken_divinity --features dev` for this mode.",
-    );
+    if rollback_mode_enabled() {
+        print_launch_banner(
+            "Rollback runtime UI enabled via BD_UI_MODE=rollback",
+            "Use `BD_UI_MODE=rollback cargo run --bin broken_divinity` for rollback mode.",
+        );
+    } else if cfg!(feature = "dev") {
+        print_launch_banner(
+            "Unified UI default (dev tooling enabled)",
+            "Use `cargo run --bin broken_divinity` for unified mode.",
+        );
+    } else {
+        print_launch_banner(
+            "Unified UI default",
+            "Use `cargo run --bin broken_divinity` for unified mode.",
+        );
+    }
 
     let mut app = App::new();
-    app.add_plugins(DefaultPlugins.set(WindowPlugin {
-        primary_window: Some(Window {
-            title: WINDOW_TITLE_DEV.to_string(),
-            ..default()
-        }),
-        ..default()
-    }))
-        .add_plugins(EguiPlugin::default())
-        .add_plugins(UnifiedPrototypePlugin)
-        .add_systems(EguiPrimaryContextPass, draw_launch_mode_badge);
+    configure_launch_app(&mut app);
 
     #[cfg(feature = "dev")]
     {
@@ -88,17 +85,33 @@ fn main() {
     app.run();
 }
 
-#[cfg(not(feature = "dev"))]
-fn main() {
-    print_launch_banner(
-        "DEV feature disabled -> Runtime rollback UI path",
-        "Use `cargo run --bin broken_divinity` for this mode.",
-    );
+fn rollback_mode_enabled() -> bool {
+    std::env::var(UI_MODE_ENV_VAR)
+        .map(|value| value.eq_ignore_ascii_case("rollback"))
+        .unwrap_or(false)
+}
 
-    let mut app = App::new();
+fn configure_launch_app(app: &mut App) {
+    if rollback_mode_enabled() {
+        configure_rollback_runtime_app(app);
+    } else {
+        app.add_plugins(DefaultPlugins.set(WindowPlugin {
+            primary_window: Some(Window {
+                title: WINDOW_TITLE_UNIFIED.to_string(),
+                ..default()
+            }),
+            ..default()
+        }))
+            .add_plugins(EguiPlugin::default())
+            .add_plugins(UnifiedPrototypePlugin)
+            .add_systems(EguiPrimaryContextPass, draw_launch_mode_badge);
+    }
+}
+
+fn configure_rollback_runtime_app(app: &mut App) {
     app.add_plugins(DefaultPlugins.set(WindowPlugin {
         primary_window: Some(Window {
-            title: WINDOW_TITLE_RUNTIME.to_string(),
+            title: WINDOW_TITLE_ROLLBACK.to_string(),
             ..default()
         }),
         ..default()
@@ -263,6 +276,4 @@ fn main() {
             broken_divinity::core::save::handle_save_and_quit
                 .run_if(in_state(AppState::Colony).or(in_state(AppState::Overworld))),
         );
-
-    app.run();
 }
