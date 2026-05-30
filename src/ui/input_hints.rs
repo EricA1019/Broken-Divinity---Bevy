@@ -37,3 +37,8 @@ pub const OVERWORLD_RETURN_HINT_TEXT: &str = concat!(
 	"Esc",
 	" to return to colony shelter.",
 );
+
+pub const UNIFIED_SCREEN_SWITCH_HINT_TEXT: &str =
+	"M menu | D dungeon | C colony | O overworld | P dossier | I inventory";
+pub const UNIFIED_CONTROL_CLUSTER_HINT_TEXT: &str =
+	"1-6 layout tabs | Tab cycle | R reset | WASD move | Esc quit";
