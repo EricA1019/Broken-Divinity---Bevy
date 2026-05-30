@@ -9,6 +9,7 @@ use crate::core::state::AppState;
 use crate::core::turn::GameTime;
 use crate::ui::input_hints::MENU_SHORTCUT_HINT_TEXT;
 use crate::ui::readability::contrast_ratio;
+use crate::ui::runtime_action_language::RuntimeActionLanguage;
 use crate::ui::ux_style_contract::runtime_style_adapter;
 
 const MENU_SUBTITLE_FONT_SIZE: f32 = 14.0;
@@ -35,7 +36,7 @@ const MENU_QUIT_CONFIRM_PROMPT_TEXT: &str = "Quit the game?";
 const MENU_QUIT_CONFIRM_LABEL: &str = "Confirm";
 const MENU_QUIT_CANCEL_LABEL: &str = "Cancel";
 pub(crate) fn primary_menu_cta_label() -> &'static str {
-    "New Game"
+    RuntimeActionLanguage::menu_primary_cta_label()
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

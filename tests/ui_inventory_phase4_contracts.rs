@@ -51,9 +51,10 @@ fn equip_routes_weapon_item_to_weapon_slot() {
 #[test]
 fn equip_swaps_occupied_weapon_slot_and_returns_old_item_to_inventory() {
     let mut inventory = Inventory::default();
-    let mut equipment = Equipment::default();
-
-    equipment.weapon = Some(IRON_PIPE_ID.to_string());
+    let mut equipment = Equipment {
+        weapon: Some(IRON_PIPE_ID.to_string()),
+        ..Equipment::default()
+    };
     inventory
         .try_add(HUNTING_KNIFE_ID, 1)
         .expect("expected knife add to inventory");
@@ -102,9 +103,10 @@ fn accessory_ids_route_to_single_accessory_slot() {
 #[test]
 fn accessory_swap_returns_previous_charm_to_inventory() {
     let mut inventory = Inventory::default();
-    let mut equipment = Equipment::default();
-
-    equipment.accessory = Some(ACCESSORY_CHARM_ALPHA_ID.to_string());
+    let mut equipment = Equipment {
+        accessory: Some(ACCESSORY_CHARM_ALPHA_ID.to_string()),
+        ..Equipment::default()
+    };
     inventory
         .try_add(ACCESSORY_CHARM_BETA_ID, 1)
         .expect("expected second charm add to inventory");
@@ -120,8 +122,10 @@ fn accessory_swap_returns_previous_charm_to_inventory() {
 #[test]
 fn unequip_blocks_when_inventory_has_no_free_slot() {
     let mut inventory = full_inventory_of_pipes();
-    let mut equipment = Equipment::default();
-    equipment.armor = Some(SCRAP_VEST_ID.to_string());
+    let mut equipment = Equipment {
+        armor: Some(SCRAP_VEST_ID.to_string()),
+        ..Equipment::default()
+    };
 
     let error = unequip_to_inventory_slot(&mut inventory, &mut equipment, EquipmentSlot::Armor)
         .expect_err("expected unequip to fail when inventory is full");

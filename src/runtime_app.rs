@@ -12,6 +12,7 @@ use crate::primary_cta::{AppSurface, CtaPolicy, PrimaryCta};
 use crate::runtime_flow::{FlowAction, FlowNode, RuntimeFlow};
 use crate::save_recap::{SaveRecap, SaveRecapState, recap_for_state};
 use crate::ui::menu::{MenuUiAction, MenuUiChoice, draw_main_menu, process_menu_action};
+use crate::ui::runtime_action_language::RuntimeActionLanguage;
 
 const DEFAULT_RUNTIME_SEED: u64 = 20_260_527;
 
@@ -117,12 +118,7 @@ pub fn flow_primary_action(node: FlowNode) -> Option<FlowAction> {
 }
 
 pub fn flow_primary_label(node: FlowNode) -> &'static str {
-    match node {
-        FlowNode::Menu => "Start Run",
-        FlowNode::Colony => "Travel to Overworld",
-        FlowNode::Overworld => "Enter Dungeon",
-        FlowNode::Dungeon => "Return to Colony",
-    }
+    RuntimeActionLanguage::flow_primary_label(node)
 }
 
 pub fn recap_for_flow(node: FlowNode) -> Option<SaveRecap> {

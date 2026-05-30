@@ -1,4 +1,7 @@
 #![allow(clippy::too_many_arguments, clippy::type_complexity)]
+// Justification: colony panel systems are ECS integration points that aggregate
+// multiple resources/queries/actions by design; splitting signatures would
+// reduce readability and obscure Bevy scheduling intent.
 
 //! Colony UI — resource bar and survivor management panel.
 
@@ -19,6 +22,7 @@ use crate::game::colony::survivors::{Survivor, SurvivorNeeds, SurvivorTask};
 use crate::ui::input_hints::{SAVE_AND_QUIT_HINT_TEXT, SAVE_AND_QUIT_LABEL};
 use crate::ui::objective_prompt::{COLONY_OBJECTIVE_PROMPT_TEXT, ColonyObjectivePromptState};
 use crate::ui::readability::contrast_ratio;
+use crate::ui::runtime_action_language::RuntimeActionLanguage;
 use crate::ui::ux_style_contract::runtime_shell_layout;
 
 const RESOURCE_BAR_BACKGROUND_RGB: (u8, u8, u8) = (25, 30, 20);
@@ -87,7 +91,7 @@ pub(crate) fn primary_colony_cta_label(
         return "Primary action: Reach the shelter gate and press Enter.";
     }
 
-    "Primary action: Manage survivors and station output."
+    RuntimeActionLanguage::colony_primary_cta_label()
 }
 
 // ---------------------------------------------------------------------------

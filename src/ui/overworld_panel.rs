@@ -9,6 +9,7 @@ use crate::game::overworld::graphgen::NodeType;
 use crate::game::overworld::map::{PlayerMapPosition, WorldMap};
 use crate::game::overworld::travel::TravelState;
 use crate::ui::input_hints::{OVERWORLD_RETURN_HINT_TEXT, SAVE_AND_QUIT_HINT_TEXT, SAVE_AND_QUIT_LABEL};
+use crate::ui::runtime_action_language::RuntimeActionLanguage;
 use crate::ui::ux_style_contract::runtime_shell_layout;
 
 const ACTION_TO_HINT_SPACING_MULTIPLIER: f32 = 2.0;
@@ -27,7 +28,7 @@ pub enum OverworldUiChoice {
 }
 
 pub fn primary_overworld_cta_label() -> &'static str {
-    "Click a connected node to travel."
+    RuntimeActionLanguage::overworld_primary_cta_label()
 }
 
 pub(crate) fn overworld_supply_status_summary(resources: &ShelterResources) -> Option<&'static str> {

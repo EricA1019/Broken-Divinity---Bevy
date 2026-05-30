@@ -150,9 +150,10 @@ mod tests {
     #[test]
     fn equip_swaps_occupied_slot() {
         let mut inventory = Inventory::default();
-        let mut equipment = Equipment::default();
-
-        equipment.weapon = Some(IRON_PIPE_ID.to_string());
+        let mut equipment = Equipment {
+            weapon: Some(IRON_PIPE_ID.to_string()),
+            ..Equipment::default()
+        };
         inventory
             .try_add(HUNTING_KNIFE_ID, 1)
             .expect("expected knife add");
@@ -224,9 +225,10 @@ mod tests {
     #[test]
     fn accessory_swap_restores_previous_accessory_to_inventory() {
         let mut inventory = Inventory::default();
-        let mut equipment = Equipment::default();
-
-        equipment.accessory = Some(CHARM_ALPHA_ID.to_string());
+        let mut equipment = Equipment {
+            accessory: Some(CHARM_ALPHA_ID.to_string()),
+            ..Equipment::default()
+        };
         inventory
             .try_add(CHARM_BETA_ID, 1)
             .expect("expected second charm add");

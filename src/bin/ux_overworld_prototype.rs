@@ -2,6 +2,8 @@
 //!
 //! Run with: `cargo run --bin ux_overworld_prototype`
 
+//! DEPRECATED: prototype-only binary. Do not use for production runtime flow.
+
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
 use broken_divinity::ui::ux_overworld_prototype::OverworldPrototypePlugin;

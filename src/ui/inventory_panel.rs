@@ -234,6 +234,9 @@ pub fn draw_inventory_panel(
 // Process — Update (mutations)
 // ---------------------------------------------------------------------------
 
+// Justification: this ECS system coordinates state, action, and query resources
+// in a single scheduling boundary; splitting arguments would obscure system intent.
+#[allow(clippy::too_many_arguments)]
 pub fn process_inventory_action(
     mut action: ResMut<InventoryUiAction>,
     mut open: ResMut<InventoryOpen>,

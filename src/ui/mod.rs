@@ -14,6 +14,7 @@ pub mod objective_prompt;
 pub mod overworld_panel;
 pub mod perk_choice_panel;
 pub mod readability;
+pub mod runtime_action_language;
 pub mod stats_progression_panel;
 #[cfg(feature = "ux-prototypes")]
 pub mod ux_colony_prototype;

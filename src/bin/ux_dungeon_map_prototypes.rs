@@ -1,6 +1,8 @@
 //! Dedicated launcher for dungeon-map readability prototypes.
 //! Kept isolated from the main UX prototype surface.
 
+//! DEPRECATED: prototype-only binary. Do not use for production runtime flow.
+
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
 use broken_divinity::ui::ux_dungeon_map_prototypes::DungeonMapPrototypePlugin;

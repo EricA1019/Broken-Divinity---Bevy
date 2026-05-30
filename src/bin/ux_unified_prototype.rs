@@ -1,3 +1,5 @@
+//! DEPRECATED: prototype-only binary. Do not use for production runtime flow.
+
 //! Unified launcher: dungeon style + colony layouts in one surface.
 
 use bevy::prelude::*;

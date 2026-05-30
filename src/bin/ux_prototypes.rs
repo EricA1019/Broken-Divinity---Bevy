@@ -6,6 +6,8 @@
 //!   M/C/D   — switch screen (Menu / Colony / Dungeon HUD)
 //!   Esc     — quit
 
+//! DEPRECATED: prototype-only binary. Do not use for production runtime flow.
+
 use bevy::prelude::*;
 use bevy_egui::EguiPlugin;
 use broken_divinity::ui::ux_prototypes::UxPrototypePlugin;
