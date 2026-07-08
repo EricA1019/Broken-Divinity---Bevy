@@ -5,6 +5,7 @@
 
 mod render_grid;
 mod theme;
+mod view_models;
 mod visual;
 
 use bevy_app::{App, Plugin};
@@ -28,14 +29,13 @@ use bd_core::{
     BdSet,
     components::{BlocksMovement, Player, Position},
     direction::Direction,
-    gamelog::{GameLog, LogLevel},
-    map::SmokeMap,
-    pools::Pools,
-    signals::{ActionIntent, PoolKind},
+    gamelog::LogLevel,
+    signals::ActionIntent,
 };
 
 use render_grid::RenderCellGrid;
 use theme::ThemeRegistry;
+use view_models::{ActionListViewModel, LogViewModel, MapViewModel, StatsViewModel};
 use visual::{SymbolRegistry, VisualToken};
 
 /// TUI plugin — registers input mapping and render systems.
@@ -45,6 +45,8 @@ impl Plugin for BdTuiPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(SymbolRegistry::phase5_defaults());
         app.insert_resource(ThemeRegistry::phase5_defaults());
+
+        view_models::register_view_models(app);
 
         app.add_systems(
             bevy_app::Update,
@@ -159,55 +161,40 @@ fn find_nearest_enemy(
         .map(|(e, _)| e)
 }
 
-/// Draw the full TUI layout: map, stats panel, help, log, footer.
+/// Draw the full TUI layout from view models only.
 #[allow(clippy::too_many_arguments)]
 fn draw_ui(
     mut ctx: ResMut<RatatuiContext>,
-    map: Res<SmokeMap>,
-    player_pos: Query<&Position, With<Player>>,
-    player_pools: Query<&Pools, With<Player>>,
-    enemies: Query<&Position, (With<BlocksMovement>, Without<Player>)>,
-    game_log: Res<GameLog>,
+    map_vm: Res<MapViewModel>,
+    stats_vm: Res<StatsViewModel>,
+    log_vm: Res<LogViewModel>,
+    action_vm: Res<ActionListViewModel>,
     symbols: Res<SymbolRegistry>,
     theme: Res<ThemeRegistry>,
 ) {
     let _ = ctx.draw(|frame| {
         let area = frame.area();
 
-        // Split into main area (left) and stats panel (right)
         let [main_area, stats_area] =
             Layout::horizontal([Constraint::Fill(1), Constraint::Length(20)]).areas(area);
 
-        // Main area: split into map and bottom panel
         let [map_area, bottom_area] =
-            Layout::vertical([Constraint::Fill(1), Constraint::Length(7)]).areas(main_area);
+            Layout::vertical([Constraint::Fill(1), Constraint::Length(8)]).areas(main_area);
 
-        // Bottom: split into log and help
-        let [log_area, help_area] =
-            Layout::vertical([Constraint::Fill(1), Constraint::Length(1)]).areas(bottom_area);
+        let [log_area, action_area] =
+            Layout::vertical([Constraint::Fill(1), Constraint::Length(3)]).areas(bottom_area);
 
         // ---- Map ----
-        let player_pos = player_pos.single().ok().copied();
-        let pools = player_pools.single().ok();
-        let enemy_positions: Vec<Position> = enemies.iter().copied().collect();
-        render_map(
-            frame,
-            map_area,
-            &map,
-            player_pos,
-            &enemy_positions,
-            &symbols,
-            &theme,
-        );
+        render_map(frame, map_area, &map_vm, &symbols, &theme);
 
-        // ---- Stats panel ----
-        render_stats(frame, stats_area, pools);
+        // ---- Stats ----
+        render_stats(frame, stats_area, &stats_vm);
 
         // ---- Log ----
-        render_log(frame, log_area, &game_log);
+        render_log(frame, log_area, &log_vm);
 
-        // ---- Help line ----
-        render_help(frame, help_area);
+        // ---- Action bar ----
+        render_action_bar(frame, action_area, &action_vm);
 
         // ---- Footer ----
         render_footer(frame, area);
@@ -217,9 +204,7 @@ fn draw_ui(
 fn render_map(
     frame: &mut ratatui::Frame,
     area: Rect,
-    map: &SmokeMap,
-    player_pos: Option<Position>,
-    enemy_positions: &[Position],
+    vm: &MapViewModel,
     symbols: &SymbolRegistry,
     theme: &ThemeRegistry,
 ) {
@@ -231,31 +216,28 @@ fn render_map(
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    // Build semantic render grid
-    let w = inner.width.min(map.width as u16);
-    let h = inner.height.min(map.height as u16);
+    let w = inner.width.min(vm.width as u16);
+    let h = inner.height.min(vm.height as u16);
     let mut grid = RenderCellGrid::new(w, h, VisualToken::Floor, symbols, theme);
 
     for y in 0..h as i32 {
         for x in 0..w as i32 {
-            let tile = map.get(x, y).unwrap_or(bd_core::components::Tile::Wall);
-            let token = match tile {
-                bd_core::components::Tile::Wall => VisualToken::Wall,
-                bd_core::components::Tile::Floor => VisualToken::Floor,
+            let idx = (y * vm.width + x) as usize;
+            let token = match vm.tiles.get(idx) {
+                Some(bd_core::components::Tile::Wall) | None => VisualToken::Wall,
+                Some(bd_core::components::Tile::Floor) => VisualToken::Floor,
             };
             grid.set(x as u16, y as u16, token, symbols, theme);
         }
     }
 
-    // Overlay enemies
-    for ep in enemy_positions {
+    for ep in &vm.enemy_positions {
         if ep.x >= 0 && ep.x < w as i32 && ep.y >= 0 && ep.y < h as i32 {
             grid.set(ep.x as u16, ep.y as u16, VisualToken::Enemy, symbols, theme);
         }
     }
 
-    // Overlay player (highest layer)
-    if let Some(pp) = player_pos {
+    if let Some(pp) = vm.player_pos {
         if pp.x >= 0 && pp.x < w as i32 && pp.y >= 0 && pp.y < h as i32 {
             grid.set(
                 pp.x as u16,
@@ -267,7 +249,6 @@ fn render_map(
         }
     }
 
-    // Render grid to terminal
     let mut lines: Vec<Line> = Vec::new();
     for row in grid.rows() {
         let spans: Vec<Span> = row
@@ -281,7 +262,7 @@ fn render_map(
     frame.render_widget(para, inner);
 }
 
-fn render_stats(frame: &mut ratatui::Frame, area: Rect, pools: Option<&Pools>) {
+fn render_stats(frame: &mut ratatui::Frame, area: Rect, vm: &StatsViewModel) {
     let block = Block::default()
         .title(" Stats ")
         .borders(Borders::ALL)
@@ -290,18 +271,11 @@ fn render_stats(frame: &mut ratatui::Frame, area: Rect, pools: Option<&Pools>) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let hp = pools
-        .and_then(|p| p.get(PoolKind::Health))
-        .map_or((0, 0), |p| (p.current, p.max));
-    let ap = pools
-        .and_then(|p| p.get(PoolKind::ActionPoints))
-        .map_or((0, 0), |p| (p.current, p.max));
-
     let text = vec![
         Line::from(vec![
             Span::styled("HP: ", Style::default().fg(Color::Gray)),
             Span::styled(
-                format!("{}/{}", hp.0, hp.1),
+                format!("{}/{}", vm.hp_current, vm.hp_max),
                 Style::default().fg(Color::Red),
             ),
         ]),
@@ -309,7 +283,7 @@ fn render_stats(frame: &mut ratatui::Frame, area: Rect, pools: Option<&Pools>) {
         Line::from(vec![
             Span::styled("AP: ", Style::default().fg(Color::Gray)),
             Span::styled(
-                format!("{}/{}", ap.0, ap.1),
+                format!("{}/{}", vm.ap_current, vm.ap_max),
                 Style::default().fg(Color::Blue),
             ),
         ]),
@@ -319,7 +293,7 @@ fn render_stats(frame: &mut ratatui::Frame, area: Rect, pools: Option<&Pools>) {
     frame.render_widget(para, inner);
 }
 
-fn render_log(frame: &mut ratatui::Frame, area: Rect, log: &GameLog) {
+fn render_log(frame: &mut ratatui::Frame, area: Rect, vm: &LogViewModel) {
     let block = Block::default()
         .title(" Log ")
         .borders(Borders::ALL)
@@ -328,7 +302,8 @@ fn render_log(frame: &mut ratatui::Frame, area: Rect, log: &GameLog) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let lines: Vec<Line> = log
+    let lines: Vec<Line> = vm
+        .entries
         .iter()
         .take(inner.height as usize)
         .map(|entry| {
@@ -345,26 +320,46 @@ fn render_log(frame: &mut ratatui::Frame, area: Rect, log: &GameLog) {
     frame.render_widget(para, inner);
 }
 
-fn render_help(frame: &mut ratatui::Frame, area: Rect) {
-    let text = Line::from(vec![
-        Span::styled("WASD", Style::default().fg(Color::Yellow)),
-        Span::raw(" move | "),
-        Span::styled(".", Style::default().fg(Color::Yellow)),
-        Span::raw(" wait | "),
-        Span::styled("f", Style::default().fg(Color::Yellow)),
-        Span::raw(" attack | "),
-        Span::styled("g", Style::default().fg(Color::Yellow)),
-        Span::raw(" guard | "),
-        Span::styled("q", Style::default().fg(Color::Yellow)),
-        Span::raw(" quit"),
-    ]);
-    let para = Paragraph::new(text).style(Style::default().fg(Color::Gray));
-    frame.render_widget(para, area);
+fn render_action_bar(frame: &mut ratatui::Frame, area: Rect, vm: &ActionListViewModel) {
+    let block = Block::default()
+        .title(" Actions ")
+        .borders(Borders::ALL)
+        .style(Style::default().fg(Color::Gray));
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let spans: Vec<Span> = vm
+        .actions
+        .iter()
+        .flat_map(|a| {
+            let key_style = if a.enabled {
+                Style::default().fg(Color::Yellow)
+            } else {
+                Style::default().fg(Color::DarkGray)
+            };
+            let mut parts = vec![
+                Span::styled(format!("{} ", a.key_hint), key_style),
+                Span::raw(a.label.to_string()),
+            ];
+            if let Some(ref reason) = a.denial_reason {
+                parts.push(Span::styled(
+                    format!(" ({})", reason),
+                    Style::default().fg(Color::Red),
+                ));
+            }
+            parts.push(Span::raw("  "));
+            parts
+        })
+        .collect();
+
+    let para = Paragraph::new(Line::from(spans));
+    frame.render_widget(para, inner);
 }
 
 fn render_footer(frame: &mut ratatui::Frame, area: Rect) {
     let version = env!("CARGO_PKG_VERSION");
-    let text = format!("Broken Divinity Kernel v{version} | phase 1 | q quit");
+    let text = format!("Broken Divinity Kernel v{version} | phase 6 | q quit");
     let footer_area = Rect {
         y: area.height.saturating_sub(1),
         height: 1,

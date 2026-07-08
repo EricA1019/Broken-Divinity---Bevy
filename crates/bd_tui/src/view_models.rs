@@ -1,0 +1,298 @@
+//! View models — plain data structs between ECS and rendering.
+
+use bevy_app::App;
+use bevy_ecs::{
+    prelude::*,
+    query::With,
+    system::{Query, Res, ResMut},
+};
+
+use bd_core::{
+    BdSet,
+    components::{BlocksMovement, Player, Position, Tile},
+    gamelog::{GameLog, LogLevel},
+    map::SmokeMap,
+    pools::Pools,
+    signals::PoolKind,
+};
+
+#[derive(Resource, Debug, Clone, Default)]
+pub struct StatsViewModel {
+    pub hp_current: i32,
+    pub hp_max: i32,
+    pub ap_current: i32,
+    pub ap_max: i32,
+}
+
+#[derive(Resource, Debug, Clone, Default)]
+pub struct LogViewModel {
+    pub entries: Vec<LogEntryVm>,
+}
+
+#[derive(Debug, Clone)]
+pub struct LogEntryVm {
+    pub message: String,
+    pub level: LogLevel,
+}
+
+#[derive(Debug, Clone)]
+pub struct ActionItemVm {
+    pub label: String,
+    pub key_hint: String,
+    pub enabled: bool,
+    pub denial_reason: Option<String>,
+}
+
+#[derive(Resource, Debug, Clone, Default)]
+pub struct ActionListViewModel {
+    pub actions: Vec<ActionItemVm>,
+}
+
+#[derive(Resource, Debug, Clone, Default)]
+pub struct MapViewModel {
+    pub width: i32,
+    pub height: i32,
+    pub tiles: Vec<Tile>,
+    pub player_pos: Option<Position>,
+    pub enemy_positions: Vec<Position>,
+}
+
+#[derive(Resource, Debug, Clone, Default)]
+#[allow(dead_code)]
+pub struct ActorPanelViewModel {
+    pub entity_name: Option<String>,
+    pub hp: Option<(i32, i32)>,
+}
+
+pub(crate) fn register_view_models(app: &mut App) {
+    app.insert_resource(StatsViewModel::default());
+    app.insert_resource(LogViewModel::default());
+    app.insert_resource(ActionListViewModel::default());
+    app.insert_resource(MapViewModel::default());
+    app.insert_resource(ActorPanelViewModel::default());
+    app.add_systems(
+        bevy_app::Update,
+        (
+            build_stats_vm,
+            build_log_vm,
+            build_action_list_vm,
+            build_map_vm,
+        )
+            .in_set(BdSet::ViewModelBuild),
+    );
+}
+
+fn build_stats_vm(player_pools: Query<&Pools, With<Player>>, mut vm: ResMut<StatsViewModel>) {
+    if let Ok(pools) = player_pools.single() {
+        vm.hp_current = pools.get(PoolKind::Health).map_or(0, |p| p.current);
+        vm.hp_max = pools.get(PoolKind::Health).map_or(0, |p| p.max);
+        vm.ap_current = pools.get(PoolKind::ActionPoints).map_or(0, |p| p.current);
+        vm.ap_max = pools.get(PoolKind::ActionPoints).map_or(0, |p| p.max);
+    }
+}
+
+fn build_log_vm(log: Res<GameLog>, mut vm: ResMut<LogViewModel>) {
+    vm.entries = log
+        .iter()
+        .map(|e| LogEntryVm {
+            message: e.message.clone(),
+            level: e.level,
+        })
+        .collect();
+}
+
+fn build_action_list_vm(
+    player: Query<(&Position, &Pools), With<Player>>,
+    enemies: Query<&Position, (With<BlocksMovement>, Without<Player>)>,
+    map: Res<SmokeMap>,
+    mut vm: ResMut<ActionListViewModel>,
+) {
+    let Ok((pp, pools)) = player.single() else {
+        vm.actions.clear();
+        return;
+    };
+    let ap = pools.get(PoolKind::ActionPoints).map_or(0, |p| p.current);
+    let has_ap = ap >= 1;
+    let enemy_near = enemies
+        .iter()
+        .any(|ep| (ep.x - pp.x).unsigned_abs() + (ep.y - pp.y).unsigned_abs() <= 1);
+    let can_move = map.is_walkable(pp.x + 1, pp.y);
+
+    vm.actions = vec![
+        ActionItemVm {
+            label: "Move".into(),
+            key_hint: "WASD".into(),
+            enabled: has_ap && can_move,
+            denial_reason: if !has_ap {
+                Some("No AP".into())
+            } else if !can_move {
+                Some("Blocked".into())
+            } else {
+                None
+            },
+        },
+        ActionItemVm {
+            label: "Wait".into(),
+            key_hint: ".".into(),
+            enabled: true,
+            denial_reason: None,
+        },
+        ActionItemVm {
+            label: "Attack".into(),
+            key_hint: "f".into(),
+            enabled: has_ap && enemy_near,
+            denial_reason: if !has_ap {
+                Some("No AP".into())
+            } else if !enemy_near {
+                Some("Range".into())
+            } else {
+                None
+            },
+        },
+        ActionItemVm {
+            label: "Guard".into(),
+            key_hint: "g".into(),
+            enabled: has_ap,
+            denial_reason: if !has_ap { Some("No AP".into()) } else { None },
+        },
+    ];
+}
+
+fn build_map_vm(
+    map: Res<SmokeMap>,
+    player_pos: Query<&Position, With<Player>>,
+    enemies: Query<&Position, (With<BlocksMovement>, Without<Player>)>,
+    mut vm: ResMut<MapViewModel>,
+) {
+    vm.width = map.width;
+    vm.height = map.height;
+    vm.tiles.clear();
+    for y in 0..map.height {
+        for x in 0..map.width {
+            vm.tiles.push(map.get(x, y).unwrap_or(Tile::Wall));
+        }
+    }
+    vm.player_pos = player_pos.single().ok().copied();
+    vm.enemy_positions = enemies.iter().copied().collect();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use bd_core::pools::Pool;
+    use bevy_app::App;
+
+    fn test_app() -> App {
+        let mut app = App::new();
+        app.add_plugins(bd_core::BdCorePlugin);
+        app.insert_resource(StatsViewModel::default());
+        app.insert_resource(ActionListViewModel::default());
+        app.insert_resource(MapViewModel::default());
+        app.add_systems(
+            bevy_app::Update,
+            (build_stats_vm, build_action_list_vm, build_map_vm).in_set(BdSet::ViewModelBuild),
+        );
+        app
+    }
+
+    #[test]
+    fn stats_view_model_contains_hp_ap() {
+        let mut app = test_app();
+        app.world_mut().spawn((
+            Player,
+            Position { x: 5, y: 5 },
+            Pools::new(vec![
+                Pool::new(PoolKind::Health, 15, 0, 20),
+                Pool::new(PoolKind::ActionPoints, 2, 0, 3),
+            ]),
+        ));
+        app.world_mut()
+            .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
+        app.update();
+        let vm = app.world().resource::<StatsViewModel>();
+        assert_eq!(vm.hp_current, 15);
+        assert_eq!(vm.hp_max, 20);
+        assert_eq!(vm.ap_current, 2);
+        assert_eq!(vm.ap_max, 3);
+    }
+
+    #[test]
+    fn action_list_contains_move_wait_attack_guard() {
+        let mut app = test_app();
+        app.world_mut().spawn((
+            Player,
+            Position { x: 5, y: 5 },
+            Pools::new(vec![Pool::new(PoolKind::ActionPoints, 3, 0, 3)]),
+        ));
+        app.world_mut()
+            .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
+        app.update();
+        let labels: Vec<&str> = app
+            .world()
+            .resource::<ActionListViewModel>()
+            .actions
+            .iter()
+            .map(|a| a.label.as_str())
+            .collect();
+        assert!(labels.contains(&"Move"));
+        assert!(labels.contains(&"Wait"));
+        assert!(labels.contains(&"Attack"));
+        assert!(labels.contains(&"Guard"));
+    }
+
+    #[test]
+    fn disabled_action_contains_denial_reason() {
+        let mut app = test_app();
+        app.world_mut().spawn((
+            Player,
+            Position { x: 5, y: 5 },
+            Pools::new(vec![Pool::new(PoolKind::ActionPoints, 0, 0, 3)]),
+        ));
+        app.world_mut()
+            .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
+        app.update();
+        let vm = app.world().resource::<ActionListViewModel>();
+        let attack = vm.actions.iter().find(|a| a.label == "Attack").unwrap();
+        assert!(!attack.enabled);
+        assert!(attack.denial_reason.is_some());
+    }
+
+    #[test]
+    fn map_view_model_contains_tiles() {
+        let mut app = test_app();
+        app.world_mut().spawn((
+            Player,
+            Position { x: 5, y: 5 },
+            Pools::new(vec![Pool::new(PoolKind::ActionPoints, 3, 0, 3)]),
+        ));
+        app.world_mut()
+            .insert_resource(SmokeMap::default_smoke_map());
+        app.update();
+        let vm = app.world().resource::<MapViewModel>();
+        assert_eq!(vm.width, 20);
+        assert_eq!(vm.player_pos, Some(Position { x: 5, y: 5 }));
+    }
+
+    #[test]
+    fn widgets_can_render_from_view_models() {
+        let mut app = test_app();
+        app.world_mut().spawn((
+            Player,
+            Position { x: 5, y: 5 },
+            Pools::new(vec![
+                Pool::new(PoolKind::Health, 20, 0, 20),
+                Pool::new(PoolKind::ActionPoints, 3, 0, 3),
+            ]),
+        ));
+        app.world_mut()
+            .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
+        app.update();
+        let stats = app.world().resource::<StatsViewModel>();
+        assert!(stats.hp_max > 0);
+        assert!(stats.ap_max > 0);
+        let actions = app.world().resource::<ActionListViewModel>();
+        assert!(!actions.actions.is_empty());
+        let map = app.world().resource::<MapViewModel>();
+        assert!(map.width > 0);
+    }
+}
