@@ -17,6 +17,7 @@ use crate::{
         ActionDenied, ActionIntent, DeltaTag, DenialReason, EntityMoved, MoveBlockReason,
         MoveBlocked, PoolDeltaRequested, PoolKind,
     },
+    trace::SignalTrace,
 };
 
 // ── Action definition ──
@@ -200,12 +201,18 @@ fn validate_action_intents(
     mut messages: bevy_ecs::message::MessageReader<ActionIntent>,
     mut denied_writer: bevy_ecs::message::MessageWriter<ActionDenied>,
     mut game_log: ResMut<GameLog>,
+    mut trace: ResMut<SignalTrace>,
     actors: Query<(Entity, &Position, Option<&Pools>, Option<&Player>)>,
     targets: Query<(Entity, &Position, Option<&Player>)>,
 ) {
     let target_positions: Vec<(Entity, &Position, Option<&Player>)> = targets.iter().collect();
 
     for intent in messages.read() {
+        trace.push(
+            "Validation",
+            "ActionIntent",
+            format!("actor={:?} action={}", intent.actor, intent.action_id),
+        );
         let Ok((_, actor_pos, pools, player_flag)) = actors.get(intent.actor) else {
             continue;
         };
@@ -332,10 +339,16 @@ fn validate_action_intents(
 fn compile_action_costs(
     mut commands: Commands,
     registry: Res<ActionRegistry>,
+    mut trace: ResMut<SignalTrace>,
     mut delta_writer: bevy_ecs::message::MessageWriter<PoolDeltaRequested>,
     actors: Query<(Entity, &PendingAction)>,
 ) {
     for (entity, pending) in actors.iter() {
+        trace.push(
+            "CostResolution",
+            "CostCompile",
+            format!("entity={:?} action={}", entity, pending.action_id),
+        );
         let Some(def) = registry.get(&pending.action_id) else {
             commands.entity(entity).remove::<PendingAction>();
             continue;
@@ -371,6 +384,7 @@ fn resolve_action_effects(
     registry: Res<ActionRegistry>,
     map: Res<SmokeMap>,
     mut game_log: ResMut<GameLog>,
+    mut trace: ResMut<SignalTrace>,
     mut delta_writer: bevy_ecs::message::MessageWriter<PoolDeltaRequested>,
     mut moved_writer: bevy_ecs::message::MessageWriter<EntityMoved>,
     mut blocked_writer: bevy_ecs::message::MessageWriter<MoveBlocked>,
@@ -380,6 +394,11 @@ fn resolve_action_effects(
     let blocked_positions: Vec<Position> = blockers.iter().copied().collect();
 
     for (entity, pos, pending, player_flag) in actors.iter() {
+        trace.push(
+            "Mutation",
+            "EffectResolve",
+            format!("entity={:?} action={}", entity, pending.action_id),
+        );
         let Some(def) = registry.get(&pending.action_id) else {
             commands.entity(entity).remove::<PendingAction>();
             continue;

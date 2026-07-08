@@ -12,9 +12,11 @@ pub mod gamelog;
 pub mod map;
 pub mod pools;
 pub mod signals;
+pub mod trace;
 
 mod actions;
 
+use crate::trace::{SignalTrace, TriggerExecutionGuard};
 use gamelog::GameLog;
 use map::SmokeMap;
 
@@ -69,6 +71,8 @@ impl Plugin for BdCorePlugin {
         // Register resources
         app.insert_resource(SmokeMap::default_smoke_map());
         app.insert_resource(GameLog::default());
+        app.insert_resource(SignalTrace::default());
+        app.insert_resource(TriggerExecutionGuard::default());
 
         // Register movement-related message types (used by actions)
         app.add_message::<crate::signals::MoveIntent>();

@@ -10,6 +10,7 @@ use crate::{
     BdSet,
     gamelog::{GameLog, LogLevel},
     signals::{EntityDefeated, PoolDeltaApplied, PoolDeltaRequested, PoolKind},
+    trace::SignalTrace,
 };
 
 // ── Component ──
@@ -86,9 +87,15 @@ fn resolve_pool_deltas(
     mut applied_writer: bevy_ecs::message::MessageWriter<PoolDeltaApplied>,
     mut defeated_writer: bevy_ecs::message::MessageWriter<EntityDefeated>,
     mut game_log: ResMut<GameLog>,
+    mut trace: ResMut<SignalTrace>,
     mut query: Query<(Entity, &mut Pools)>,
 ) {
     for req in requests.read() {
+        trace.push(
+            "Mutation",
+            "PoolDelta",
+            format!("{:?} {:?} {}", req.target, req.kind, req.amount),
+        );
         let Ok((entity, mut pools)) = query.get_mut(req.target) else {
             continue; // target has no Pools component — skip
         };
