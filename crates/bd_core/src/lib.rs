@@ -10,9 +10,10 @@ pub mod components;
 pub mod direction;
 pub mod gamelog;
 pub mod map;
-mod movement;
 pub mod pools;
 pub mod signals;
+
+mod actions;
 
 use gamelog::GameLog;
 use map::SmokeMap;
@@ -69,11 +70,16 @@ impl Plugin for BdCorePlugin {
         app.insert_resource(SmokeMap::default_smoke_map());
         app.insert_resource(GameLog::default());
 
-        // Register movement systems
-        movement::register_movement(app);
+        // Register movement-related message types (used by actions)
+        app.add_message::<crate::signals::MoveIntent>();
+        app.add_message::<crate::signals::MoveBlocked>();
+        app.add_message::<crate::signals::EntityMoved>();
 
         // Register pool delta pipeline
         pools::register_pools(app);
+
+        // Register action system (replaces direct movement systems)
+        actions::register_actions(app);
 
         tracing::info!("BdCorePlugin initialized");
     }

@@ -37,6 +37,37 @@ pub enum MoveBlockReason {
     NotEnoughAP,
 }
 
+// ── Actions ──
+
+/// Intent to perform an action.
+#[derive(Message, Debug, Clone)]
+pub struct ActionIntent {
+    pub actor: Entity,
+    pub action_id: String,
+    pub direction: Option<Direction>,
+    pub target: Option<Entity>,
+}
+
+/// An action was denied with a reason.
+#[derive(Message, Debug, Clone)]
+pub struct ActionDenied {
+    pub actor: Entity,
+    pub action_id: String,
+    pub reason: DenialReason,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DenialReason {
+    NotEnoughPool(PoolKind),
+    BlockedTile,
+    OutOfRange,
+    NoTarget,
+    InvalidTarget,
+    ActorDefeated,
+    /// Fallback for unclassified denials.
+    Other(String),
+}
+
 // ── Pool deltas ──
 
 /// Kind of pool (health, AP, stress, etc.).
@@ -58,6 +89,8 @@ pub enum DeltaTag {
     Poison,
     Recovery,
     MovementCost,
+    /// Generic action cost or effect.
+    Action,
 }
 
 /// Request to change a pool value. Negative = damage/cost, positive = heal/restore.

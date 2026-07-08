@@ -5,8 +5,9 @@
 
 use bevy_app::{App, Plugin};
 use bevy_ecs::{
+    entity::Entity,
     message::{MessageReader, MessageWriter},
-    query::With,
+    query::{With, Without},
     schedule::IntoScheduleConfigs,
     system::{Query, Res, ResMut},
 };
@@ -20,12 +21,12 @@ use ratatui::{
 
 use bd_core::{
     BdSet,
-    components::{Player, Position},
+    components::{BlocksMovement, Player, Position},
     direction::Direction,
     gamelog::{GameLog, LogLevel},
     map::SmokeMap,
     pools::Pools,
-    signals::{MoveIntent, PoolKind},
+    signals::{ActionIntent, PoolKind},
 };
 
 /// TUI plugin — registers input mapping and render systems.
@@ -45,11 +46,14 @@ impl Plugin for BdTuiPlugin {
     }
 }
 
-/// Map keyboard input to MoveIntent messages.
+/// Map keyboard input to ActionIntent messages.
+#[allow(clippy::type_complexity)]
 fn map_input_to_intents(
     mut messages: MessageReader<KeyMessage>,
-    player: Query<bevy_ecs::entity::Entity, With<Player>>,
-    mut move_writer: MessageWriter<MoveIntent>,
+    player: Query<Entity, With<Player>>,
+    enemies: Query<(Entity, &Position), (With<BlocksMovement>, Without<Player>)>,
+    player_pos: Query<&Position, With<Player>>,
+    mut action_writer: MessageWriter<ActionIntent>,
     mut exit: MessageWriter<bevy_app::AppExit>,
 ) {
     use crossterm::event::KeyCode;
@@ -59,25 +63,88 @@ fn map_input_to_intents(
     };
 
     for key in messages.read() {
-        let direction = match key.code {
-            KeyCode::Char('w') | KeyCode::Up => Some(Direction::North),
-            KeyCode::Char('s') | KeyCode::Down => Some(Direction::South),
-            KeyCode::Char('d') | KeyCode::Right => Some(Direction::East),
-            KeyCode::Char('a') | KeyCode::Left => Some(Direction::West),
+        match key.code {
+            // Movement
+            KeyCode::Char('w') | KeyCode::Up => {
+                action_writer.write(ActionIntent {
+                    actor: player_entity,
+                    action_id: "ability.move".into(),
+                    direction: Some(Direction::North),
+                    target: None,
+                });
+            }
+            KeyCode::Char('s') | KeyCode::Down => {
+                action_writer.write(ActionIntent {
+                    actor: player_entity,
+                    action_id: "ability.move".into(),
+                    direction: Some(Direction::South),
+                    target: None,
+                });
+            }
+            KeyCode::Char('d') | KeyCode::Right => {
+                action_writer.write(ActionIntent {
+                    actor: player_entity,
+                    action_id: "ability.move".into(),
+                    direction: Some(Direction::East),
+                    target: None,
+                });
+            }
+            KeyCode::Char('a') | KeyCode::Left => {
+                action_writer.write(ActionIntent {
+                    actor: player_entity,
+                    action_id: "ability.move".into(),
+                    direction: Some(Direction::West),
+                    target: None,
+                });
+            }
+            // Wait
+            KeyCode::Char('.') => {
+                action_writer.write(ActionIntent {
+                    actor: player_entity,
+                    action_id: "ability.wait".into(),
+                    direction: None,
+                    target: None,
+                });
+            }
+            // Attack — target nearest enemy
+            KeyCode::Char('f') => {
+                let nearest = find_nearest_enemy(player_pos.single().ok(), &enemies);
+                action_writer.write(ActionIntent {
+                    actor: player_entity,
+                    action_id: "ability.attack".into(),
+                    direction: None,
+                    target: nearest,
+                });
+            }
+            // Guard
+            KeyCode::Char('g') => {
+                action_writer.write(ActionIntent {
+                    actor: player_entity,
+                    action_id: "ability.guard".into(),
+                    direction: None,
+                    target: None,
+                });
+            }
+            // Quit
             KeyCode::Char('q') | KeyCode::Esc => {
                 exit.write_default();
-                None
             }
-            _ => None,
-        };
-
-        if let Some(dir) = direction {
-            move_writer.write(MoveIntent {
-                entity: player_entity,
-                direction: dir,
-            });
+            _ => {}
         }
     }
+}
+
+/// Find the nearest enemy to the player by Manhattan distance.
+#[allow(clippy::type_complexity)]
+fn find_nearest_enemy(
+    player_pos: Option<&Position>,
+    enemies: &Query<(Entity, &Position), (With<BlocksMovement>, Without<Player>)>,
+) -> Option<Entity> {
+    let pp = player_pos?;
+    enemies
+        .iter()
+        .min_by_key(|(_, pos)| (pos.x - pp.x).unsigned_abs() + (pos.y - pp.y).unsigned_abs())
+        .map(|(e, _)| e)
 }
 
 /// Draw the full TUI layout: map, stats panel, help, log, footer.
@@ -86,6 +153,7 @@ fn draw_ui(
     map: Res<SmokeMap>,
     player_pos: Query<&Position, With<Player>>,
     player_pools: Query<&Pools, With<Player>>,
+    enemies: Query<&Position, (With<BlocksMovement>, Without<Player>)>,
     game_log: Res<GameLog>,
 ) {
     let _ = ctx.draw(|frame| {
@@ -106,7 +174,8 @@ fn draw_ui(
         // ---- Map ----
         let player_pos = player_pos.single().ok().copied();
         let pools = player_pools.single().ok();
-        render_map(frame, map_area, &map, player_pos);
+        let enemy_positions: Vec<Position> = enemies.iter().copied().collect();
+        render_map(frame, map_area, &map, player_pos, &enemy_positions);
 
         // ---- Stats panel ----
         render_stats(frame, stats_area, pools);
@@ -127,6 +196,7 @@ fn render_map(
     area: Rect,
     map: &SmokeMap,
     player_pos: Option<Position>,
+    enemy_positions: &[Position],
 ) {
     let block = Block::default()
         .title(" Map ")
@@ -142,10 +212,13 @@ fn render_map(
         let mut spans: Vec<Span> = Vec::new();
         for x in 0..map.width.min(inner.width as i32) {
             let is_player = player_pos == Some(Position { x, y });
+            let is_enemy = enemy_positions.contains(&Position { x, y });
             let tile = map.get(x, y).unwrap_or(bd_core::components::Tile::Wall);
 
             let (ch, style) = if is_player {
                 ('@', Style::default().fg(Color::Yellow))
+            } else if is_enemy {
+                ('E', Style::default().fg(Color::Red))
             } else {
                 (
                     tile.glyph(),
@@ -231,10 +304,14 @@ fn render_log(frame: &mut ratatui::Frame, area: Rect, log: &GameLog) {
 
 fn render_help(frame: &mut ratatui::Frame, area: Rect) {
     let text = Line::from(vec![
-        Span::styled("WASD/Arrows", Style::default().fg(Color::Yellow)),
+        Span::styled("WASD", Style::default().fg(Color::Yellow)),
         Span::raw(" move | "),
         Span::styled(".", Style::default().fg(Color::Yellow)),
         Span::raw(" wait | "),
+        Span::styled("f", Style::default().fg(Color::Yellow)),
+        Span::raw(" attack | "),
+        Span::styled("g", Style::default().fg(Color::Yellow)),
+        Span::raw(" guard | "),
         Span::styled("q", Style::default().fg(Color::Yellow)),
         Span::raw(" quit"),
     ]);

@@ -65,11 +65,15 @@ fn spawn_world(mut commands: Commands, mut game_log: ResMut<GameLog>) {
         ]),
     ));
 
-    // A blocking enemy to test collision
+    // A training dummy to test attack
     commands.spawn((
         BlocksMovement,
         Position { x: 12, y: 6 },
         Name("Training Dummy".into()),
+        Pools::new(vec![
+            Pool::new(PoolKind::Health, 15, 0, 15),
+            Pool::new(PoolKind::ActionPoints, 0, 0, 0),
+        ]),
     ));
 
     game_log.push("You enter the smoke-filled chamber.", LogLevel::Info);
