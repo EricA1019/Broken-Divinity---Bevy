@@ -3,6 +3,13 @@
 //! Handles RON deserialization, registries, and cross-file validation.
 //! No gameplay logic lives here.
 
+pub mod id;
+pub mod registry;
+pub mod validation;
+
+pub use id::ContentId;
+pub use registry::{Registry, RegistryError};
+
 /// Placeholder — data loading deferred to Phase 8.
 pub struct BdDataPlugin;
 

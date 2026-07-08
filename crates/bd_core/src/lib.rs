@@ -9,6 +9,7 @@ use bevy_ecs::schedule::{IntoScheduleConfigs, SystemSet};
 pub mod components;
 pub mod direction;
 pub mod gamelog;
+pub mod ids;
 pub mod map;
 pub mod pools;
 pub mod signals;
