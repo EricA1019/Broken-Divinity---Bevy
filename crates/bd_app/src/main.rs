@@ -9,11 +9,9 @@ use std::time::Duration;
 use bevy_app::{PanicHandlerPlugin, ScheduleRunnerPlugin, Startup};
 use bevy_ecs::system::{Commands, ResMut};
 
-use bd_core::components::{BlocksMovement, Name, Player, Position};
+use bd_core::components::Position;
+use bd_core::factory::{BlueprintRegistry, Mutator, spawn_from_blueprint};
 use bd_core::gamelog::{GameLog, LogLevel};
-use bd_core::pools::{Pool, Pools};
-use bd_core::signals::PoolKind;
-use bd_core::statuses::{StatusInstance, Statuses};
 
 fn main() {
     // Initialize tracing
@@ -87,37 +85,24 @@ fn apply_ron_content(
     }
 }
 
-/// Spawn the player and some initial entities.
+/// Spawn the player and some initial entities using the entity factory.
 fn spawn_world(mut commands: Commands, mut game_log: ResMut<GameLog>) {
-    // Player at center of the map
-    commands.spawn((
-        Player,
-        Position { x: 10, y: 6 },
-        Name("Player".into()),
-        Pools::new(vec![
-            Pool::new(PoolKind::Health, 20, 0, 20),
-            Pool::new(PoolKind::ActionPoints, 3, 0, 3),
-        ]),
-    ));
+    let registry = BlueprintRegistry::phase10_defaults();
 
-    // A training dummy to test attack
-    commands.spawn((
-        BlocksMovement,
-        Position { x: 12, y: 6 },
-        Name("Training Dummy".into()),
-        Pools::new(vec![
-            Pool::new(PoolKind::Health, 15, 0, 15),
-            Pool::new(PoolKind::ActionPoints, 0, 0, 0),
-        ]),
-        Statuses {
-            instances: vec![StatusInstance {
-                status_id: "status.poisoned".into(),
-                remaining_duration: 5,
-                stacks: 1,
-                source: None,
-            }],
-        },
-    ));
+    // Spawn player via blueprint
+    if let Some(bp) = registry.get("blueprint.player") {
+        spawn_from_blueprint(bp, Some(Position { x: 10, y: 6 }), &[], &mut commands);
+    }
+
+    // Spawn a wounded training dummy
+    if let Some(bp) = registry.get("blueprint.training_dummy") {
+        spawn_from_blueprint(
+            bp,
+            Some(Position { x: 12, y: 6 }),
+            &[Mutator::Wounded],
+            &mut commands,
+        );
+    }
 
     game_log.push("You enter the smoke-filled chamber.", LogLevel::Info);
     game_log.push("WASD or arrow keys to move.", LogLevel::Info);
