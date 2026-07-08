@@ -16,3 +16,4 @@ serde.workspace = true
 ron.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
+pathfinding.workspace = true

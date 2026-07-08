@@ -11,6 +11,7 @@ pub mod direction;
 pub mod gamelog;
 pub mod ids;
 pub mod map;
+pub mod pathfinding;
 pub mod pools;
 pub mod signals;
 pub mod statuses;
