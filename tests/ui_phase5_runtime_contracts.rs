@@ -4,29 +4,6 @@ use broken_divinity::ui::input_hints::{
     OVERWORLD_RETURN_KEY, STATS_TOGGLE_HINT_TEXT, STATS_TOGGLE_KEY,
 };
 
-const PROTOTYPE_FEATURE_ATTR: &str = "#[cfg(feature = \"ux-prototypes\")]";
-const PROTOTYPE_BIN_REQUIRED_FEATURE: &str = "required-features = [\"ux-prototypes\"]";
-
-const PROTOTYPE_MODULE_DECLARATIONS: [&str; 7] = [
-    "pub mod ux_colony_prototype;",
-    "pub mod ux_dungeon_map_prototypes;",
-    "pub mod ux_dungeon_style_prototype;",
-    "pub mod ux_inventory_equipment_prototype;",
-    "pub mod ux_overworld_prototype;",
-    "pub mod ux_unified_prototype;",
-    "pub mod ux_prototypes;",
-];
-
-const PROTOTYPE_BIN_NAMES: [&str; 7] = [
-    "name = \"ux_prototypes\"",
-    "name = \"ux_inventory_equipment_prototype\"",
-    "name = \"ux_unified_prototype\"",
-    "name = \"ux_overworld_prototype\"",
-    "name = \"ux_dungeon_style_prototype\"",
-    "name = \"ux_dungeon_map_prototypes\"",
-    "name = \"ux_colony_prototype\"",
-];
-
 const MIGRATED_RUNTIME_PANELS: [&str; 7] = [
     "ui::hud::draw_hud",
     "ui::inventory_panel::draw_inventory_panel",
@@ -37,10 +14,28 @@ const MIGRATED_RUNTIME_PANELS: [&str; 7] = [
     "ui::journal_panel::draw_journal_panel",
 ];
 
-const RUNTIME_AUTHORITY_MARKERS: [&str; 3] = [
+const RUNTIME_AUTHORITY_MARKERS: [&str; 2] = [
     "fn configure_runtime_authority_app(app: &mut App)",
-    "fn prototype_mode_enabled() -> bool",
     "Runtime UI authority default",
+];
+
+const MAIN_NO_PROTOTYPE_MARKERS: [&str; 5] = [
+    "BD_UI_MODE",
+    "configure_prototype_app",
+    "WINDOW_TITLE_PROTOTYPE",
+    "prototype_mode_enabled",
+    "ux_unified_prototype",
+];
+
+const NO_PROTOTYPE_BUILD_GRAPH_MARKERS: [&str; 8] = [
+    "ux-prototypes",
+    "ux_prototypes",
+    "ux_inventory_equipment_prototype",
+    "ux_unified_prototype",
+    "ux_overworld_prototype",
+    "ux_dungeon_style_prototype",
+    "ux_dungeon_map_prototypes",
+    "ux_colony_prototype",
 ];
 
 const MENU_SHORTCUT_HINT_DECLARATION: &str = "pub const MENU_SHORTCUT_HINT_TEXT: &str";
@@ -51,6 +46,9 @@ const PROTOTYPE_DEPRECATION_MARKER: &str = "DEPRECATED: prototype-only binary";
 const RUNTIME_ACTION_LANGUAGE_MODULE_DECLARATION: &str =
     "pub mod runtime_action_language;";
 const RUNTIME_ACTION_LANGUAGE_MARKER: &str = "RuntimeActionLanguage";
+const PANEL_SHELL_MODULE_DECLARATION: &str = "pub mod panel_shell;";
+const PANEL_SHELL_SHEET_WINDOW_MARKER: &str = "panel_shell::sheet_window";
+const PANEL_SHELL_STRIP_FRAME_MARKER: &str = "panel_shell::strip_frame";
 
 #[test]
 fn runtime_main_does_not_register_prototype_draw_paths() {
@@ -69,53 +67,23 @@ fn runtime_main_does_not_register_prototype_draw_paths() {
 }
 
 #[test]
-fn ui_module_gates_prototype_exports_behind_feature() {
+fn ui_module_has_no_prototype_exports() {
     let ui_mod_source = include_str!("../src/ui/mod.rs");
 
-    for declaration in PROTOTYPE_MODULE_DECLARATIONS {
-        let expected = format!("{PROTOTYPE_FEATURE_ATTR}\n{declaration}");
+    for marker in NO_PROTOTYPE_BUILD_GRAPH_MARKERS {
         assert!(
-            ui_mod_source.contains(&expected),
-            "prototype module declaration must be feature-gated: {declaration}"
+            !ui_mod_source.contains(marker),
+            "ui module should not expose prototype wiring marker: {marker}"
         );
     }
 }
 
 #[test]
-fn cargo_toml_requires_feature_for_prototype_bins() {
+fn cargo_toml_has_no_prototype_bins_or_feature() {
     let cargo_toml = include_str!("../Cargo.toml");
     assert!(
-        cargo_toml.contains("ux-prototypes = []"),
-        "Cargo feature ux-prototypes must exist"
-    );
-
-    for bin_name in PROTOTYPE_BIN_NAMES {
-        let Some(bin_start) = cargo_toml.find(bin_name) else {
-            panic!("missing prototype bin entry: {bin_name}");
-        };
-        let bin_section = &cargo_toml[bin_start..];
-        assert!(
-            bin_section.contains(PROTOTYPE_BIN_REQUIRED_FEATURE),
-            "prototype bin must require ux-prototypes feature: {bin_name}"
-        );
-    }
-}
-
-#[test]
-fn default_feature_set_does_not_enable_prototypes() {
-    let cargo_toml = include_str!("../Cargo.toml");
-    assert!(
-        cargo_toml.contains("default = []"),
-        "default feature set must not enable ux-prototypes"
-    );
-}
-
-#[test]
-fn dev_feature_set_does_not_force_prototypes() {
-    let cargo_toml = include_str!("../Cargo.toml");
-    assert!(
-        cargo_toml.contains("dev = [\"bevy/dynamic_linking\", \"dep:bevy_brp_extras\"]"),
-        "dev feature should not force prototype feature"
+        !cargo_toml.contains("ux-prototypes"),
+        "Cargo manifest should no longer declare ux-prototypes feature or prototype bins"
     );
 }
 
@@ -127,6 +95,18 @@ fn runtime_launch_path_declares_runtime_authority() {
         assert!(
             main_source.contains(marker),
             "main entrypoint must declare runtime authority marker: {marker}"
+        );
+    }
+}
+
+#[test]
+fn runtime_main_has_no_prototype_launch_branch() {
+    let main_source = include_str!("../src/main.rs");
+
+    for marker in MAIN_NO_PROTOTYPE_MARKERS {
+        assert!(
+            !main_source.contains(marker),
+            "main.rs should not contain prototype launch marker: {marker}"
         );
     }
 }
@@ -145,22 +125,12 @@ fn runtime_main_registers_migrated_runtime_panels() {
 
 #[test]
 fn prototype_bins_are_marked_deprecated_for_production_flow() {
-    let prototype_bins = [
-        include_str!("../src/bin/ux_prototypes.rs"),
-        include_str!("../src/bin/ux_inventory_equipment_prototype.rs"),
-        include_str!("../src/bin/ux_unified_prototype.rs"),
-        include_str!("../src/bin/ux_overworld_prototype.rs"),
-        include_str!("../src/bin/ux_dungeon_style_prototype.rs"),
-        include_str!("../src/bin/ux_dungeon_map_prototypes.rs"),
-        include_str!("../src/bin/ux_colony_prototype.rs"),
-    ];
+    let root = include_str!("../Cargo.toml");
 
-    for source in prototype_bins {
-        assert!(
-            source.contains(PROTOTYPE_DEPRECATION_MARKER),
-            "prototype binaries must carry explicit deprecation marker"
-        );
-    }
+    assert!(
+        !root.contains(PROTOTYPE_DEPRECATION_MARKER),
+        "deprecated prototype binaries should be removed from the repo"
+    );
 }
 
 #[test]
@@ -170,6 +140,16 @@ fn ui_module_exports_runtime_action_language_policy() {
     assert!(
         ui_mod_source.contains(RUNTIME_ACTION_LANGUAGE_MODULE_DECLARATION),
         "ui module must export runtime action language policy module"
+    );
+}
+
+#[test]
+fn ui_module_exports_shared_panel_shell_policy() {
+    let ui_mod_source = include_str!("../src/ui/mod.rs");
+
+    assert!(
+        ui_mod_source.contains(PANEL_SHELL_MODULE_DECLARATION),
+        "ui module must export shared panel shell module"
     );
 }
 
@@ -241,4 +221,25 @@ fn migrated_panels_use_shared_input_hint_tokens() {
     assert!(colony_panel_source.contains("SAVE_AND_QUIT_HINT_TEXT"));
     assert!(overworld_panel_source.contains("SAVE_AND_QUIT_LABEL"));
     assert!(overworld_panel_source.contains("SAVE_AND_QUIT_HINT_TEXT"));
+}
+
+#[test]
+fn secondary_shell_surfaces_use_shared_panel_shell() {
+    let inventory_panel_source = include_str!("../src/ui/inventory_panel.rs");
+    let colony_panel_source = include_str!("../src/ui/colony_panel.rs");
+    let journal_panel_source = include_str!("../src/ui/journal_panel.rs");
+    let stats_panel_source = include_str!("../src/ui/stats_progression_panel.rs");
+    let hud_source = include_str!("../src/ui/hud.rs");
+    let gamelog_panel_source = include_str!("../src/ui/gamelog_panel.rs");
+    let perk_panel_source = include_str!("../src/ui/perk_choice_panel.rs");
+    let gabriel_panel_source = include_str!("../src/ui/gabriel_dialogue_panel.rs");
+
+    assert!(inventory_panel_source.contains(PANEL_SHELL_SHEET_WINDOW_MARKER));
+    assert!(colony_panel_source.contains(PANEL_SHELL_SHEET_WINDOW_MARKER));
+    assert!(journal_panel_source.contains(PANEL_SHELL_SHEET_WINDOW_MARKER));
+    assert!(stats_panel_source.contains(PANEL_SHELL_SHEET_WINDOW_MARKER));
+    assert!(perk_panel_source.contains(PANEL_SHELL_SHEET_WINDOW_MARKER));
+    assert!(gabriel_panel_source.contains(PANEL_SHELL_SHEET_WINDOW_MARKER));
+    assert!(hud_source.contains(PANEL_SHELL_STRIP_FRAME_MARKER));
+    assert!(gamelog_panel_source.contains(PANEL_SHELL_STRIP_FRAME_MARKER));
 }

@@ -47,24 +47,24 @@ Track every intentional runtime divergence from unified prototype direction duri
 
 ### DVG-003
 - Area: Runtime vs prototype launch surface
-- Runtime constraint: Prototype binaries compile and link costs can interfere with runtime validation flow.
-- Prototype behavior: Prototype binaries and modules are available in default build graph.
-- Runtime behavior kept/adapted: Prototype surfaces are now opt-in behind Cargo feature `ux-prototypes`; default runtime path excludes them.
-- Why direct adoption is unsafe: Default inclusion increases split-brain risk and expands build/test blast radius during runtime-phase gates.
-- Temporary or permanent: Temporary until Phase 6 cutover/handoff decides long-term prototype retention policy.
-- Revisit trigger: Phase 6 full swap and handoff review.
+- Runtime constraint: Prototype binaries and modules no longer belong in the runtime build graph.
+- Prototype behavior: Old prototype launch path has been removed from the repository.
+- Runtime behavior kept/adapted: Main runtime binary always launches runtime-authority UI and no longer exposes prototype selection.
+- Why direct adoption is unsafe: Keeping a second launch surface in the repo reintroduces split-brain validation and makes the branch ambiguous.
+- Temporary or permanent: Permanent for the main runtime binary; removed prototype path no longer participates in the build graph.
+- Revisit trigger: Only if a future, separately scoped prototype revival is explicitly approved.
 - Owner: Solo implementation owner
 - Date added: 2026-05-28
-- Date resolved:
+- Date resolved: 2026-05-31
 
 ### DVG-004
 - Area: Dev cutover launcher
-- Runtime constraint: Dev builds need a stable unified default while non-dev builds still need rollback continuity.
-- Prototype behavior: Unified prototype becomes the default launcher in dev configurations.
-- Runtime behavior kept/adapted: `src/main.rs` now selects the unified prototype launcher for `feature = "dev"` and keeps the legacy runtime path under `not(feature = "dev")`.
-- Why direct adoption is unsafe: Removing the legacy path entirely before cutover validation would eliminate the fastest rollback boundary.
-- Temporary or permanent: Temporary until Phase 6 final gate closes and a handoff decision is made on whether to retain the legacy branch.
-- Revisit trigger: Phase 6 completion record and any post-cutover regression on dev.
+- Runtime constraint: Dev builds need a stable runtime-authority default with no legacy prototype branch.
+- Prototype behavior: Prototype launcher removed from the repository.
+- Runtime behavior kept/adapted: `src/main.rs` always selects the runtime-authority path and the prototype launch graph no longer exists.
+- Why direct adoption is unsafe: Any lingering launch branch would preserve split-brain behavior and confuse dev validation.
+- Temporary or permanent: Permanent for the main runtime binary and the removed prototype path.
+- Revisit trigger: Only if a new prototype branch is intentionally introduced in a separate scoped effort.
 - Owner: Solo implementation owner
 - Date added: 2026-05-28
-- Date resolved:
+- Date resolved: 2026-05-31

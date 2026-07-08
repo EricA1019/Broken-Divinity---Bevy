@@ -20,46 +20,10 @@ serde_json = "1.0"
 name = "broken_divinity"
 path = "src/main.rs"
 
-[[bin]]
-name = "ux_prototypes"
-path = "src/bin/ux_prototypes.rs"
-required-features = ["ux-prototypes"]
-
-[[bin]]
-name = "ux_inventory_equipment_prototype"
-path = "src/bin/ux_inventory_equipment_prototype.rs"
-required-features = ["ux-prototypes"]
-
-[[bin]]
-name = "ux_unified_prototype"
-path = "src/bin/ux_unified_prototype.rs"
-required-features = ["ux-prototypes"]
-
-[[bin]]
-name = "ux_overworld_prototype"
-path = "src/bin/ux_overworld_prototype.rs"
-required-features = ["ux-prototypes"]
-
-[[bin]]
-name = "ux_dungeon_style_prototype"
-path = "src/bin/ux_dungeon_style_prototype.rs"
-required-features = ["ux-prototypes"]
-
-[[bin]]
-name = "ux_dungeon_map_prototypes"
-path = "src/bin/ux_dungeon_map_prototypes.rs"
-required-features = ["ux-prototypes"]
-
-[[bin]]
-name = "ux_colony_prototype"
-path = "src/bin/ux_colony_prototype.rs"
-required-features = ["ux-prototypes"]
-
 [features]
 default = []
 dev = ["bevy/dynamic_linking", "dep:bevy_brp_extras"]
 brp = ["dep:bevy_brp_extras"]
-ux-prototypes = []
 
 [dependencies.bevy_brp_extras]
 version = "0.18"

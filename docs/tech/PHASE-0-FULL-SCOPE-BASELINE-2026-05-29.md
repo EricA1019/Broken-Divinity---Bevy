@@ -31,7 +31,7 @@ Establish a verifiable baseline on branch `feature/dev-ui-full-scope-tighten` be
 ## Target Runtime Surfaces in Scope
 
 Primary touch surfaces for upcoming phases:
-- Unified flow composition in [src/ui/ux_unified_prototype.rs](src/ui/ux_unified_prototype.rs)
+- Unified flow composition in the archived prototype reference (removed from repo)
 - Shared hint tokens in [src/ui/input_hints.rs](src/ui/input_hints.rs)
 - Objective continuity policy in [src/ui/objective_prompt.rs](src/ui/objective_prompt.rs)
 - Feedback channel in [src/ui/gamelog_panel.rs](src/ui/gamelog_panel.rs)

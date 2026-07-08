@@ -10,6 +10,7 @@ use crate::core::turn::GameTime;
 use crate::ui::input_hints::MENU_SHORTCUT_HINT_TEXT;
 use crate::ui::readability::contrast_ratio;
 use crate::ui::runtime_action_language::RuntimeActionLanguage;
+use crate::ui::runtime_copy::RuntimeCopy;
 use crate::ui::ux_style_contract::runtime_style_adapter;
 
 const MENU_SUBTITLE_FONT_SIZE: f32 = 14.0;
@@ -30,11 +31,7 @@ const MENU_SEED_HASH_MULTIPLIER: u64 = 31;
 const MENU_HELPER_FONT_SIZE: f32 = 12.0;
 const MENU_DEFAULT_SEED_PREVIEW: &str = "Leave blank for a random world seed.";
 const MENU_SEEDED_PREVIEW_PREFIX: &str = "World seed:";
-const MENU_NO_SAVE_HELPER_TEXT: &str = "No save found yet. Start a New Game to create one.";
 const MENU_NO_HELPER_TEXT: &str = "";
-const MENU_QUIT_CONFIRM_PROMPT_TEXT: &str = "Quit the game?";
-const MENU_QUIT_CONFIRM_LABEL: &str = "Confirm";
-const MENU_QUIT_CANCEL_LABEL: &str = "Cancel";
 pub(crate) fn primary_menu_cta_label() -> &'static str {
     RuntimeActionLanguage::menu_primary_cta_label()
 }
@@ -55,7 +52,7 @@ pub(crate) fn load_affordance_for_save_state(has_save: bool) -> MenuLoadAffordan
 
     MenuLoadAffordance {
         is_enabled: false,
-        helper_text: MENU_NO_SAVE_HELPER_TEXT,
+        helper_text: RuntimeCopy::no_save_helper_text(),
     }
 }
 
@@ -162,14 +159,14 @@ pub fn draw_main_menu(
             ui.vertical_centered(|ui| {
                 ui.add_space(MENU_ROOT_TOP_SPACING);
                 ui.heading(
-                    egui::RichText::new("BROKEN DIVINITY")
+                    egui::RichText::new(RuntimeCopy::menu_title())
                         .size(MENU_TITLE_FONT_SIZE)
                         .color(rgb(style.menu_title_rgb))
                         .strong(),
                 );
                 ui.add_space(MENU_TITLE_SUBTITLE_SPACING);
                 ui.label(
-                    egui::RichText::new("A post-apocalyptic roguelike")
+                    egui::RichText::new(RuntimeCopy::menu_subtitle())
                         .size(MENU_SUBTITLE_FONT_SIZE)
                         .color(rgb(style.menu_subtitle_rgb)),
                 );
@@ -211,7 +208,10 @@ pub fn draw_main_menu(
                 if ui
                     .add_enabled(
                         load_affordance.is_enabled,
-                        egui::Button::new(egui::RichText::new("Load Game").size(18.0)).min_size(
+                        egui::Button::new(
+                            egui::RichText::new(RuntimeCopy::menu_load_game_label()).size(18.0),
+                        )
+                        .min_size(
                             egui::vec2(MENU_NEW_GAME_BUTTON_WIDTH, MENU_LOAD_GAME_BUTTON_HEIGHT),
                         ),
                     )
@@ -232,7 +232,10 @@ pub fn draw_main_menu(
                 if !*quit_confirmation_pending {
                     if ui
                         .add(
-                            egui::Button::new(egui::RichText::new("Quit").size(16.0)).min_size(
+                            egui::Button::new(
+                                egui::RichText::new(RuntimeCopy::menu_quit_label()).size(16.0),
+                            )
+                            .min_size(
                                 egui::vec2(MENU_NEW_GAME_BUTTON_WIDTH, MENU_QUIT_BUTTON_HEIGHT),
                             ),
                         )
@@ -241,15 +244,17 @@ pub fn draw_main_menu(
                         *quit_confirmation_pending = true;
                     }
                 } else {
-                    ui.label(egui::RichText::new(MENU_QUIT_CONFIRM_PROMPT_TEXT).strong());
+                    ui.label(egui::RichText::new(RuntimeCopy::menu_quit_confirm_prompt()).strong());
                     ui.add_space(MENU_QUIT_CONFIRM_ROW_SPACING);
                     ui.horizontal(|ui| {
                         if ui
                             .add(
-                                egui::Button::new(MENU_QUIT_CONFIRM_LABEL).min_size(egui::vec2(
+                                egui::Button::new(RuntimeCopy::menu_quit_confirm_label()).min_size(
+                                    egui::vec2(
                                     MENU_QUIT_CONFIRM_BUTTON_WIDTH,
                                     MENU_QUIT_CONFIRM_BUTTON_HEIGHT,
-                                )),
+                                ),
+                                ),
                             )
                             .clicked()
                         {
@@ -259,10 +264,12 @@ pub fn draw_main_menu(
 
                         if ui
                             .add(
-                                egui::Button::new(MENU_QUIT_CANCEL_LABEL).min_size(egui::vec2(
+                                egui::Button::new(RuntimeCopy::menu_quit_cancel_label()).min_size(
+                                    egui::vec2(
                                     MENU_QUIT_CONFIRM_BUTTON_WIDTH,
                                     MENU_QUIT_CONFIRM_BUTTON_HEIGHT,
-                                )),
+                                ),
+                                ),
                             )
                             .clicked()
                         {

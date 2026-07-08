@@ -297,7 +297,7 @@ Deliverables:
 Primary files:
 - src/ui/inventory_panel.rs
 - src/core/inventory.rs (if model update required)
-- src/ui/ux_inventory_equipment_prototype.rs (reference only)
+- archived prototype reference only (removed from repo)
 - tests/* inventory-related contracts
 
 Execution steps:
@@ -405,11 +405,12 @@ Rollback trigger:
    - Full `cargo test` remains intermittently blocked by long-running link stage on `ui_inventory_phase4_contracts` in this environment; rerun in a clean shell at cutover gate.
 
 ## Phase 6 — Full Swap on Dev (Cutover)
-Objective: Perform irreversible default-path switch on dev.
+Objective: Make the main runtime binary runtime-authority only and deprecate old prototype launch flow.
 
 Deliverables:
-- Unified-only runtime defaults on dev.
-- Final cutover commit.
+- Main runtime binary always launches runtime-authority UI.
+- Prototype launch flow remains only in deprecated standalone prototype binaries.
+- Final deprecation commit.
 - Handoff with divergence and risk summary.
 
 Primary files:
@@ -419,10 +420,10 @@ Primary files:
 - docs/tech/divergence-ledger*.md (or chosen file)
 
 Execution steps:
-1. Flip default runtime path to unified-only.
-2. Remove remaining compatibility toggles unless explicitly retained for emergency rollback.
+1. Remove prototype launch branching from `src/main.rs`.
+2. Keep deprecated prototype binaries feature-gated and opt-in only.
 3. Run full validation matrix and record results in handoff.
-4. Produce one auditable cutover commit with clear scope boundaries.
+4. Produce one auditable deprecation commit with clear scope boundaries.
 5. Publish residual risks and known limitations.
 
 Validate against plan checkpoints:
@@ -430,36 +431,35 @@ Validate against plan checkpoints:
 - Before final gate, confirm all Global DoD criteria are met.
 
 Cutover checklist:
-- Unified path active in dev by default.
-- Legacy path unavailable in normal runtime execution.
+- Runtime-authority path active in the main runtime binary.
+- Deprecated prototype path unavailable from the main runtime binary.
 - All validation commands green.
 - Divergences documented and accepted.
 
 Gate to exit (Final):
-- Dev branch default runtime is unified UI only.
+- Dev branch main runtime binary is runtime-authority only.
 - All required tests and checks pass.
 - Handoff includes divergence ledger, rollback note, and residual risks.
 
 Rollback trigger:
-- If full validation fails after cutover flip, revert cutover commit and reopen from last successful Phase 5 state.
+- If full validation fails after prototype deprecation cleanup, revert the deprecation commit and reopen from the last successful Phase 5 state.
 
 ### Phase 6 Validation Note (2026-05-28)
-- Step objective: Perform irreversible default-path switch on dev while keeping a minimal rollback boundary.
+- Step objective: Remove deprecated prototype launch surface from the repository and keep the main runtime binary runtime-authority only.
 - Actual implementation:
-   - Split `src/main.rs` into a dev launcher and a non-dev legacy runtime path.
-   - Dev builds now launch `broken_divinity::ui::ux_unified_prototype::UnifiedPrototypePlugin` as the default runtime surface.
-   - Non-dev builds retain the legacy runtime path for rollback and release stability.
-   - `Cargo.toml` now makes `dev` imply `ux-prototypes`, ensuring the cutover launcher compiles in dev builds.
+   - `src/main.rs` always launches the runtime-authority UI path.
+   - Deprecated prototype UI sources and binaries were removed from the repository.
+   - `Cargo.toml` no longer declares the `ux-prototypes` feature or prototype bin entries.
 - Test-first evidence:
    - Expanded `tests/ui_phase5_runtime_contracts.rs` to require:
-      - a dev-cutover launcher marker,
-      - unified prototype presence in the dev path,
-      - `dev` feature inclusion of `ux-prototypes`.
+      - runtime-authority launch markers,
+      - absence of prototype-launch markers in `src/main.rs`,
+      - absence of prototype bins and prototype feature wiring from the build graph.
 - Drift check:
-   - Scope drift: none; change is limited to default launcher selection, feature wiring, and associated documentation.
-   - Plan drift: none; retaining the non-dev legacy branch is the explicit rollback boundary.
+   - Scope drift: none; change is limited to main-launch deprecation and associated documentation.
+   - Plan drift: addressed; the main runtime binary no longer carries prototype selection logic.
 - Gate status:
-   - `cargo test --test ui_phase5_runtime_contracts`: pass (10/10).
+   - `cargo test --test ui_phase5_runtime_contracts`: pass after deprecation update.
    - `cargo check --features dev`: pass.
    - Previous runtime validation matrix remains green from Phase 5 and still applies.
 
@@ -475,8 +475,8 @@ Rollback trigger:
 - cargo test --test runtime_app_integration
 - cargo test --test ux_baseline_red_harness
 - cargo check
-- cargo check --features ux-prototypes --bin ux_unified_prototype
-- cargo check --features ux-prototypes --bin ux_inventory_equipment_prototype
+- cargo test --test ui_phase5_runtime_contracts
+- cargo test --test ui_phase6_copy_contracts
 - additional deterministic inventory/equipment tests introduced in Phase 0/4
 
 ## Risk Register
@@ -494,10 +494,10 @@ Rollback trigger:
 - Keep cutover as a single auditable commit for clean rollback in dev if post-cutover issues appear.
 
 ## Done When
-- Unified UI is fully swapped in on dev as the sole runtime presentation path.
+- Main runtime binary is runtime-authority only and no prototype launch path remains in the repo.
 - Runtime behavior contracts remain intact.
 - Inventory/equipment migration is complete with tested semantics.
-- Legacy mixed-path UI drift is removed.
+- Legacy mixed-path UI drift is removed and deprecated prototype binaries are no longer present in the repo.
 
 ## Solo-Team Completion Record (Required)
 Before declaring complete, append a completion record to the handoff with:

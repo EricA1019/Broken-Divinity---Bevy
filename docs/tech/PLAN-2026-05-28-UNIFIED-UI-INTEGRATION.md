@@ -32,7 +32,7 @@ When this plan is complete, the production UI will use the unified prototype as 
 - Any exception must be documented in code comment or plan addendum as: `Divergence: reason + constraint + revisit trigger`.
 
 ## Prerequisites
-- Unified prototype reference exists: `src/ui/ux_unified_prototype.rs` ✓
+- Unified prototype reference previously existed; prototype source has been removed from the repo.
 - Shared style contract exists: `src/ui/ux_style_contract.rs` ✓
 - Production UI surfaces are modularized under `src/ui/` ✓
 - Runtime flow/menu baseline tests exist under `tests/` ✓
@@ -69,7 +69,7 @@ Target:
 - Unified inventory/equipment semantics: list readability, paper-doll layout, equip/unequip flows, safe replacement/swap policy.
 Files:
 - `src/ui/inventory_panel.rs`
-- `src/ui/ux_inventory_equipment_prototype.rs` (reference)
+- archived prototype reference only (removed from repo)
 - optional helper extraction module under `src/ui/`
 
 ### 4) UX Governance and Contracts

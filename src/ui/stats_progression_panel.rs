@@ -8,6 +8,10 @@ use crate::core::perks::{PendingPerkChoices, PlayerPerks};
 use crate::core::state::AppState;
 use crate::core::stats::{PlayerProgression, ProficiencyId, VirtueId};
 use crate::ui::input_hints::{STATS_TOGGLE_HINT_TEXT, STATS_TOGGLE_KEY};
+use crate::ui::panel_shell::sheet_window;
+use crate::ui::runtime_copy::RuntimeCopy;
+
+const STATS_WINDOW_SIZE: [f32; 2] = [520.0, 600.0];
 
 #[derive(Resource, Default)]
 pub struct StatsProgressionOpen(pub bool);
@@ -48,8 +52,8 @@ pub fn draw_stats_progression_panel(
         return;
     };
 
-    egui::Window::new("Stats & Progression")
-        .default_size([520.0, 600.0])
+    sheet_window(RuntimeCopy::stats_window_title())
+        .default_size(STATS_WINDOW_SIZE)
         .collapsible(true)
         .resizable(true)
         .show(ctx, |ui| {

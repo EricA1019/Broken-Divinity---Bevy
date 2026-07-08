@@ -20,9 +20,11 @@ use crate::game::colony::research::{CompletedResearch, ResearchProject};
 use crate::game::colony::stations::{Station, StationType, find_station_anchor, spawn_station};
 use crate::game::colony::survivors::{Survivor, SurvivorNeeds, SurvivorTask};
 use crate::ui::input_hints::{SAVE_AND_QUIT_HINT_TEXT, SAVE_AND_QUIT_LABEL};
+use crate::ui::panel_shell::sheet_window;
 use crate::ui::objective_prompt::{COLONY_OBJECTIVE_PROMPT_TEXT, ColonyObjectivePromptState};
 use crate::ui::readability::contrast_ratio;
 use crate::ui::runtime_action_language::RuntimeActionLanguage;
+use crate::ui::runtime_copy::RuntimeCopy;
 use crate::ui::ux_style_contract::runtime_shell_layout;
 
 const RESOURCE_BAR_BACKGROUND_RGB: (u8, u8, u8) = (25, 30, 20);
@@ -32,6 +34,9 @@ const RESOURCE_BAR_MIN_CONTRAST_RATIO: f32 = 4.5;
 const URGENCY_LABEL_PREFIX: &str = "Urgent:";
 const OBJECTIVE_INDICATOR_RGB: (u8, u8, u8) = (200, 185, 120);
 const OBJECTIVE_DETAIL_INLINE_BY_DEFAULT: bool = false;
+const RESEARCH_WINDOW_POSITION_X: f32 = 8.0;
+const RESEARCH_WINDOW_POSITION_Y: f32 = 350.0;
+const RESEARCH_WINDOW_WIDTH: f32 = 220.0;
 
 #[derive(Debug, Clone, Copy)]
 pub(crate) struct ColonyReadabilitySnapshot {
@@ -549,9 +554,9 @@ pub fn draw_research_panel(
     let Ok(ctx) = contexts.ctx_mut() else { return };
     let Some(res) = resources else { return };
 
-    egui::Window::new("Research")
-        .default_pos(egui::pos2(8.0, 350.0))
-        .default_width(220.0)
+    sheet_window(RuntimeCopy::research_window_title())
+        .default_pos(egui::pos2(RESEARCH_WINDOW_POSITION_X, RESEARCH_WINDOW_POSITION_Y))
+        .default_width(RESEARCH_WINDOW_WIDTH)
         .collapsible(true)
         .resizable(false)
         .show(ctx, |ui| {

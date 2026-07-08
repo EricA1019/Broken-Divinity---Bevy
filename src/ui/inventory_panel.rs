@@ -16,6 +16,8 @@ use crate::ui::inventory_rules::{
     EquipOutcome, EquipmentSlot, InventoryRuleError, equip_from_inventory_slot,
     resolve_equipment_slot, unequip_to_inventory_slot,
 };
+use crate::ui::panel_shell::sheet_window;
+use crate::ui::runtime_copy::RuntimeCopy;
 
 const INVENTORY_WINDOW_WIDTH: f32 = 280.0;
 const STATUS_NEUTRAL_RGB: (u8, u8, u8) = (180, 180, 180);
@@ -121,7 +123,7 @@ pub fn draw_inventory_panel(
     let used = inventory.slots.iter().filter(|s| s.is_some()).count();
     let max = inventory.slots.len();
 
-    egui::Window::new("Inventory")
+    sheet_window(RuntimeCopy::inventory_window_title())
         .collapsible(false)
         .resizable(false)
         .default_width(INVENTORY_WINDOW_WIDTH)
@@ -224,7 +226,7 @@ pub fn draw_inventory_panel(
             ui.separator();
             ui.label(egui::RichText::new(INVENTORY_TOGGLE_HINT_TEXT).color(rgb(STATUS_NEUTRAL_RGB)));
             ui.separator();
-            if ui.button("Close").clicked() {
+            if ui.button(RuntimeCopy::generic_close_button_label()).clicked() {
                 action.0 = Some(InventoryUiChoice::Close);
             }
         });

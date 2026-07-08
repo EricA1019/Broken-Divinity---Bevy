@@ -5,18 +5,12 @@ use bevy_egui::{EguiContexts, EguiPlugin, EguiPrimaryContextPass, egui};
 use bevy::remote::RemotePlugin;
 #[cfg(feature = "dev")]
 use bevy_brp_extras::BrpExtrasPlugin;
-#[cfg(feature = "ux-prototypes")]
-use broken_divinity::ui::ux_unified_prototype::UnifiedPrototypePlugin;
 use broken_divinity::core::escape::handle_escape_to_menu;
 use broken_divinity::core::state::AppState;
 use broken_divinity::core::turn::TurnPhase;
 use broken_divinity::game::overworld::travel::enter_overworld_from_colony;
 
 const WINDOW_TITLE_RUNTIME_AUTHORITY: &str = "Broken Divinity [Runtime UI]";
-#[cfg(feature = "ux-prototypes")]
-const WINDOW_TITLE_PROTOTYPE: &str = "Broken Divinity [Prototype UI]";
-const UI_MODE_ENV_VAR: &str = "BD_UI_MODE";
-const PROTOTYPE_MODE_VALUE: &str = "prototype";
 const RUNTIME_AUTHORITY_MODE_MESSAGE: &str = "Runtime UI authority default";
 
 fn print_launch_banner(mode: &str, command_hint: &str) {
@@ -28,9 +22,7 @@ fn print_launch_banner(mode: &str, command_hint: &str) {
 
 fn draw_launch_mode_badge(mut contexts: EguiContexts) {
     let Ok(ctx) = contexts.ctx_mut() else { return };
-    let mode = if prototype_mode_enabled() {
-        "Launch Mode: Prototype UI (deprecated, opt-in)"
-    } else if cfg!(feature = "dev") {
+    let mode = if cfg!(feature = "dev") {
         "Launch Mode: Runtime UI authority (dev tooling enabled)"
     } else {
         "Launch Mode: Runtime UI authority"
@@ -57,12 +49,7 @@ fn draw_launch_mode_badge(mut contexts: EguiContexts) {
 }
 
 fn main() {
-    if prototype_mode_enabled() {
-        print_launch_banner(
-            "Prototype UI enabled via BD_UI_MODE=prototype",
-            "Use `BD_UI_MODE=prototype cargo run --bin broken_divinity --features ux-prototypes` only for prototype validation.",
-        );
-    } else if cfg!(feature = "dev") {
+    if cfg!(feature = "dev") {
         print_launch_banner(
             "Runtime UI authority default (dev tooling enabled)",
             "Use `cargo run --bin broken_divinity` for runtime authority mode.",
@@ -86,34 +73,8 @@ fn main() {
     app.run();
 }
 
-fn prototype_mode_enabled() -> bool {
-    std::env::var(UI_MODE_ENV_VAR)
-        .map(|value| value.eq_ignore_ascii_case(PROTOTYPE_MODE_VALUE))
-        .unwrap_or(false)
-}
-
 fn configure_launch_app(app: &mut App) {
-    #[cfg(feature = "ux-prototypes")]
-    if prototype_mode_enabled() {
-        configure_prototype_app(app);
-        return;
-    }
-
     configure_runtime_authority_app(app);
-}
-
-#[cfg(feature = "ux-prototypes")]
-fn configure_prototype_app(app: &mut App) {
-    app.add_plugins(DefaultPlugins.set(WindowPlugin {
-        primary_window: Some(Window {
-            title: WINDOW_TITLE_PROTOTYPE.to_string(),
-            ..default()
-        }),
-        ..default()
-    }))
-    .add_plugins(EguiPlugin::default())
-    .add_plugins(UnifiedPrototypePlugin)
-    .add_systems(EguiPrimaryContextPass, draw_launch_mode_badge);
 }
 
 fn configure_runtime_authority_app(app: &mut App) {

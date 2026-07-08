@@ -8,6 +8,14 @@ use crate::game::dungeon::gabriel::{
     Gabriel, GabrielCompanion, GabrielDialogueState, GabrielDialogueStep, GabrielEncounter,
     GabrielState,
 };
+use crate::ui::panel_shell::sheet_window;
+use crate::ui::runtime_copy::RuntimeCopy;
+
+const GABRIEL_WINDOW_SIZE: [f32; 2] = [580.0, 190.0];
+const GABRIEL_WINDOW_ANCHOR_OFFSET_X: f32 = 0.0;
+const GABRIEL_WINDOW_ANCHOR_OFFSET_Y: f32 = -116.0;
+const GABRIEL_TITLE_FONT_SIZE: f32 = 19.0;
+const GABRIEL_BODY_FONT_SIZE: f32 = 15.0;
 
 #[derive(Resource, Default)]
 pub struct GabrielDialogueUiAction(pub Option<GabrielDialogueUiChoice>);
@@ -37,33 +45,28 @@ pub fn draw_gabriel_dialogue_panel(
         return;
     };
 
-    egui::Window::new("Gabriel")
-        .anchor(egui::Align2::CENTER_BOTTOM, egui::vec2(0.0, -116.0))
+    sheet_window(RuntimeCopy::gabriel_window_title())
+        .anchor(
+            egui::Align2::CENTER_BOTTOM,
+            egui::vec2(GABRIEL_WINDOW_ANCHOR_OFFSET_X, GABRIEL_WINDOW_ANCHOR_OFFSET_Y),
+        )
         .collapsible(false)
         .resizable(false)
         .title_bar(false)
-        .fixed_size(egui::vec2(580.0, 190.0))
-        .frame(
-            egui::Frame::window(&ctx.style())
-                .fill(egui::Color32::from_rgba_unmultiplied(20, 24, 36, 245))
-                .stroke(egui::Stroke::new(
-                    1.0,
-                    egui::Color32::from_rgb(205, 215, 255),
-                )),
-        )
+        .fixed_size(egui::vec2(GABRIEL_WINDOW_SIZE[0], GABRIEL_WINDOW_SIZE[1]))
         .show(ctx, |ui| {
             ui.label(
-                egui::RichText::new("Gabriel")
+                egui::RichText::new(RuntimeCopy::gabriel_window_title())
                     .strong()
                     .color(egui::Color32::from_rgb(225, 232, 255))
-                    .size(19.0),
+                    .size(GABRIEL_TITLE_FONT_SIZE),
             );
             ui.separator();
             ui.add_space(4.0);
             ui.label(
                 egui::RichText::new(dialogue_text(step))
                     .color(egui::Color32::from_rgb(230, 230, 235))
-                    .size(15.0),
+                    .size(GABRIEL_BODY_FONT_SIZE),
             );
             ui.add_space(10.0);
 

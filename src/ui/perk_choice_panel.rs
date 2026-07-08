@@ -4,11 +4,14 @@ use bevy_egui::{EguiContexts, egui};
 use crate::core::gamelog::{GameLog, LogColor};
 use crate::core::perks::{PendingPerkChoices, PerkId, PlayerPerks};
 use crate::core::turn::GameTime;
+use crate::ui::panel_shell::sheet_window;
+use crate::ui::runtime_copy::RuntimeCopy;
 use crate::ui::ux_style_contract::style_for;
 
 const PERK_TITLE_FONT_SIZE: f32 = 18.0;
 const PERK_DETAIL_SPACING: f32 = 6.0;
 const PERK_ACTION_SPACING: f32 = 10.0;
+const PERK_WINDOW_ANCHOR_OFFSET: [f32; 2] = [0.0, 0.0];
 
 // ---------------------------------------------------------------------------
 // Action resource
@@ -43,8 +46,8 @@ pub fn draw_perk_choice_panel(
     };
     let style = style_for();
 
-    egui::Window::new("Perk Unlocked")
-        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+    sheet_window(RuntimeCopy::perk_window_title())
+        .anchor(egui::Align2::CENTER_CENTER, PERK_WINDOW_ANCHOR_OFFSET)
         .collapsible(false)
         .resizable(false)
         .show(ctx, |ui| {

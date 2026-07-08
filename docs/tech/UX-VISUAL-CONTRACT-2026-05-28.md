@@ -126,7 +126,7 @@ Centralized contract module:
 - src/ui/ux_style_contract.rs
 
 Prototype consumer:
-- src/ui/ux_prototypes.rs
+- archived prototype consumer (removed from repo)
 
 ## Branch Policy
 

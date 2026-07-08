@@ -5,6 +5,10 @@ use bevy_egui::{EguiContexts, egui};
 
 use crate::game::dungeon::lore::LoreJournal;
 use crate::ui::input_hints::{JOURNAL_TOGGLE_HINT_TEXT, JOURNAL_TOGGLE_KEY};
+use crate::ui::panel_shell::sheet_window;
+use crate::ui::runtime_copy::RuntimeCopy;
+
+const JOURNAL_WINDOW_SIZE: [f32; 2] = [350.0, 400.0];
 
 /// Resource: whether the journal panel is currently visible.
 #[derive(Resource, Default)]
@@ -31,8 +35,8 @@ pub fn draw_journal_panel(
         return;
     };
 
-    egui::Window::new("Lore Journal")
-        .default_size([350.0, 400.0])
+    sheet_window(RuntimeCopy::journal_window_title())
+        .default_size(JOURNAL_WINDOW_SIZE)
         .resizable(true)
         .collapsible(true)
         .show(ctx, |ui| {
