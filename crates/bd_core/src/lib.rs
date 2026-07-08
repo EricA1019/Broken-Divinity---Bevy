@@ -18,6 +18,7 @@ pub mod trace;
 
 mod actions;
 pub mod factory;
+pub mod relationships;
 
 use crate::trace::{SignalTrace, TriggerExecutionGuard};
 use gamelog::GameLog;
