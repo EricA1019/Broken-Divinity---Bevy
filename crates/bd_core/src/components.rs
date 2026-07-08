@@ -32,11 +32,4 @@ impl Tile {
     pub fn is_walkable(&self) -> bool {
         matches!(self, Tile::Floor)
     }
-
-    pub fn glyph(&self) -> char {
-        match self {
-            Tile::Floor => '.',
-            Tile::Wall => '#',
-        }
-    }
 }

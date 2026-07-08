@@ -3,6 +3,10 @@
 //! Renders Ratatui widgets from view models. Never queries ECS gameplay
 //! internals directly.
 
+mod render_grid;
+mod theme;
+mod visual;
+
 use bevy_app::{App, Plugin};
 use bevy_ecs::{
     entity::Entity,
@@ -13,7 +17,8 @@ use bevy_ecs::{
 };
 use bevy_ratatui::{RatatuiContext, event::KeyMessage};
 use ratatui::{
-    layout::{Alignment, Constraint, Layout, Rect},
+    layout::Alignment,
+    layout::{Constraint, Layout, Rect},
     style::{Color, Style},
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Wrap},
@@ -29,11 +34,18 @@ use bd_core::{
     signals::{ActionIntent, PoolKind},
 };
 
+use render_grid::RenderCellGrid;
+use theme::ThemeRegistry;
+use visual::{SymbolRegistry, VisualToken};
+
 /// TUI plugin — registers input mapping and render systems.
 pub struct BdTuiPlugin;
 
 impl Plugin for BdTuiPlugin {
     fn build(&self, app: &mut App) {
+        app.insert_resource(SymbolRegistry::phase5_defaults());
+        app.insert_resource(ThemeRegistry::phase5_defaults());
+
         app.add_systems(
             bevy_app::Update,
             (
@@ -148,6 +160,7 @@ fn find_nearest_enemy(
 }
 
 /// Draw the full TUI layout: map, stats panel, help, log, footer.
+#[allow(clippy::too_many_arguments)]
 fn draw_ui(
     mut ctx: ResMut<RatatuiContext>,
     map: Res<SmokeMap>,
@@ -155,6 +168,8 @@ fn draw_ui(
     player_pools: Query<&Pools, With<Player>>,
     enemies: Query<&Position, (With<BlocksMovement>, Without<Player>)>,
     game_log: Res<GameLog>,
+    symbols: Res<SymbolRegistry>,
+    theme: Res<ThemeRegistry>,
 ) {
     let _ = ctx.draw(|frame| {
         let area = frame.area();
@@ -175,7 +190,15 @@ fn draw_ui(
         let player_pos = player_pos.single().ok().copied();
         let pools = player_pools.single().ok();
         let enemy_positions: Vec<Position> = enemies.iter().copied().collect();
-        render_map(frame, map_area, &map, player_pos, &enemy_positions);
+        render_map(
+            frame,
+            map_area,
+            &map,
+            player_pos,
+            &enemy_positions,
+            &symbols,
+            &theme,
+        );
 
         // ---- Stats panel ----
         render_stats(frame, stats_area, pools);
@@ -197,6 +220,8 @@ fn render_map(
     map: &SmokeMap,
     player_pos: Option<Position>,
     enemy_positions: &[Position],
+    symbols: &SymbolRegistry,
+    theme: &ThemeRegistry,
 ) {
     let block = Block::default()
         .title(" Map ")
@@ -206,31 +231,49 @@ fn render_map(
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    // Build the map text
-    let mut lines: Vec<Line> = Vec::new();
-    for y in 0..map.height.min(inner.height as i32) {
-        let mut spans: Vec<Span> = Vec::new();
-        for x in 0..map.width.min(inner.width as i32) {
-            let is_player = player_pos == Some(Position { x, y });
-            let is_enemy = enemy_positions.contains(&Position { x, y });
+    // Build semantic render grid
+    let w = inner.width.min(map.width as u16);
+    let h = inner.height.min(map.height as u16);
+    let mut grid = RenderCellGrid::new(w, h, VisualToken::Floor, symbols, theme);
+
+    for y in 0..h as i32 {
+        for x in 0..w as i32 {
             let tile = map.get(x, y).unwrap_or(bd_core::components::Tile::Wall);
-
-            let (ch, style) = if is_player {
-                ('@', Style::default().fg(Color::Yellow))
-            } else if is_enemy {
-                ('E', Style::default().fg(Color::Red))
-            } else {
-                (
-                    tile.glyph(),
-                    match tile {
-                        bd_core::components::Tile::Wall => Style::default().fg(Color::DarkGray),
-                        bd_core::components::Tile::Floor => Style::default().fg(Color::Gray),
-                    },
-                )
+            let token = match tile {
+                bd_core::components::Tile::Wall => VisualToken::Wall,
+                bd_core::components::Tile::Floor => VisualToken::Floor,
             };
-
-            spans.push(Span::styled(ch.to_string(), style));
+            grid.set(x as u16, y as u16, token, symbols, theme);
         }
+    }
+
+    // Overlay enemies
+    for ep in enemy_positions {
+        if ep.x >= 0 && ep.x < w as i32 && ep.y >= 0 && ep.y < h as i32 {
+            grid.set(ep.x as u16, ep.y as u16, VisualToken::Enemy, symbols, theme);
+        }
+    }
+
+    // Overlay player (highest layer)
+    if let Some(pp) = player_pos {
+        if pp.x >= 0 && pp.x < w as i32 && pp.y >= 0 && pp.y < h as i32 {
+            grid.set(
+                pp.x as u16,
+                pp.y as u16,
+                VisualToken::Player,
+                symbols,
+                theme,
+            );
+        }
+    }
+
+    // Render grid to terminal
+    let mut lines: Vec<Line> = Vec::new();
+    for row in grid.rows() {
+        let spans: Vec<Span> = row
+            .into_iter()
+            .map(|(_, _, glyph, style)| Span::styled(glyph.to_string(), style))
+            .collect();
         lines.push(Line::from(spans));
     }
 
