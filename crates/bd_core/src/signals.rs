@@ -4,6 +4,8 @@ use bevy_ecs::{entity::Entity, prelude::*};
 
 use crate::{components::Position, direction::Direction};
 
+// ── Movement ──
+
 /// Intent to move an entity in a direction.
 #[derive(Message, Debug, Clone)]
 pub struct MoveIntent {
@@ -32,4 +34,59 @@ pub enum MoveBlockReason {
     OutOfBounds,
     BlockedByWall,
     BlockedByEntity,
+    NotEnoughAP,
+}
+
+// ── Pool deltas ──
+
+/// Kind of pool (health, AP, stress, etc.).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum PoolKind {
+    Health,
+    ActionPoints,
+    Stress,
+    Corruption,
+    Faith,
+    Morale,
+}
+
+/// Tag categorizing a pool delta for modifier routing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub enum DeltaTag {
+    Physical,
+    Divine,
+    Poison,
+    Recovery,
+    MovementCost,
+}
+
+/// Request to change a pool value. Negative = damage/cost, positive = heal/restore.
+#[derive(Message, Debug, Clone)]
+pub struct PoolDeltaRequested {
+    pub source: Option<Entity>,
+    pub target: Entity,
+    pub kind: PoolKind,
+    pub amount: i32,
+    pub tags: Vec<DeltaTag>,
+    pub reason: String,
+}
+
+/// A pool delta was successfully applied.
+#[derive(Message, Debug, Clone)]
+pub struct PoolDeltaApplied {
+    pub source: Option<Entity>,
+    pub target: Entity,
+    pub kind: PoolKind,
+    pub before: i32,
+    pub after: i32,
+    pub amount_applied: i32,
+    pub tags: Vec<DeltaTag>,
+    pub reason: String,
+}
+
+/// An entity was defeated (health reached minimum).
+#[derive(Message, Debug, Clone)]
+pub struct EntityDefeated {
+    pub entity: Entity,
+    pub kind: PoolKind,
 }

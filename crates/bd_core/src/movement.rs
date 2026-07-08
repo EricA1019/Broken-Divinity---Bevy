@@ -1,4 +1,4 @@
-//! Movement system — collects intents, validates, and resolves.
+//! Movement system — collects intents, compiles AP costs, validates, and resolves.
 //!
 //! This is the ONLY module that mutates `Position`.
 
@@ -11,12 +11,14 @@ use crate::{
     direction::Direction,
     gamelog::{GameLog, LogLevel},
     map::SmokeMap,
-    signals::{EntityMoved, MoveBlockReason, MoveBlocked, MoveIntent},
+    pools::Pools,
+    signals::{
+        DeltaTag, EntityMoved, MoveBlockReason, MoveBlocked, MoveIntent, PoolDeltaRequested,
+        PoolKind,
+    },
 };
 
-/// Register movement systems into the app.
 pub(crate) fn register_movement(app: &mut App) {
-    // Register message types
     app.add_message::<MoveIntent>();
     app.add_message::<MoveBlocked>();
     app.add_message::<EntityMoved>();
@@ -25,33 +27,65 @@ pub(crate) fn register_movement(app: &mut App) {
         bevy_app::Update,
         (
             collect_move_intents.in_set(BdSet::IntentCollection),
+            compile_move_costs.in_set(BdSet::CostResolution),
             validate_and_resolve_moves.in_set(BdSet::Mutation),
         ),
     );
 }
 
-/// Component placed on an entity to queue a pending move.
 #[derive(Component, Debug, Clone)]
 struct QueuedMove {
     direction: Direction,
 }
 
-/// Phase 1: Read `MoveIntent` messages and tag entities with `QueuedMove`.
 fn collect_move_intents(
     mut messages: bevy_ecs::message::MessageReader<MoveIntent>,
-    mut commands: Commands,
+    mut _commands: Commands,
 ) {
     for intent in messages.read() {
-        commands.entity(intent.entity).insert(QueuedMove {
+        _commands.entity(intent.entity).insert(QueuedMove {
             direction: intent.direction,
         });
     }
 }
 
-/// Phase 2: Validate each queued move and either execute it or block it.
-/// This is the ONLY system that mutates `Position`.
+fn compile_move_costs(
+    mut _commands: Commands,
+    mut game_log: ResMut<GameLog>,
+    mut delta_writer: bevy_ecs::message::MessageWriter<PoolDeltaRequested>,
+    mut blocked_writer: bevy_ecs::message::MessageWriter<MoveBlocked>,
+    actors: Query<(Entity, &QueuedMove, Option<&Pools>, Option<&Player>)>,
+) {
+    for (entity, queued, pools, player_flag) in actors.iter() {
+        let has_ap = pools
+            .and_then(|p| p.get(PoolKind::ActionPoints))
+            .is_none_or(|pool| pool.current >= 1);
+
+        if !has_ap {
+            _commands.entity(entity).remove::<QueuedMove>();
+            if player_flag.is_some() {
+                game_log.push("Not enough Action Points.", LogLevel::Warn);
+            }
+            blocked_writer.write(MoveBlocked {
+                entity,
+                direction: queued.direction,
+                reason: MoveBlockReason::NotEnoughAP,
+            });
+        } else {
+            delta_writer.write(PoolDeltaRequested {
+                source: Some(entity),
+                target: entity,
+                kind: PoolKind::ActionPoints,
+                amount: -1,
+                tags: vec![DeltaTag::MovementCost],
+                reason: format!("move {:?}", direction_name(queued.direction)),
+            });
+        }
+    }
+}
+
 fn validate_and_resolve_moves(
-    mut commands: Commands,
+    mut _commands: Commands,
     map: Res<SmokeMap>,
     mut game_log: ResMut<GameLog>,
     mut moved_writer: bevy_ecs::message::MessageWriter<EntityMoved>,
@@ -59,7 +93,6 @@ fn validate_and_resolve_moves(
     actors: Query<(Entity, &Position, &QueuedMove, Option<&Player>)>,
     blockers: Query<&Position, With<BlocksMovement>>,
 ) {
-    // Collect positions occupied by blocking entities
     let blocked_positions: Vec<Position> = blockers.iter().copied().collect();
 
     for (entity, current_pos, queued, player_flag) in actors.iter() {
@@ -68,11 +101,8 @@ fn validate_and_resolve_moves(
             x: current_pos.x + dx,
             y: current_pos.y + dy,
         };
+        _commands.entity(entity).remove::<QueuedMove>();
 
-        // Remove the queue marker regardless of outcome
-        commands.entity(entity).remove::<QueuedMove>();
-
-        // Validate
         let reason = if !map.is_walkable(target.x, target.y) {
             Some(MoveBlockReason::BlockedByWall)
         } else if blocked_positions.contains(&target) {
@@ -85,17 +115,14 @@ fn validate_and_resolve_moves(
 
         match reason {
             None => {
-                // Valid move — mutate position
                 let from = *current_pos;
-                commands.entity(entity).insert(target);
-
+                _commands.entity(entity).insert(target);
                 if player_flag.is_some() {
                     game_log.push(
                         format!("You move {:?}.", direction_name(queued.direction)),
                         LogLevel::Info,
                     );
                 }
-
                 moved_writer.write(EntityMoved {
                     entity,
                     from,
@@ -108,10 +135,10 @@ fn validate_and_resolve_moves(
                         MoveBlockReason::OutOfBounds => "You can't go that way.",
                         MoveBlockReason::BlockedByWall => "There's a wall in the way.",
                         MoveBlockReason::BlockedByEntity => "Something is blocking the way.",
+                        MoveBlockReason::NotEnoughAP => "Not enough Action Points.",
                     };
                     game_log.push(msg, LogLevel::Warn);
                 }
-
                 blocked_writer.write(MoveBlocked {
                     entity,
                     direction: queued.direction,
@@ -134,8 +161,9 @@ fn direction_name(dir: Direction) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::components::{Player, Position, Tile};
+    use crate::components::Tile;
     use crate::map::SmokeMap;
+    use crate::pools::Pool;
     use bevy_app::App;
     use bevy_ecs::message::Messages;
 
@@ -145,8 +173,7 @@ mod tests {
         app
     }
 
-    /// Helper: send a MoveIntent message in tests.
-    fn send_move(app: &mut App, entity: bevy_ecs::entity::Entity, direction: Direction) {
+    fn send_move(app: &mut App, entity: Entity, direction: Direction) {
         app.world_mut()
             .resource_mut::<Messages<MoveIntent>>()
             .write(MoveIntent { entity, direction });
@@ -157,15 +184,15 @@ mod tests {
         let mut app = test_app();
         let player = app
             .world_mut()
-            .spawn((Player, Position { x: 5, y: 5 }))
+            .spawn((
+                Player,
+                Position { x: 5, y: 5 },
+                Pools::new(vec![Pool::new(PoolKind::ActionPoints, 3, 0, 3)]),
+            ))
             .id();
-
         send_move(&mut app, player, Direction::East);
         app.update();
-
-        let pos = app.world().get::<Position>(player).unwrap();
-        assert_eq!(pos.x, 6);
-        assert_eq!(pos.y, 5);
+        assert_eq!(app.world().get::<Position>(player).unwrap().x, 6);
     }
 
     #[test]
@@ -174,57 +201,55 @@ mod tests {
         let mut map = SmokeMap::new(10, 10, Tile::Floor);
         map.set(6, 5, Tile::Wall);
         app.world_mut().insert_resource(map);
-
         let player = app
             .world_mut()
-            .spawn((Player, Position { x: 5, y: 5 }))
+            .spawn((
+                Player,
+                Position { x: 5, y: 5 },
+                Pools::new(vec![Pool::new(PoolKind::ActionPoints, 3, 0, 3)]),
+            ))
             .id();
-
         send_move(&mut app, player, Direction::East);
         app.update();
-
-        let pos = app.world().get::<Position>(player).unwrap();
-        assert_eq!(pos.x, 5);
-        assert_eq!(pos.y, 5);
+        assert_eq!(app.world().get::<Position>(player).unwrap().x, 5);
     }
 
     #[test]
     fn move_out_of_bounds_is_rejected() {
         let mut app = test_app();
-        let map = SmokeMap::new(10, 10, Tile::Floor);
-        app.world_mut().insert_resource(map);
-
+        app.world_mut()
+            .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
         let player = app
             .world_mut()
-            .spawn((Player, Position { x: 0, y: 0 }))
+            .spawn((
+                Player,
+                Position { x: 0, y: 0 },
+                Pools::new(vec![Pool::new(PoolKind::ActionPoints, 3, 0, 3)]),
+            ))
             .id();
-
         send_move(&mut app, player, Direction::West);
         app.update();
-
-        let pos = app.world().get::<Position>(player).unwrap();
-        assert_eq!(pos.x, 0);
+        assert_eq!(app.world().get::<Position>(player).unwrap().x, 0);
     }
 
     #[test]
     fn blocked_by_entity_is_rejected() {
         let mut app = test_app();
-        let map = SmokeMap::new(10, 10, Tile::Floor);
-        app.world_mut().insert_resource(map);
-
+        app.world_mut()
+            .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
         let player = app
             .world_mut()
-            .spawn((Player, Position { x: 5, y: 5 }))
+            .spawn((
+                Player,
+                Position { x: 5, y: 5 },
+                Pools::new(vec![Pool::new(PoolKind::ActionPoints, 3, 0, 3)]),
+            ))
             .id();
-
         app.world_mut()
             .spawn((BlocksMovement, Position { x: 6, y: 5 }));
-
         send_move(&mut app, player, Direction::East);
         app.update();
-
-        let pos = app.world().get::<Position>(player).unwrap();
-        assert_eq!(pos.x, 5);
+        assert_eq!(app.world().get::<Position>(player).unwrap().x, 5);
     }
 
     #[test]
@@ -233,17 +258,47 @@ mod tests {
         let mut map = SmokeMap::new(10, 10, Tile::Floor);
         map.set(6, 5, Tile::Wall);
         app.world_mut().insert_resource(map);
-
         let player = app
             .world_mut()
-            .spawn((Player, Position { x: 5, y: 5 }))
+            .spawn((
+                Player,
+                Position { x: 5, y: 5 },
+                Pools::new(vec![Pool::new(PoolKind::ActionPoints, 3, 0, 3)]),
+            ))
             .id();
-
         send_move(&mut app, player, Direction::East);
         app.update();
-
         let log = app.world().resource::<GameLog>();
-        let has_block_msg = log.iter().any(|e| e.message.contains("wall"));
-        assert!(has_block_msg, "Log should contain wall block message");
+        assert!(log.iter().any(|e| e.message.contains("wall")));
+    }
+
+    #[test]
+    fn movement_spends_ap_through_pool_delta() {
+        let mut app = test_app();
+        app.world_mut()
+            .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
+        let player = app
+            .world_mut()
+            .spawn((
+                Player,
+                Position { x: 5, y: 5 },
+                Pools::new(vec![Pool::new(PoolKind::ActionPoints, 3, 0, 3)]),
+            ))
+            .id();
+        for _ in 0..3 {
+            send_move(&mut app, player, Direction::East);
+            app.update();
+        }
+        let ap = app
+            .world()
+            .get::<Pools>(player)
+            .unwrap()
+            .get(PoolKind::ActionPoints)
+            .unwrap()
+            .current;
+        assert_eq!(ap, 0);
+        send_move(&mut app, player, Direction::East);
+        app.update();
+        assert_eq!(app.world().get::<Position>(player).unwrap().x, 8);
     }
 }

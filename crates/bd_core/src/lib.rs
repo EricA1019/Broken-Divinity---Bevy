@@ -11,6 +11,7 @@ pub mod direction;
 pub mod gamelog;
 pub mod map;
 mod movement;
+pub mod pools;
 pub mod signals;
 
 use gamelog::GameLog;
@@ -70,6 +71,9 @@ impl Plugin for BdCorePlugin {
 
         // Register movement systems
         movement::register_movement(app);
+
+        // Register pool delta pipeline
+        pools::register_pools(app);
 
         tracing::info!("BdCorePlugin initialized");
     }

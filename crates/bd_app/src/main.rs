@@ -10,6 +10,8 @@ use bevy_ecs::system::{Commands, ResMut};
 
 use bd_core::components::{BlocksMovement, Name, Player, Position};
 use bd_core::gamelog::{GameLog, LogLevel};
+use bd_core::pools::{Pool, Pools};
+use bd_core::signals::PoolKind;
 
 fn main() {
     // Initialize tracing (color-eyre is set up by Bevy internally)
@@ -53,7 +55,15 @@ fn main() {
 /// Spawn the player and some initial entities.
 fn spawn_world(mut commands: Commands, mut game_log: ResMut<GameLog>) {
     // Player at center of the map
-    commands.spawn((Player, Position { x: 10, y: 6 }, Name("Player".into())));
+    commands.spawn((
+        Player,
+        Position { x: 10, y: 6 },
+        Name("Player".into()),
+        Pools::new(vec![
+            Pool::new(PoolKind::Health, 20, 0, 20),
+            Pool::new(PoolKind::ActionPoints, 3, 0, 3),
+        ]),
+    ));
 
     // A blocking enemy to test collision
     commands.spawn((

@@ -24,7 +24,8 @@ use bd_core::{
     direction::Direction,
     gamelog::{GameLog, LogLevel},
     map::SmokeMap,
-    signals::MoveIntent,
+    pools::Pools,
+    signals::{MoveIntent, PoolKind},
 };
 
 /// TUI plugin — registers input mapping and render systems.
@@ -84,6 +85,7 @@ fn draw_ui(
     mut ctx: ResMut<RatatuiContext>,
     map: Res<SmokeMap>,
     player_pos: Query<&Position, With<Player>>,
+    player_pools: Query<&Pools, With<Player>>,
     game_log: Res<GameLog>,
 ) {
     let _ = ctx.draw(|frame| {
@@ -103,10 +105,11 @@ fn draw_ui(
 
         // ---- Map ----
         let player_pos = player_pos.single().ok().copied();
+        let pools = player_pools.single().ok();
         render_map(frame, map_area, &map, player_pos);
 
         // ---- Stats panel ----
-        render_stats(frame, stats_area);
+        render_stats(frame, stats_area, pools);
 
         // ---- Log ----
         render_log(frame, log_area, &game_log);
@@ -162,7 +165,7 @@ fn render_map(
     frame.render_widget(para, inner);
 }
 
-fn render_stats(frame: &mut ratatui::Frame, area: Rect) {
+fn render_stats(frame: &mut ratatui::Frame, area: Rect, pools: Option<&Pools>) {
     let block = Block::default()
         .title(" Stats ")
         .borders(Borders::ALL)
@@ -171,15 +174,28 @@ fn render_stats(frame: &mut ratatui::Frame, area: Rect) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
+    let hp = pools
+        .and_then(|p| p.get(PoolKind::Health))
+        .map_or((0, 0), |p| (p.current, p.max));
+    let ap = pools
+        .and_then(|p| p.get(PoolKind::ActionPoints))
+        .map_or((0, 0), |p| (p.current, p.max));
+
     let text = vec![
         Line::from(vec![
             Span::styled("HP: ", Style::default().fg(Color::Gray)),
-            Span::styled("20/20", Style::default().fg(Color::Red)),
+            Span::styled(
+                format!("{}/{}", hp.0, hp.1),
+                Style::default().fg(Color::Red),
+            ),
         ]),
         Line::from(""),
         Line::from(vec![
             Span::styled("AP: ", Style::default().fg(Color::Gray)),
-            Span::styled("3/3", Style::default().fg(Color::Blue)),
+            Span::styled(
+                format!("{}/{}", ap.0, ap.1),
+                Style::default().fg(Color::Blue),
+            ),
         ]),
     ];
 
