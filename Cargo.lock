@@ -193,6 +193,7 @@ dependencies = [
  "bevy_ecs",
  "bevy_ratatui",
  "color-eyre",
+ "ron",
  "tracing",
  "tracing-subscriber",
 ]
@@ -247,6 +248,7 @@ dependencies = [
  "bevy_ratatui",
  "crossterm",
  "ratatui",
+ "serde",
  "thiserror 2.0.18",
  "tracing",
 ]

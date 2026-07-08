@@ -3,10 +3,10 @@
 //! Renders Ratatui widgets from view models. Never queries ECS gameplay
 //! internals directly.
 
-mod render_grid;
-mod theme;
-mod view_models;
-mod visual;
+pub mod render_grid;
+pub mod theme;
+pub mod view_models;
+pub mod visual;
 
 use bevy_app::{App, Plugin};
 use bevy_ecs::{

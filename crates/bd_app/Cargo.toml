@@ -19,6 +19,7 @@ bevy.workspace = true
 bevy_app.workspace = true
 bevy_ecs.workspace = true
 bevy_ratatui.workspace = true
+ron.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 color-eyre.workspace = true

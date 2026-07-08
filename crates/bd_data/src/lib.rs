@@ -4,6 +4,7 @@
 //! No gameplay logic lives here.
 
 pub mod id;
+pub mod loader;
 pub mod registry;
 pub mod validation;
 

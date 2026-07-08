@@ -4,9 +4,10 @@
 //! tokens to glyphs and styles through the SymbolRegistry.
 
 use bevy_ecs::prelude::Resource;
+use serde::{Deserialize, Serialize};
 
 /// What kind of thing is being rendered.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum VisualToken {
     Player,
     Enemy,
@@ -22,7 +23,7 @@ pub enum VisualToken {
 }
 
 /// What visual style to apply.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum StyleToken {
     Default,
     Player,
@@ -38,7 +39,7 @@ pub enum StyleToken {
 }
 
 /// Maps a VisualToken to its glyph and style.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SymbolDef {
     pub visual_token: VisualToken,
     pub glyph: char,

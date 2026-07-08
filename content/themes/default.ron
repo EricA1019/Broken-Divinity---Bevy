@@ -1,0 +1,15 @@
+# Broken Divinity — Default Theme
+# Each entry maps a StyleToken to a color palette.
+[
+    ThemeDef(style_token: Default, fg: "white", bg: None, bold: false),
+    ThemeDef(style_token: Player, fg: "yellow", bg: None, bold: true),
+    ThemeDef(style_token: Enemy, fg: "red", bg: None, bold: false),
+    ThemeDef(style_token: Ally, fg: "green", bg: None, bold: false),
+    ThemeDef(style_token: Terrain, fg: "gray", bg: None, bold: false),
+    ThemeDef(style_token: Wall, fg: "darkgray", bg: None, bold: false),
+    ThemeDef(style_token: Item, fg: "cyan", bg: None, bold: false),
+    ThemeDef(style_token: Exit, fg: "magenta", bg: None, bold: true),
+    ThemeDef(style_token: Danger, fg: "red", bg: None, bold: true),
+    ThemeDef(style_token: Muted, fg: "darkgray", bg: None, bold: false),
+    ThemeDef(style_token: Selection, fg: "black", bg: Some("yellow"), bold: true),
+]

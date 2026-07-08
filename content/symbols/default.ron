@@ -1,0 +1,14 @@
+# Broken Divinity — Default Symbol Set
+[
+    SymbolDef(visual_token: Player, glyph: '@', fallback_glyph: '?', layer: 10, style_token: Player, priority: 10),
+    SymbolDef(visual_token: Enemy, glyph: 'E', fallback_glyph: '?', layer: 9, style_token: Enemy, priority: 9),
+    SymbolDef(visual_token: Ally, glyph: 'A', fallback_glyph: '?', layer: 9, style_token: Ally, priority: 9),
+    SymbolDef(visual_token: Floor, glyph: '.', fallback_glyph: ' ', layer: 0, style_token: Terrain, priority: 0),
+    SymbolDef(visual_token: Wall, glyph: '#', fallback_glyph: '#', layer: 0, style_token: Wall, priority: 1),
+    SymbolDef(visual_token: DoorClosed, glyph: '+', fallback_glyph: '+', layer: 1, style_token: Muted, priority: 2),
+    SymbolDef(visual_token: DoorOpen, glyph: '\'', fallback_glyph: '\'', layer: 0, style_token: Terrain, priority: 0),
+    SymbolDef(visual_token: Item, glyph: '!', fallback_glyph: '?', layer: 8, style_token: Item, priority: 8),
+    SymbolDef(visual_token: Exit, glyph: '>', fallback_glyph: '>', layer: 0, style_token: Exit, priority: 5),
+    SymbolDef(visual_token: Selection, glyph: 'X', fallback_glyph: ' ', layer: 100, style_token: Selection, priority: 100),
+    SymbolDef(visual_token: Fog, glyph: ' ', fallback_glyph: ' ', layer: 50, style_token: Muted, priority: 50),
+]

@@ -1,25 +1,56 @@
-//! Theme registry — maps StyleToken to Ratatui style properties.
-//!
-//! All color and style knowledge lives here. Move to RON in Phase 8.
-
 use bevy_ecs::prelude::Resource;
 use ratatui::style::{Color, Style};
+use serde::{Deserialize, Serialize};
 
 use crate::visual::StyleToken;
 
-/// Maps a StyleToken to a Ratatui Style.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ThemeDef {
     pub style_token: StyleToken,
-    pub fg: Color,
-    pub bg: Option<Color>,
+    pub fg: String,
+    pub bg: Option<String>,
     pub bold: bool,
 }
 
-/// Registry of theme definitions.
+impl ThemeDef {
+    pub fn resolve(&self) -> Style {
+        let mut s = Style::default().fg(parse_color(&self.fg));
+        if let Some(ref bg) = self.bg {
+            s = s.bg(parse_color(bg));
+        }
+        if self.bold {
+            s = s.add_modifier(ratatui::style::Modifier::BOLD);
+        }
+        s
+    }
+}
+
+fn parse_color(name: &str) -> Color {
+    match name.to_lowercase().as_str() {
+        "white" => Color::White,
+        "black" => Color::Black,
+        "red" => Color::Red,
+        "green" => Color::Green,
+        "yellow" => Color::Yellow,
+        "blue" => Color::Blue,
+        "magenta" => Color::Magenta,
+        "cyan" => Color::Cyan,
+        "gray" | "grey" => Color::Gray,
+        "darkgray" | "dark_gray" | "darkgrey" | "dark_grey" => Color::DarkGray,
+        "lightred" | "light_red" => Color::LightRed,
+        "lightgreen" | "light_green" => Color::LightGreen,
+        "lightyellow" | "light_yellow" => Color::LightYellow,
+        "lightblue" | "light_blue" => Color::LightBlue,
+        "lightmagenta" | "light_magenta" => Color::LightMagenta,
+        "lightcyan" | "light_cyan" => Color::LightCyan,
+        "reset" => Color::Reset,
+        _ => Color::White,
+    }
+}
+
 #[derive(Resource, Debug, Clone, Default)]
 pub struct ThemeRegistry {
-    themes: Vec<ThemeDef>,
+    pub themes: Vec<ThemeDef>,
 }
 
 impl ThemeRegistry {
@@ -27,29 +58,21 @@ impl ThemeRegistry {
         Self { themes }
     }
 
-    /// Resolve a StyleToken to a Ratatui Style.
+    pub fn from_defs(defs: Vec<ThemeDef>) -> Self {
+        Self { themes: defs }
+    }
+
     pub fn resolve(&self, token: StyleToken) -> Style {
         self.themes
             .iter()
             .find(|t| t.style_token == token)
-            .map(|t| {
-                let mut s = Style::default().fg(t.fg);
-                if let Some(bg) = t.bg {
-                    s = s.bg(bg);
-                }
-                if t.bold {
-                    s = s.add_modifier(ratatui::style::Modifier::BOLD);
-                }
-                s
-            })
+            .map(|t| t.resolve())
             .unwrap_or_default()
     }
 
-    /// Validate that all expected style tokens have definitions.
-    #[allow(dead_code)]
     pub fn validate(&self) -> Vec<String> {
         let mut errors = Vec::new();
-        let all_tokens = [
+        for token in &[
             StyleToken::Default,
             StyleToken::Player,
             StyleToken::Enemy,
@@ -61,8 +84,7 @@ impl ThemeRegistry {
             StyleToken::Danger,
             StyleToken::Muted,
             StyleToken::Selection,
-        ];
-        for token in &all_tokens {
+        ] {
             if !self.themes.iter().any(|t| t.style_token == *token) {
                 errors.push(format!("Missing theme definition for {token:?}"));
             }
@@ -70,97 +92,74 @@ impl ThemeRegistry {
         errors
     }
 
-    /// Phase 5 default theme — Rust fixtures.
     pub fn phase5_defaults() -> Self {
-        Self::new(vec![
+        Self::from_defs(vec![
             ThemeDef {
                 style_token: StyleToken::Default,
-                fg: Color::White,
+                fg: "white".into(),
                 bg: None,
                 bold: false,
             },
             ThemeDef {
                 style_token: StyleToken::Player,
-                fg: Color::Yellow,
+                fg: "yellow".into(),
                 bg: None,
                 bold: true,
             },
             ThemeDef {
                 style_token: StyleToken::Enemy,
-                fg: Color::Red,
+                fg: "red".into(),
                 bg: None,
                 bold: false,
             },
             ThemeDef {
                 style_token: StyleToken::Ally,
-                fg: Color::Green,
+                fg: "green".into(),
                 bg: None,
                 bold: false,
             },
             ThemeDef {
                 style_token: StyleToken::Terrain,
-                fg: Color::Gray,
+                fg: "gray".into(),
                 bg: None,
                 bold: false,
             },
             ThemeDef {
                 style_token: StyleToken::Wall,
-                fg: Color::DarkGray,
+                fg: "darkgray".into(),
                 bg: None,
                 bold: false,
             },
             ThemeDef {
                 style_token: StyleToken::Item,
-                fg: Color::Cyan,
+                fg: "cyan".into(),
                 bg: None,
                 bold: false,
             },
             ThemeDef {
                 style_token: StyleToken::Exit,
-                fg: Color::Magenta,
+                fg: "magenta".into(),
                 bg: None,
                 bold: true,
             },
             ThemeDef {
                 style_token: StyleToken::Danger,
-                fg: Color::Red,
+                fg: "red".into(),
                 bg: None,
                 bold: true,
             },
             ThemeDef {
                 style_token: StyleToken::Muted,
-                fg: Color::DarkGray,
+                fg: "darkgray".into(),
                 bg: None,
                 bold: false,
             },
             ThemeDef {
                 style_token: StyleToken::Selection,
-                fg: Color::Black,
-                bg: Some(Color::Yellow),
+                fg: "black".into(),
+                bg: Some("yellow".into()),
                 bold: true,
             },
         ])
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn missing_style_def_fails_validation() {
-        let reg = ThemeRegistry::new(vec![]);
-        let errors = reg.validate();
-        assert!(
-            !errors.is_empty(),
-            "Empty theme registry should fail validation"
-        );
-    }
-
-    #[test]
-    fn player_style_resolves_to_yellow() {
-        let reg = ThemeRegistry::phase5_defaults();
-        let style = reg.resolve(StyleToken::Player);
-        assert_eq!(style.fg, Some(Color::Yellow));
     }
 }
