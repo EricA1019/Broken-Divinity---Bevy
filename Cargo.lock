@@ -207,6 +207,8 @@ dependencies = [
  "bevy_ecs",
  "bevy_time",
  "pathfinding",
+ "petgraph",
+ "rand 0.10.1",
  "ron",
  "serde",
  "thiserror 2.0.18",
@@ -2083,6 +2085,16 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f9744bc48116fee06334924bb5f2bad41eed5e89bd26e29b0b799f9a3f82c210"
 dependencies = [
  "pest",
+]
+
+[[package]]
+name = "petgraph"
+version = "0.7.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3672b37090dbd86368a4145bc067582552b29c27377cad4e0a306c97f9bd7772"
+dependencies = [
+ "fixedbitset 0.5.7",
+ "indexmap",
 ]
 
 [[package]]

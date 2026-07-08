@@ -13,6 +13,7 @@ pub mod ids;
 pub mod map;
 pub mod pathfinding;
 pub mod pools;
+pub mod procgen;
 pub mod signals;
 pub mod statuses;
 pub mod trace;

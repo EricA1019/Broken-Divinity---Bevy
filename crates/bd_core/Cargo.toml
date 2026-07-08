@@ -17,3 +17,5 @@ ron.workspace = true
 thiserror.workspace = true
 tracing.workspace = true
 pathfinding.workspace = true
+petgraph.workspace = true
+rand.workspace = true
