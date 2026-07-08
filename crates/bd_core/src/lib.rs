@@ -18,6 +18,7 @@ pub mod trace;
 
 mod actions;
 pub mod factory;
+pub mod inventory;
 pub mod relationships;
 
 use crate::trace::{SignalTrace, TriggerExecutionGuard};
@@ -91,6 +92,7 @@ impl Plugin for BdCorePlugin {
 
         // Register status/trigger/modifier system
         statuses::register_statuses(app);
+        inventory::register_inventory(app);
 
         tracing::info!("BdCorePlugin initialized");
     }
