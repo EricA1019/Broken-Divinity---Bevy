@@ -1,30 +1,63 @@
-[package]
-name = "broken_divinity"
+[workspace]
+resolver = "3"
+members = [
+    "crates/bd_app",
+    "crates/bd_core",
+    "crates/bd_tui",
+    "crates/bd_data",
+    "crates/bd_test_support",
+]
+
+[workspace.package]
 version = "0.1.0"
 edition = "2024"
 rust-version = "1.85"
-autobins = false
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/EricA1019/broken-divinity"
 
-[dependencies]
-bevy = { version = "0.18.1", default-features = false, features = ["2d", "bevy_remote"] }
-bevy_ecs_tilemap = "0.18.1"
-bevy_egui = "0.39.1"
-pathfinding = "4.14.0"
-rand = "0.10.0"
-ron = "0.12.0"
-rand_chacha = "0.10.0"
+[workspace.dependencies]
+# Bevy — terminal-only, no rendering
+bevy = { version = "0.18.1", default-features = false }
+bevy_app = "0.18.1"
+bevy_ecs = "0.18.1"
+bevy_time = "0.18.1"
+
+# Terminal
+bevy_ratatui = "0.11.1"
+ratatui = "0.30"
+crossterm = "0.29"
+
+# Diagnostics
+tracing = "0.1"
+tracing-subscriber = "0.3"
+color-eyre = "0.6"
+
+# Serde
 serde = { version = "1.0", features = ["derive"] }
+ron = "0.12"
 serde_json = "1.0"
 
-[[bin]]
-name = "broken_divinity"
-path = "src/main.rs"
+# Error handling
+thiserror = "2.0"
 
-[features]
-default = []
-dev = ["bevy/dynamic_linking", "dep:bevy_brp_extras"]
-brp = ["dep:bevy_brp_extras"]
+# Testing
+insta = "1.48"
 
-[dependencies.bevy_brp_extras]
-version = "0.18"
-optional = true
+# RNG
+rand = "0.10"
+rand_chacha = "0.10"
+
+# Pathfinding (deferred to Phase 13 spike, declared for availability)
+pathfinding = "4.14"
+
+# Graph algorithms (deferred, declared for availability)
+petgraph = "0.7"
+
+# OS paths (deferred to Phase 16, declared for availability)
+directories = "6.0"
+
+# Config (deferred to Phase 16 spike)
+toml = "0.9"
+
+# Schema generation (deferred to Phase 8 spike)
+schemars = "0.8"

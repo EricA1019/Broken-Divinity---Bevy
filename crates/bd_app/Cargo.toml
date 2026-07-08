@@ -1,0 +1,24 @@
+[package]
+name = "bd_app"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "bd"
+path = "src/main.rs"
+
+[dependencies]
+bd_core = { path = "../bd_core" }
+bd_tui = { path = "../bd_tui" }
+bd_data = { path = "../bd_data" }
+
+bevy.workspace = true
+bevy_app.workspace = true
+bevy_ecs.workspace = true
+bevy_ratatui.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+color-eyre.workspace = true

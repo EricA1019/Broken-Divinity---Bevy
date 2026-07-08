@@ -1,0 +1,20 @@
+[package]
+name = "bd_tui"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+bd_core = { path = "../bd_core" }
+
+bevy.workspace = true
+bevy_app.workspace = true
+bevy_ecs.workspace = true
+bevy_ratatui.workspace = true
+ratatui.workspace = true
+crossterm.workspace = true
+
+tracing.workspace = true
+thiserror.workspace = true
