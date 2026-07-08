@@ -10,6 +10,7 @@ use crate::{
     BdSet,
     gamelog::{GameLog, LogLevel},
     signals::{EntityDefeated, PoolDeltaApplied, PoolDeltaRequested, PoolKind},
+    statuses::Statuses,
     trace::SignalTrace,
 };
 
@@ -88,7 +89,7 @@ fn resolve_pool_deltas(
     mut defeated_writer: bevy_ecs::message::MessageWriter<EntityDefeated>,
     mut game_log: ResMut<GameLog>,
     mut trace: ResMut<SignalTrace>,
-    mut query: Query<(Entity, &mut Pools)>,
+    mut query: Query<(Entity, &mut Pools, Option<&Statuses>)>,
 ) {
     for req in requests.read() {
         trace.push(
@@ -96,7 +97,7 @@ fn resolve_pool_deltas(
             "PoolDelta",
             format!("{:?} {:?} {}", req.target, req.kind, req.amount),
         );
-        let Ok((entity, mut pools)) = query.get_mut(req.target) else {
+        let Ok((entity, mut pools, statuses)) = query.get_mut(req.target) else {
             continue; // target has no Pools component — skip
         };
 
@@ -104,8 +105,15 @@ fn resolve_pool_deltas(
             continue; // target doesn't have this pool kind
         };
 
+        // Apply status modifiers (e.g., Guarded halves physical damage)
+        let modified_amount = if let Some(statuses) = statuses {
+            crate::statuses::apply_modifiers(entity, req.kind, req.amount, &req.tags, statuses)
+        } else {
+            req.amount
+        };
+
         let before = pool.current;
-        let amount_applied = pool.apply_delta(req.amount);
+        let amount_applied = pool.apply_delta(modified_amount);
         let after = pool.current;
 
         // Emit applied event

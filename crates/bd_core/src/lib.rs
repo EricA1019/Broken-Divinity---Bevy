@@ -13,6 +13,7 @@ pub mod ids;
 pub mod map;
 pub mod pools;
 pub mod signals;
+pub mod statuses;
 pub mod trace;
 
 mod actions;
@@ -85,6 +86,9 @@ impl Plugin for BdCorePlugin {
 
         // Register action system (replaces direct movement systems)
         actions::register_actions(app);
+
+        // Register status/trigger/modifier system
+        statuses::register_statuses(app);
 
         tracing::info!("BdCorePlugin initialized");
     }

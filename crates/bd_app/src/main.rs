@@ -13,6 +13,7 @@ use bd_core::components::{BlocksMovement, Name, Player, Position};
 use bd_core::gamelog::{GameLog, LogLevel};
 use bd_core::pools::{Pool, Pools};
 use bd_core::signals::PoolKind;
+use bd_core::statuses::{StatusInstance, Statuses};
 
 fn main() {
     // Initialize tracing
@@ -108,6 +109,14 @@ fn spawn_world(mut commands: Commands, mut game_log: ResMut<GameLog>) {
             Pool::new(PoolKind::Health, 15, 0, 15),
             Pool::new(PoolKind::ActionPoints, 0, 0, 0),
         ]),
+        Statuses {
+            instances: vec![StatusInstance {
+                status_id: "status.poisoned".into(),
+                remaining_duration: 5,
+                stacks: 1,
+                source: None,
+            }],
+        },
     ));
 
     game_log.push("You enter the smoke-filled chamber.", LogLevel::Info);

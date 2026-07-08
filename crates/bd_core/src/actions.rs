@@ -463,10 +463,19 @@ fn resolve_action_effects(
                         game_log.push(msg.clone(), *level);
                     }
                 }
-                Effect::ApplyStatus(_status_id) => {
-                    // Placeholder — status system arrives in Phase 9
+                Effect::ApplyStatus(status_id) => {
+                    // Apply status to the entity
+                    let defs = crate::statuses::default_status_definitions();
+                    crate::statuses::apply_status(
+                        entity,
+                        status_id,
+                        0, // use default duration from definition
+                        None,
+                        &mut commands,
+                        &defs,
+                    );
                     if player_flag.is_some() {
-                        game_log.push("You guard. (status not yet implemented)", LogLevel::Info);
+                        game_log.push(format!("You guard with {}.", status_id), LogLevel::Info);
                     }
                 }
             }
