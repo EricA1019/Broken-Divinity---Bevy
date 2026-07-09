@@ -9,10 +9,12 @@ use bevy_ecs::{
 
 use bd_core::{
     BdSet,
-    components::{BlocksMovement, Player, Position, Tile},
+    components::{BlocksMovement, Name, Player, Position, Tile},
     gamelog::{GameLog, LogLevel},
+    inventory::Item,
     map::SmokeMap,
     pools::Pools,
+    relationships::{ContainedIn, EquippedBy},
     signals::PoolKind,
 };
 
@@ -64,12 +66,26 @@ pub struct ActorPanelViewModel {
     pub hp: Option<(i32, i32)>,
 }
 
+/// View model for inventory/container display.
+#[derive(Resource, Debug, Clone, Default)]
+pub struct ContainerViewModel {
+    pub items: Vec<ItemEntryVm>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ItemEntryVm {
+    pub name: String,
+    pub equipped: bool,
+    pub usable: bool,
+}
+
 pub(crate) fn register_view_models(app: &mut App) {
     app.insert_resource(StatsViewModel::default());
     app.insert_resource(LogViewModel::default());
     app.insert_resource(ActionListViewModel::default());
     app.insert_resource(MapViewModel::default());
     app.insert_resource(ActorPanelViewModel::default());
+    app.insert_resource(ContainerViewModel::default());
     app.add_systems(
         bevy_app::Update,
         (
@@ -77,6 +93,7 @@ pub(crate) fn register_view_models(app: &mut App) {
             build_log_vm,
             build_action_list_vm,
             build_map_vm,
+            build_container_vm,
         )
             .in_set(BdSet::ViewModelBuild),
     );
@@ -174,6 +191,44 @@ fn build_map_vm(
     }
     vm.player_pos = player_pos.single().ok().copied();
     vm.enemy_positions = enemies.iter().copied().collect();
+}
+
+/// Build the inventory container view model for the player.
+fn build_container_vm(
+    player: Query<Entity, With<Player>>,
+    items: Query<(Entity, Option<&Name>, Option<&Item>)>,
+    contained_in: Query<&ContainedIn>,
+    equipped_by: Query<&EquippedBy>,
+    mut vm: ResMut<ContainerViewModel>,
+) {
+    let Ok(player_entity) = player.single() else {
+        vm.items.clear();
+        return;
+    };
+
+    // Find items in player's inventory (ContainedIn → player)
+    let mut entries: Vec<ItemEntryVm> = Vec::new();
+    for (entity, name, _item) in items.iter() {
+        // Check if this item belongs to the player
+        let is_contained = contained_in
+            .get(entity)
+            .ok()
+            .is_some_and(|c| c.0 == player_entity);
+        let is_equipped = equipped_by
+            .get(entity)
+            .ok()
+            .is_some_and(|e| e.0 == player_entity);
+
+        if is_contained || is_equipped {
+            entries.push(ItemEntryVm {
+                name: name.map(|n| n.0.clone()).unwrap_or_else(|| "Unknown".into()),
+                equipped: is_equipped,
+                usable: is_contained, // contained items can be used
+            });
+        }
+    }
+
+    vm.items = entries;
 }
 
 #[cfg(test)]
