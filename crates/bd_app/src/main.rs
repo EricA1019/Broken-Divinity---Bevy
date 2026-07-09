@@ -38,6 +38,16 @@ fn main() {
 
     tracing::info!("Broken Divinity Kernel starting");
 
+    // Create data and log directories
+    let data_dir = config::data_dir();
+    let log_dir = data_dir.join("logs");
+    if let Err(e) = std::fs::create_dir_all(&log_dir) {
+        tracing::warn!("Failed to create log directory {log_dir:?}: {e}");
+    }
+    if let Err(e) = std::fs::create_dir_all(&data_dir) {
+        tracing::warn!("Failed to create data directory {data_dir:?}: {e}");
+    }
+
     // Load config
     let loaded = config::load_config();
     for warn in &loaded.warnings {

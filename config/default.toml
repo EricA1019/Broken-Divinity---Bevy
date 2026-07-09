@@ -1,0 +1,18 @@
+# Broken Divinity Kernel — Default Configuration
+# Copy this to ~/.config/broken-divinity/config.toml and edit
+
+theme_id = "bd_default"
+log_level = "bd=info"
+debug_flags = []
+
+[keybindings]
+move_north = "w"
+move_south = "s"
+move_east = "d"
+move_west = "a"
+wait = "."
+attack = "f"
+guard = "g"
+inventory = "i"
+combat_screen = "z"
+quit = "q"
