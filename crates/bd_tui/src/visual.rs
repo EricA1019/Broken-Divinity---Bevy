@@ -20,6 +20,7 @@ pub enum VisualToken {
     Exit,
     Selection,
     Fog,
+    Water,
 }
 
 /// What visual style to apply.

@@ -32,6 +32,7 @@ pub enum Tile {
     Floor,
     Wall,
     Door,
+    Water,
 }
 
 impl Tile {

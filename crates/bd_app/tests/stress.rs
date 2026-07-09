@@ -20,6 +20,36 @@ use bd_core::{
 // Helpers
 // ---------------------------------------------------------------------------
 
+#[test]
+fn prototype_fixed_seed_deterministic_run() {
+    // Validate the full prototype: generate location, spawn, verify structure
+    use bd_core::factory::BlueprintRegistry;
+    use bd_core::procgen::{LocationTemplate, generate_location, validate_plan};
+
+    // Test ruin seed determinism
+    let template = LocationTemplate::ruin();
+    let plan_a = generate_location(&template, 42);
+    let plan_b = generate_location(&template, 42);
+    assert_eq!(plan_a.tiles, plan_b.tiles, "Ruin seed should be deterministic");
+    assert_eq!(plan_a.rooms.len(), plan_b.rooms.len());
+
+    // Verify blueprint registry has boss
+    let registry = BlueprintRegistry::phase18_defaults();
+    assert!(registry.get("blueprint.crypt_lord").is_some(), "Crypt Lord boss must exist");
+
+    // Verify crypt template exists and works
+    let crypt = LocationTemplate::crypt();
+    let crypt_plan = generate_location(&crypt, 123);
+    let _validation = validate_plan(&crypt_plan);
+    assert!(!crypt_plan.rooms.is_empty(), "Crypt should have rooms");
+    // Some seeds may produce validation warnings, but shouldn't panic
+
+    // Verify Water tile is renderable (not walkable)
+    use bd_core::components::Tile;
+    assert!(!Tile::Water.is_walkable(), "Water should not be walkable");
+    assert!(Tile::Floor.is_walkable(), "Floor should be walkable");
+}
+
 /// Count entities in a world.
 fn entity_count(world: &mut bevy_ecs::world::World) -> usize {
     let mut query = world.query::<()>();

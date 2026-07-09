@@ -95,6 +95,31 @@ impl LocationTemplate {
             }],
         }
     }
+
+    /// Harder location template for the Crypt (floor 2).
+    pub fn crypt() -> Self {
+        Self {
+            id: "location.crypt".into(),
+            min_width: 35,
+            max_width: 50,
+            min_height: 25,
+            max_height: 35,
+            min_rooms: 5,
+            max_rooms: 10,
+            room_min_size: 3,
+            room_max_size: 8,
+            spawn_table: vec![
+                SpawnEntry {
+                    blueprint_id: "blueprint.skeleton".into(),
+                    count: 5,
+                },
+                SpawnEntry {
+                    blueprint_id: "blueprint.crypt_lord".into(),
+                    count: 1,
+                },
+            ],
+        }
+    }
 }
 
 /// A validated, spawnable location plan.
@@ -137,6 +162,7 @@ impl LocationPlan {
     pub fn to_smoke_map(&self) -> SmokeMap {
         SmokeMap::from_tiles(self.width, self.height, &self.tiles)
     }
+
 }
 
 // ---------------------------------------------------------------------------

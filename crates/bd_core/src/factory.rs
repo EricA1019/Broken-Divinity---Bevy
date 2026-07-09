@@ -153,6 +153,19 @@ impl BlueprintRegistry {
                 statuses: vec![],
                 visual: Some("Item".into()),
             },
+            // Boss: crypt lord
+            EntityBlueprint {
+                id: "blueprint.crypt_lord".into(),
+                label: "Crypt Lord".into(),
+                is_player: false,
+                blocks_movement: true,
+                pools: vec![
+                    (PoolKind::Health, 30, 0, 30),
+                    (PoolKind::ActionPoints, 3, 0, 3),
+                ],
+                statuses: vec![],
+                visual: Some("Enemy".into()),
+            },
         ]);
         base
     }
