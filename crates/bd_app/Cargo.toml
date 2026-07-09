@@ -23,3 +23,6 @@ ron.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 color-eyre.workspace = true
+directories.workspace = true
+serde.workspace = true
+toml.workspace = true

@@ -12,6 +12,9 @@ use bevy_ecs::system::{Commands, ResMut};
 use bd_core::components::Position;
 use bd_core::factory::{BlueprintRegistry, Mutator, spawn_from_blueprint};
 use bd_core::gamelog::{GameLog, LogLevel};
+use bd_core::HelpLine;
+
+mod config;
 
 fn main() {
     // Initialize tracing
@@ -24,6 +27,19 @@ fn main() {
 
     tracing::info!("Broken Divinity Kernel starting");
 
+    // Load config
+    let loaded = config::load_config();
+    for warn in &loaded.warnings {
+        tracing::warn!("{warn}");
+    }
+    tracing::info!(
+        "Config source: {:?}",
+        match &loaded.source {
+            config::ConfigSource::Defaults => "built-in defaults",
+            config::ConfigSource::File(p) => p.to_str().unwrap_or("unknown"),
+        }
+    );
+
     let frame_time = Duration::from_secs_f32(1.0 / 60.0);
 
     let mut app = bevy_app::App::new();
@@ -35,6 +51,10 @@ fn main() {
     // Core + TUI plugins (register default registries)
     app.add_plugins(bd_core::BdCorePlugin);
     app.add_plugins(bd_tui::BdTuiPlugin);
+
+    // Override HelpLine with config-derived value
+    let help_line = HelpLine(loaded.config.keybindings.help_line());
+    app.insert_resource(help_line);
 
     // Override defaults with RON content at startup
     app.add_systems(Startup, apply_ron_content);

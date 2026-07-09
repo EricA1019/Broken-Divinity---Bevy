@@ -26,7 +26,7 @@ use ratatui::{
 };
 
 use bd_core::{
-    BdSet,
+    BdSet, HelpLine,
     components::{BlocksMovement, Player, Position},
     direction::Direction,
     signals::ActionIntent,
@@ -213,6 +213,7 @@ fn draw_ui(
     container_vm: Res<ContainerViewModel>,
     symbols: Res<SymbolRegistry>,
     theme: Res<ThemeRegistry>,
+    help: Res<HelpLine>,
 ) {
     let Some(def) = screen_reg.screens.get(&screen_state.current) else {
         tracing::warn!("Unknown screen: {}", screen_state.current);
@@ -250,7 +251,8 @@ fn draw_ui(
         }
 
         // Footer — always render at bottom
-        render_footer(frame, area);
+        let help_text = &help.0;
+        render_footer(frame, area, help_text);
     });
 }
 
@@ -258,9 +260,9 @@ fn draw_ui(
 
 
 
-fn render_footer(frame: &mut ratatui::Frame, area: Rect) {
+fn render_footer(frame: &mut ratatui::Frame, area: Rect, help: &str) {
     let version = env!("CARGO_PKG_VERSION");
-    let text = format!("Broken Divinity Kernel v{version} | phase 6 | q quit");
+    let text = format!("Broken Divinity Kernel v{version} | {help}");
     let footer_area = Rect {
         y: area.height.saturating_sub(1),
         height: 1,

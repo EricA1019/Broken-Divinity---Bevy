@@ -4,6 +4,7 @@
 //! Gameplay systems (pools, actions, statuses, etc.) are added in later phases.
 
 use bevy_app::{App, Plugin};
+use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::{IntoScheduleConfigs, SystemSet};
 
 pub mod components;
@@ -26,6 +27,16 @@ pub mod relationships;
 use crate::trace::{SignalTrace, TriggerExecutionGuard};
 use gamelog::GameLog;
 use map::SmokeMap;
+
+/// Help line string derived from key bindings, consumed by the TUI footer.
+#[derive(Resource, Debug, Clone)]
+pub struct HelpLine(pub String);
+
+impl Default for HelpLine {
+    fn default() -> Self {
+        Self("Move:w↑s↓a←d→ | Wait:. | Attack:f | Guard:g | Inventory:i | Combat:z | Quit:q".into())
+    }
+}
 
 /// Core system sets defining the execution order for all kernel systems.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
@@ -80,6 +91,7 @@ impl Plugin for BdCorePlugin {
         app.insert_resource(GameLog::default());
         app.insert_resource(SignalTrace::default());
         app.insert_resource(TriggerExecutionGuard::default());
+        app.insert_resource(HelpLine::default());
 
         // Register movement-related message types (used by actions)
         app.add_message::<crate::signals::MoveIntent>();
