@@ -1,5 +1,3 @@
-# Broken Divinity — Default Theme
-# Each entry maps a StyleToken to a color palette.
 [
     ThemeDef(style_token: Default, fg: "white", bg: None, bold: false),
     ThemeDef(style_token: Player, fg: "yellow", bg: None, bold: true),

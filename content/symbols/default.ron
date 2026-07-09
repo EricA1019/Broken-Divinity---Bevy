@@ -1,4 +1,4 @@
-# Broken Divinity — Default Symbol Set
+// Default symbol set for Broken Divinity Kernel
 [
     SymbolDef(visual_token: Player, glyph: '@', fallback_glyph: '?', layer: 10, style_token: Player, priority: 10),
     SymbolDef(visual_token: Enemy, glyph: 'E', fallback_glyph: '?', layer: 9, style_token: Enemy, priority: 9),
