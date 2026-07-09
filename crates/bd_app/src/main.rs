@@ -54,6 +54,9 @@ fn main() {
     app.add_plugins(bd_core::BdCorePlugin);
     app.add_plugins(bd_tui::BdTuiPlugin);
 
+    // Register spatial/transition module
+    bd_core::spatial::register_spatial(&mut app);
+
     // Override HelpLine with config-derived value
     let help_line = HelpLine(loaded.config.keybindings.help_line());
     app.insert_resource(help_line);

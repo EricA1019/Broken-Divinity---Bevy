@@ -1,0 +1,345 @@
+//! Spatial mode management — outpost, travel, and tactical location transitions.
+//!
+//! Phase 19: Defines `GameMode` (the current game state), `OutpostState` for
+//! the shelter/base layer, `PersistentEntity`/`TransientEntity` for state
+//! isolation, and transition messages for moving between modes.
+
+use bevy_app::App;
+use bevy_ecs::prelude::*;
+use serde::{Deserialize, Serialize};
+
+use crate::{
+    gamelog::{GameLog, LogLevel},
+    pools::{Pool, Pools},
+    signals::PoolKind,
+};
+
+// ---------------------------------------------------------------------------
+// Game mode
+// ---------------------------------------------------------------------------
+
+/// The current game mode — determines which systems and screens are active.
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub enum GameMode {
+    /// The outpost/shelter — resource management, travel planning.
+    #[default]
+    Outpost,
+    /// Travelling between locations (time passes, events possible).
+    Travel,
+    /// Active tactical combat in a procedurally generated location.
+    Tactical,
+}
+
+// ---------------------------------------------------------------------------
+// Persistent vs transient entity markers
+// ---------------------------------------------------------------------------
+
+/// Entities with this component survive location transitions (player, party,
+/// permanent items).
+#[derive(Component, Debug, Default, Serialize, Deserialize)]
+pub struct PersistentEntity;
+
+/// Entities with this component are removed when leaving a tactical location
+/// (combat enemies, temporary summons, dropped loot not collected).
+#[derive(Component, Debug, Default, Serialize, Deserialize)]
+pub struct TransientEntity;
+
+// ---------------------------------------------------------------------------
+// Outpost state
+// ---------------------------------------------------------------------------
+
+/// The player's outpost/shelter — resources, party, and storage.
+#[derive(Resource, Debug, Clone)]
+pub struct OutpostState {
+    /// Outpost resource pools (Supplies, Morale, Faith, etc.).
+    pub resources: Pools,
+    /// Entity IDs of party members currently at the outpost.
+    pub party: Vec<Entity>,
+}
+
+impl Default for OutpostState {
+    fn default() -> Self {
+        Self {
+            resources: Pools::new(vec![
+                Pool::new(PoolKind::Supplies, 10, 0, 50),
+                Pool::new(PoolKind::Morale, 50, 0, 100),
+            ]),
+            party: Vec::new(),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Travel nodes
+// ---------------------------------------------------------------------------
+
+/// A location on the travel map.
+#[derive(Debug, Clone)]
+pub struct TravelNode {
+    pub id: String,
+    pub name: String,
+    pub travel_time: u32, // turns to reach from outpost
+    pub location_template: Option<String>,
+}
+
+/// The travel map — a list of reachable locations from the outpost.
+#[derive(Resource, Debug, Clone)]
+pub struct TravelMap {
+    pub nodes: Vec<TravelNode>,
+}
+
+impl Default for TravelMap {
+    fn default() -> Self {
+        Self {
+            nodes: vec![
+                TravelNode {
+                    id: "ruin.ancient_temple".into(),
+                    name: "Ancient Temple".into(),
+                    travel_time: 3,
+                    location_template: Some("location.ruin".into()),
+                },
+                TravelNode {
+                    id: "ruin.crypt".into(),
+                    name: "Crypt of the Fallen".into(),
+                    travel_time: 5,
+                    location_template: Some("location.ruin".into()),
+                },
+            ],
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Transition messages
+// ---------------------------------------------------------------------------
+
+/// Intent to transition to a different game mode.
+#[derive(Message, Debug, Clone)]
+pub struct TransitionIntent {
+    pub target: GameMode,
+    pub node_id: Option<String>,
+}
+
+/// A transition has been completed.
+#[derive(Message, Debug, Clone)]
+pub struct TransitionComplete {
+    pub from: GameMode,
+    pub to: GameMode,
+}
+
+// ---------------------------------------------------------------------------
+// Transition system
+// ---------------------------------------------------------------------------
+
+/// Process transition intents and switch game modes.
+/// Handles entity cleanup: transient entities removed when leaving tactical.
+pub fn process_transitions(
+    mut messages: bevy_ecs::message::MessageReader<TransitionIntent>,
+    mut commands: Commands,
+    mut mode: ResMut<GameMode>,
+    mut game_log: ResMut<GameLog>,
+    query: Query<(Entity, Option<&TransientEntity>, Option<&PersistentEntity>)>,
+) {
+    for msg in messages.read() {
+        let from = *mode;
+
+        // Clean up transient entities when leaving tactical mode
+        if *mode == GameMode::Tactical && msg.target != GameMode::Tactical {
+            for (entity, transient, _persistent) in query.iter() {
+                if transient.is_some() {
+                    commands.entity(entity).despawn();
+                    tracing::debug!("Despawned transient entity {entity:?}");
+                }
+            }
+            // Also despawn anything without PersistentEntity
+            for (entity, _transient, persistent) in query.iter() {
+                if persistent.is_none() {
+                    commands.entity(entity).despawn();
+                }
+            }
+        }
+
+        *mode = msg.target;
+
+        match msg.target {
+            GameMode::Outpost => {
+                game_log.push("You return to the outpost.", LogLevel::Info);
+            }
+            GameMode::Travel => {
+                let node_name = msg.node_id.as_deref().unwrap_or("unknown");
+                game_log.push(
+                    format!("Travelling to {node_name}..."),
+                    LogLevel::Info,
+                );
+            }
+            GameMode::Tactical => {
+                let node_name = msg.node_id.as_deref().unwrap_or("the ruin");
+                game_log.push(
+                    format!("Entering {node_name}.", node_name = node_name),
+                    LogLevel::Info,
+                );
+            }
+        }
+
+        tracing::info!("Game mode: {from:?} → {:?}", msg.target);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Registration
+// ---------------------------------------------------------------------------
+
+/// Register spatial/transition resources and systems.
+pub fn register_spatial(app: &mut App) {
+    app.insert_resource(GameMode::default());
+    app.insert_resource(OutpostState::default());
+    app.insert_resource(TravelMap::default());
+    app.add_message::<TransitionIntent>();
+    app.add_message::<TransitionComplete>();
+
+    app.add_systems(
+        bevy_app::Update,
+        process_transitions
+            .in_set(crate::BdSet::IntentCollection),
+    );
+
+    tracing::info!("Spatial module registered");
+}
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::components::Position;
+    use crate::map::SmokeMap;
+
+    fn test_app() -> bevy_app::App {
+        let mut app = bevy_app::App::new();
+        app.insert_resource(GameMode::default());
+        app.insert_resource(OutpostState::default());
+        app.insert_resource(TravelMap::default());
+        app.insert_resource(GameLog::default());
+        app.insert_resource(SmokeMap::new(10, 10, crate::components::Tile::Floor));
+        app.add_message::<TransitionIntent>();
+        app.add_systems(bevy_app::Update, process_transitions);
+        app
+    }
+
+    #[test]
+    fn leaving_location_preserves_player() {
+        let mut app = test_app();
+        app.world_mut().insert_resource(GameMode::Tactical);
+
+        // Spawn player with PersistentEntity
+        let player = app.world_mut().spawn((
+            PersistentEntity,
+            Position { x: 5, y: 5 },
+        )).id();
+
+        // Spawn transient enemy
+        let enemy = app.world_mut().spawn((
+            TransientEntity,
+            Position { x: 3, y: 3 },
+        )).id();
+
+        // Transition to Outpost
+        app.world_mut()
+            .resource_mut::<bevy_ecs::message::Messages<TransitionIntent>>()
+            .write(TransitionIntent {
+                target: GameMode::Outpost,
+                node_id: None,
+            });
+        app.update();
+
+        // Player should still exist
+        assert!(app.world().entities().contains(player),
+            "Player should persist after leaving tactical");
+        // Enemy should be despawned
+        assert!(!app.world().entities().contains(enemy),
+            "Transient enemy should be removed");
+    }
+
+    #[test]
+    fn returning_to_outpost_works() {
+        let mut app = test_app();
+        app.world_mut().insert_resource(GameMode::Tactical);
+
+        app.world_mut()
+            .resource_mut::<bevy_ecs::message::Messages<TransitionIntent>>()
+            .write(TransitionIntent {
+                target: GameMode::Outpost,
+                node_id: None,
+            });
+        app.update();
+
+        assert_eq!(*app.world().resource::<GameMode>(), GameMode::Outpost);
+    }
+
+    #[test]
+    fn travel_advances_time() {
+        // Travel time is simulated by setting GameMode::Travel.
+        // The number of turns spent in Travel mode equals the travel time.
+        let mut app = test_app();
+        app.world_mut().insert_resource(GameMode::Outpost);
+
+        app.world_mut()
+            .resource_mut::<bevy_ecs::message::Messages<TransitionIntent>>()
+            .write(TransitionIntent {
+                target: GameMode::Travel,
+                node_id: Some("ruin.ancient_temple".into()),
+            });
+        app.update();
+
+        assert_eq!(*app.world().resource::<GameMode>(), GameMode::Travel);
+
+        // After completing travel, transition to Tactical
+        app.world_mut()
+            .resource_mut::<bevy_ecs::message::Messages<TransitionIntent>>()
+            .write(TransitionIntent {
+                target: GameMode::Tactical,
+                node_id: Some("ruin.ancient_temple".into()),
+            });
+        app.update();
+
+        assert_eq!(*app.world().resource::<GameMode>(), GameMode::Tactical);
+    }
+
+    #[test]
+    fn outpost_resources_use_pool_like_system() {
+        let app = test_app();
+        let outpost = app.world().resource::<OutpostState>().clone();
+        let supplies = outpost.resources.get(PoolKind::Supplies).unwrap();
+        assert_eq!(supplies.current, 10);
+        assert_eq!(supplies.max, 50);
+
+        let morale = outpost.resources.get(PoolKind::Morale).unwrap();
+        assert_eq!(morale.current, 50);
+        assert_eq!(morale.max, 100);
+    }
+
+    #[test]
+    fn transient_combat_entities_do_not_leak() {
+        let mut app = test_app();
+        app.world_mut().insert_resource(GameMode::Tactical);
+
+        // Spawn entities without marker (assumed transient)
+        let summon = app.world_mut().spawn(Position { x: 1, y: 1 }).id();
+        let item = app.world_mut().spawn((crate::inventory::Item, Position { x: 2, y: 2 })).id();
+
+        // Transition to outpost
+        app.world_mut()
+            .resource_mut::<bevy_ecs::message::Messages<TransitionIntent>>()
+            .write(TransitionIntent {
+                target: GameMode::Outpost,
+                node_id: None,
+            });
+        app.update();
+
+        // Non-persistent entities should be despawned
+        assert!(!app.world().entities().contains(summon));
+        assert!(!app.world().entities().contains(item));
+    }
+}

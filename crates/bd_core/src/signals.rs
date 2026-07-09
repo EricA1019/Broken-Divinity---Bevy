@@ -80,6 +80,7 @@ pub enum PoolKind {
     Corruption,
     Faith,
     Morale,
+    Supplies,
 }
 
 /// Tag categorizing a pool delta for modifier routing.

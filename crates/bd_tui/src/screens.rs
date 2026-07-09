@@ -164,7 +164,7 @@ pub struct ScreenState {
 impl Default for ScreenState {
     fn default() -> Self {
         Self {
-            current: "combat".into(),
+            current: "outpost".into(),
         }
     }
 }
@@ -231,6 +231,33 @@ pub fn default_screen_registry() -> ScreenRegistry {
         ],
     });
 
+    // Outpost screen: resources, party, travel options
+    reg.register(ScreenDefinition {
+        id: "outpost".into(),
+        panels: vec![
+            PanelDefinition {
+                id: "outpost_party".into(),
+                layout: PanelLayout::Left { width_pct: 30 },
+                view_model: "ContainerViewModel".into(),
+            },
+            PanelDefinition {
+                id: "outpost_travel".into(),
+                layout: PanelLayout::Main,
+                view_model: "ContainerViewModel".into(),
+            },
+            PanelDefinition {
+                id: "stats".into(),
+                layout: PanelLayout::Right { width_pct: 25 },
+                view_model: "StatsViewModel".into(),
+            },
+            PanelDefinition {
+                id: "log".into(),
+                layout: PanelLayout::Bottom { height_pct: 20 },
+                view_model: "LogViewModel".into(),
+            },
+        ],
+    });
+
     reg
 }
 
@@ -267,6 +294,16 @@ pub fn default_widget_registry() -> WidgetRegistry {
         panel_id: "equipment".into(),
         view_model: "ContainerViewModel".into(),
         render: Box::new(render_equipment_widget),
+    });
+    reg.register(WidgetBinding {
+        panel_id: "outpost_party".into(),
+        view_model: "ContainerViewModel".into(),
+        render: Box::new(render_outpost_party_widget),
+    });
+    reg.register(WidgetBinding {
+        panel_id: "outpost_travel".into(),
+        view_model: "ContainerViewModel".into(),
+        render: Box::new(render_outpost_travel_widget),
     });
 
     reg
@@ -675,6 +712,69 @@ pub fn compute_panel_rects(
     }
 
     result
+}
+
+// ---------------------------------------------------------------------------
+// Outpost widget renderers
+// ---------------------------------------------------------------------------
+
+fn render_outpost_party_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
+    let block = ratatui::widgets::Block::default()
+        .title(" Party ")
+        .borders(ratatui::widgets::Borders::ALL)
+        .style(ratatui::style::Style::default().fg(ratatui::style::Color::Gray));
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let lines: Vec<ratatui::text::Line> = ctx
+        .container
+        .items
+        .iter()
+        .map(|item| {
+            ratatui::text::Line::styled(
+                format!(" {}", item.name),
+                ratatui::style::Style::default().fg(ratatui::style::Color::White),
+            )
+        })
+        .collect();
+
+    let para = ratatui::widgets::Paragraph::new(lines);
+    frame.render_widget(para, inner);
+}
+
+fn render_outpost_travel_widget(frame: &mut Frame, area: Rect, _ctx: &WidgetRenderContext) {
+    let block = ratatui::widgets::Block::default()
+        .title(" Travel ")
+        .borders(ratatui::widgets::Borders::ALL)
+        .style(ratatui::style::Style::default().fg(ratatui::style::Color::Gray));
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let text = vec![
+        ratatui::text::Line::styled(
+            " Reachable locations:",
+            ratatui::style::Style::default().fg(ratatui::style::Color::Cyan),
+        ),
+        ratatui::text::Line::from(""),
+        ratatui::text::Line::styled(
+            "  Ancient Temple (3 turns)",
+            ratatui::style::Style::default().fg(ratatui::style::Color::White),
+        ),
+        ratatui::text::Line::styled(
+            "  Crypt of the Fallen (5 turns)",
+            ratatui::style::Style::default().fg(ratatui::style::Color::White),
+        ),
+        ratatui::text::Line::from(""),
+        ratatui::text::Line::styled(
+            " Press 't' to travel | 'i' inventory",
+            ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray),
+        ),
+    ];
+
+    let para = ratatui::widgets::Paragraph::new(text);
+    frame.render_widget(para, inner);
 }
 
 // ---------------------------------------------------------------------------

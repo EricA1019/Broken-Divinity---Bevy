@@ -30,6 +30,7 @@ use bd_core::{
     components::{BlocksMovement, Player, Position},
     direction::Direction,
     signals::ActionIntent,
+    spatial::TransitionIntent,
 };
 
 use screens::{
@@ -86,7 +87,7 @@ impl Plugin for BdTuiPlugin {
 }
 
 /// Map keyboard input to ActionIntent messages.
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn map_input_to_intents(
     mut messages: MessageReader<KeyMessage>,
     player: Query<Entity, With<Player>>,
@@ -94,6 +95,7 @@ fn map_input_to_intents(
     player_pos: Query<&Position, With<Player>>,
     mut action_writer: MessageWriter<ActionIntent>,
     mut screen_writer: MessageWriter<ScreenIntent>,
+    mut transition_writer: MessageWriter<TransitionIntent>,
     mut exit: MessageWriter<bevy_app::AppExit>,
 ) {
     use crossterm::event::KeyCode;
@@ -175,6 +177,26 @@ fn map_input_to_intents(
             KeyCode::Char('z') => {
                 screen_writer.write(ScreenIntent {
                     screen_id: "combat".into(),
+                });
+            }
+            // Travel to next location (outpost → travel → tactical)
+            KeyCode::Char('t') => {
+                transition_writer.write(TransitionIntent {
+                    target: bd_core::spatial::GameMode::Travel,
+                    node_id: Some("ruin.ancient_temple".into()),
+                });
+                screen_writer.write(ScreenIntent {
+                    screen_id: "combat".into(),
+                });
+            }
+            // Return to outpost
+            KeyCode::Char('r') => {
+                transition_writer.write(TransitionIntent {
+                    target: bd_core::spatial::GameMode::Outpost,
+                    node_id: None,
+                });
+                screen_writer.write(ScreenIntent {
+                    screen_id: "outpost".into(),
                 });
             }
             // Quit
