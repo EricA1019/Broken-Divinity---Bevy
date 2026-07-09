@@ -258,6 +258,28 @@ pub fn default_screen_registry() -> ScreenRegistry {
         ],
     });
 
+    // Debug screen: signal trace viewer + entity info
+    reg.register(ScreenDefinition {
+        id: "debug".into(),
+        panels: vec![
+            PanelDefinition {
+                id: "debug_trace".into(),
+                layout: PanelLayout::Main,
+                view_model: "LogViewModel".into(),
+            },
+            PanelDefinition {
+                id: "stats".into(),
+                layout: PanelLayout::Right { width_pct: 25 },
+                view_model: "StatsViewModel".into(),
+            },
+            PanelDefinition {
+                id: "log".into(),
+                layout: PanelLayout::Bottom { height_pct: 20 },
+                view_model: "LogViewModel".into(),
+            },
+        ],
+    });
+
     reg
 }
 
@@ -304,6 +326,11 @@ pub fn default_widget_registry() -> WidgetRegistry {
         panel_id: "outpost_travel".into(),
         view_model: "ContainerViewModel".into(),
         render: Box::new(render_outpost_travel_widget),
+    });
+    reg.register(WidgetBinding {
+        panel_id: "debug_trace".into(),
+        view_model: "LogViewModel".into(),
+        render: Box::new(render_debug_trace_widget),
     });
 
     reg
@@ -774,6 +801,45 @@ fn render_outpost_travel_widget(frame: &mut Frame, area: Rect, _ctx: &WidgetRend
     ];
 
     let para = ratatui::widgets::Paragraph::new(text);
+    frame.render_widget(para, inner);
+}
+
+// ---------------------------------------------------------------------------
+// Debug widget renderers
+// ---------------------------------------------------------------------------
+
+fn render_debug_trace_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
+    let block = ratatui::widgets::Block::default()
+        .title(" Signal Trace (F1: toggle) ")
+        .borders(ratatui::widgets::Borders::ALL)
+        .style(ratatui::style::Style::default().fg(ratatui::style::Color::Gray));
+
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let lines: Vec<ratatui::text::Line> = ctx
+        .log
+        .entries
+        .iter()
+        .rev()
+        .take(inner.height as usize)
+        .map(|entry| {
+            let style = match entry.level {
+                bd_core::gamelog::LogLevel::Info => {
+                    ratatui::style::Style::default().fg(ratatui::style::Color::White)
+                }
+                bd_core::gamelog::LogLevel::Warn => {
+                    ratatui::style::Style::default().fg(ratatui::style::Color::Yellow)
+                }
+                bd_core::gamelog::LogLevel::Combat => {
+                    ratatui::style::Style::default().fg(ratatui::style::Color::Red)
+                }
+            };
+            ratatui::text::Line::styled(entry.message.as_str(), style)
+        })
+        .collect();
+
+    let para = ratatui::widgets::Paragraph::new(lines);
     frame.render_widget(para, inner);
 }
 

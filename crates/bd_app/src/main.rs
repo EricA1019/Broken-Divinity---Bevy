@@ -19,6 +19,10 @@ use bd_core::HelpLine;
 mod config;
 
 fn main() {
+    // Parse CLI args
+    let args: Vec<String> = std::env::args().collect();
+    let validate_only = args.iter().any(|a| a == "--validate" || a == "-v");
+
     // Initialize tracing
     tracing_subscriber::fmt()
         .with_env_filter(
@@ -26,6 +30,11 @@ fn main() {
                 .unwrap_or_else(|_| "bd=info".into()),
         )
         .init();
+
+    if validate_only {
+        run_validation();
+        return;
+    }
 
     tracing::info!("Broken Divinity Kernel starting");
 
@@ -184,4 +193,73 @@ fn spawn_world(
         LogLevel::Info,
     );
     game_log.push("Find your way to the exit >", LogLevel::Info);
+}
+
+/// Run content validation and exit.
+fn run_validation() {
+    use bd_data::loader::load_ron;
+
+    let content_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .unwrap()
+        .parent()
+        .unwrap()
+        .join("content");
+    let mut errors = 0;
+
+    // Validate symbols
+    let sym_path = content_dir.join("symbols/default.ron");
+    if sym_path.exists() {
+        match load_ron::<bd_tui::visual::SymbolDef>(&sym_path) {
+            Ok(file) => {
+                tracing::info!("Symbols: {} items loaded", file.items.len());
+            }
+            Err(e) => {
+                tracing::error!("Symbol validation: {e}");
+                errors += 1;
+            }
+        }
+    } else {
+        tracing::warn!("No symbols file found at {}", sym_path.display());
+    }
+
+    // Validate themes
+    let theme_path = content_dir.join("themes/default.ron");
+    if theme_path.exists() {
+        match load_ron::<bd_tui::theme::ThemeDef>(&theme_path) {
+            Ok(file) => {
+                tracing::info!("Themes: {} items loaded", file.items.len());
+            }
+            Err(e) => {
+                tracing::error!("Theme validation: {e}");
+                errors += 1;
+            }
+        }
+    } else {
+        tracing::warn!("No themes file found at {}", theme_path.display());
+    }
+
+    // Validate blueprints
+    let registry = BlueprintRegistry::phase18_defaults();
+    let bp_count = registry.blueprints.len();
+    let mut bp_errors = 0;
+    for bp in &registry.blueprints {
+        if bp.id.is_empty() {
+            tracing::error!("Blueprint has empty id");
+            bp_errors += 1;
+        }
+        if bp.label.is_empty() {
+            tracing::error!("Blueprint '{}' has empty label", bp.id);
+            bp_errors += 1;
+        }
+    }
+    tracing::info!("Blueprints: {bp_count} items, {bp_errors} errors");
+
+    errors += bp_errors;
+
+    if errors == 0 {
+        tracing::info!("Content validation PASSED");
+    } else {
+        tracing::error!("Content validation FAILED with {errors} error(s)");
+    }
 }

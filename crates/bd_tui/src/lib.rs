@@ -199,6 +199,12 @@ fn map_input_to_intents(
                     screen_id: "outpost".into(),
                 });
             }
+            // Debug overlay toggle
+            KeyCode::F(1) => {
+                screen_writer.write(ScreenIntent {
+                    screen_id: "debug".into(),
+                });
+            }
             // Quit
             KeyCode::Char('q') | KeyCode::Esc => {
                 exit.write_default();
