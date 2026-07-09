@@ -393,6 +393,7 @@ fn render_map_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
             let token = match ctx.map.tiles.get(idx) {
                 Some(bd_core::components::Tile::Wall) | None => VisualToken::Wall,
                 Some(bd_core::components::Tile::Floor) => VisualToken::Floor,
+                Some(bd_core::components::Tile::Door) => VisualToken::DoorClosed,
             };
             grid.set(x as u16, y as u16, token, ctx.symbols, ctx.theme);
         }

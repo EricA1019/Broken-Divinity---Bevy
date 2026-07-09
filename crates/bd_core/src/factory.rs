@@ -82,6 +82,80 @@ impl BlueprintRegistry {
             ],
         }
     }
+
+    /// Phase 18 MVP content pack — adds more enemies, items, and an ally.
+    pub fn phase18_defaults() -> Self {
+        let mut base = Self::phase10_defaults();
+        base.blueprints.extend(vec![
+            // Enemy: skeleton
+            EntityBlueprint {
+                id: "blueprint.skeleton".into(),
+                label: "Skeleton".into(),
+                is_player: false,
+                blocks_movement: true,
+                pools: vec![
+                    (PoolKind::Health, 12, 0, 12),
+                    (PoolKind::ActionPoints, 2, 0, 2),
+                ],
+                statuses: vec![],
+                visual: Some("Enemy".into()),
+            },
+            // Ally: warden
+            EntityBlueprint {
+                id: "blueprint.ally_warden".into(),
+                label: "Warden".into(),
+                is_player: false,
+                blocks_movement: false,
+                pools: vec![
+                    (PoolKind::Health, 25, 0, 25),
+                    (PoolKind::ActionPoints, 2, 0, 2),
+                ],
+                statuses: vec![],
+                visual: Some("Ally".into()),
+            },
+            // Item: sword
+            EntityBlueprint {
+                id: "blueprint.sword".into(),
+                label: "Rusted Sword".into(),
+                is_player: false,
+                blocks_movement: false,
+                pools: vec![],
+                statuses: vec![],
+                visual: Some("Item".into()),
+            },
+            // Item: shield
+            EntityBlueprint {
+                id: "blueprint.shield".into(),
+                label: "Wooden Shield".into(),
+                is_player: false,
+                blocks_movement: false,
+                pools: vec![],
+                statuses: vec![],
+                visual: Some("Item".into()),
+            },
+            // Item: scroll of smite
+            EntityBlueprint {
+                id: "blueprint.smite_scroll".into(),
+                label: "Scroll of Smite".into(),
+                is_player: false,
+                blocks_movement: false,
+                pools: vec![],
+                statuses: vec![],
+                visual: Some("Item".into()),
+            },
+            // Item: gold pile
+            EntityBlueprint {
+                id: "blueprint.gold_pile".into(),
+                label: "Gold Pile".into(),
+                is_player: false,
+                blocks_movement: false,
+                pools: vec![],
+                statuses: vec![],
+                visual: Some("Item".into()),
+            },
+        ]);
+        base
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

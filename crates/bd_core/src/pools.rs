@@ -65,6 +65,11 @@ impl Pools {
         self.pools.iter()
     }
 
+    /// Iterate mutably over all pools.
+    pub fn iter_mut(&mut self) -> impl Iterator<Item = &mut Pool> {
+        self.pools.iter_mut()
+    }
+
     /// Get mutable access to a pool by kind.
     pub fn get_mut(&mut self, kind: PoolKind) -> Option<&mut Pool> {
         self.pools.iter_mut().find(|p| p.kind == kind)

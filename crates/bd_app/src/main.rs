@@ -9,9 +9,11 @@ use std::time::Duration;
 use bevy_app::{PanicHandlerPlugin, ScheduleRunnerPlugin, Startup};
 use bevy_ecs::system::{Commands, ResMut};
 
-use bd_core::components::Position;
-use bd_core::factory::{BlueprintRegistry, Mutator, spawn_from_blueprint};
+use bd_core::components::{BlocksMovement, ExitTile, Name, Position};
+use bd_core::factory::{BlueprintRegistry, spawn_from_blueprint};
 use bd_core::gamelog::{GameLog, LogLevel};
+use bd_core::map::SmokeMap;
+use bd_core::procgen::{LocationTemplate, generate_location};
 use bd_core::HelpLine;
 
 mod config;
@@ -105,25 +107,78 @@ fn apply_ron_content(
     }
 }
 
-/// Spawn the player and some initial entities using the entity factory.
-fn spawn_world(mut commands: Commands, mut game_log: ResMut<GameLog>) {
-    let registry = BlueprintRegistry::phase10_defaults();
+/// Generate a procedural location and spawn the MVP entities.
+fn spawn_world(
+    mut commands: Commands,
+    mut game_log: ResMut<GameLog>,
+    mut map: ResMut<SmokeMap>,
+) {
+    let registry = BlueprintRegistry::phase18_defaults();
 
-    // Spawn player via blueprint
+    // Generate a procedural ruin
+    let seed = 42; // could be read from config later
+    let template = LocationTemplate::ruin();
+    let plan = generate_location(&template, seed);
+
+    // Replace the default smoke map with the generated one
+    *map = SmokeMap::from_tiles(plan.width, plan.height, &plan.tiles);
+
+    // Set entrance tile as Door
+    map.set(plan.entrance.x, plan.entrance.y, bd_core::components::Tile::Door);
+
+    // Spawn player at the entrance
     if let Some(bp) = registry.get("blueprint.player") {
-        spawn_from_blueprint(bp, Some(Position { x: 10, y: 6 }), &[], &mut commands);
+        spawn_from_blueprint(bp, Some(plan.entrance), &[], &mut commands);
     }
 
-    // Spawn a wounded training dummy
-    if let Some(bp) = registry.get("blueprint.training_dummy") {
-        spawn_from_blueprint(
-            bp,
-            Some(Position { x: 12, y: 6 }),
-            &[Mutator::Wounded],
-            &mut commands,
-        );
+    // Spawn enemies on spawn zones
+    let enemy_blueprints = ["blueprint.rat", "blueprint.skeleton"];
+    for (i, zone) in plan.spawn_zones.iter().enumerate() {
+        let bp_id = enemy_blueprints[i % enemy_blueprints.len()];
+        if let Some(bp) = registry.get(bp_id) {
+            spawn_from_blueprint(bp, Some(*zone), &[], &mut commands);
+        }
     }
 
-    game_log.push("You enter the smoke-filled chamber.", LogLevel::Info);
-    game_log.push("WASD or arrow keys to move.", LogLevel::Info);
+    // Spawn items scattered in rooms
+    let item_bps = [
+        "blueprint.healing_potion",
+        "blueprint.sword",
+        "blueprint.shield",
+        "blueprint.smite_scroll",
+        "blueprint.gold_pile",
+    ];
+    for (i, bp_id) in item_bps.iter().enumerate() {
+        if let Some(room) = plan.rooms.get((i + 1) % plan.rooms.len()) {
+            let pos = Position {
+                x: room.x + 1,
+                y: room.y + 1 + i as i32 % 2,
+            };
+            if map.is_walkable(pos.x, pos.y) {
+                if let Some(bp) = registry.get(bp_id) {
+                    let entity = spawn_from_blueprint(bp, Some(pos), &[], &mut commands);
+                    commands.entity(entity).insert(BlocksMovement);
+                    // Remove BlocksMovement for items (they shouldn't block)
+                    commands.entity(entity).remove::<BlocksMovement>();
+                }
+            }
+        }
+    }
+
+    // Place exit marker on the first exit position
+    if let Some(exit_pos) = plan.exits.first() {
+        map.set(exit_pos.x, exit_pos.y, bd_core::components::Tile::Door);
+        // Spawn an exit entity marker
+        commands.spawn((
+            ExitTile,
+            *exit_pos,
+            Name("Exit".into()),
+        ));
+    }
+
+    game_log.push("You enter a crumbling ruin...", LogLevel::Info);
+    game_log.push("WASD: move | f: attack | g: guard | .: wait | i: inventory",
+        LogLevel::Info,
+    );
+    game_log.push("Find your way to the exit >", LogLevel::Info);
 }
