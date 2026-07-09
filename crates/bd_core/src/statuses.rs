@@ -2,6 +2,7 @@
 
 use bevy_app::App;
 use bevy_ecs::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     BdSet,
@@ -13,7 +14,7 @@ use crate::{
 
 // ── Types ──
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct StatusDefinition {
     pub id: String,
     pub label: String,
@@ -23,7 +24,7 @@ pub struct StatusDefinition {
     pub default_duration: i32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum StackPolicy {
     Independent,
     Single,
@@ -43,7 +44,7 @@ pub struct Statuses {
     pub instances: Vec<StatusInstance>,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Trigger {
     OnTurnStart,
     OnTurnEnd,
@@ -51,7 +52,7 @@ pub enum Trigger {
     OnHealed,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TriggeredEffect {
     PoolDelta {
         kind: PoolKind,
@@ -62,7 +63,7 @@ pub enum TriggeredEffect {
     Log(String, LogLevel),
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Modifier {
     Multiply(f32),
     Add(i32),

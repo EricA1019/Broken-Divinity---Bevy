@@ -1,11 +1,12 @@
 //! Grid map resource for the BD Kernel.
 
 use bevy_ecs::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use crate::components::Tile;
 
 /// The current map — a 2D grid of tiles.
-#[derive(Resource, Debug, Clone)]
+#[derive(Resource, Debug, Clone, Serialize, Deserialize)]
 pub struct SmokeMap {
     pub width: i32,
     pub height: i32,

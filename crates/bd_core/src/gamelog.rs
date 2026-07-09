@@ -1,9 +1,10 @@
 //! Game log — a ring buffer of log entries.
 
 use bevy_ecs::prelude::*;
+use serde::{Deserialize, Serialize};
 
 /// Severity level for log entries.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum LogLevel {
     Info,
     Warn,
@@ -11,7 +12,7 @@ pub enum LogLevel {
 }
 
 /// A single log entry.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LogEntry {
     pub message: String,
     pub level: LogLevel,

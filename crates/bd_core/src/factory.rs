@@ -1,3 +1,5 @@
+use serde::{Deserialize, Serialize};
+
 use crate::{
     components::{BlocksMovement, Name, Player, Position},
     pools::{Pool, Pools},
@@ -6,7 +8,7 @@ use crate::{
 };
 use bevy_ecs::prelude::*;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EntityBlueprint {
     pub id: String,
     pub label: String,
@@ -17,7 +19,7 @@ pub struct EntityBlueprint {
     pub visual: Option<String>,
 }
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct BlueprintRegistry {
     pub blueprints: Vec<EntityBlueprint>,
 }
@@ -82,7 +84,7 @@ impl BlueprintRegistry {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Mutator {
     Wounded,
     Elite,

@@ -5,6 +5,7 @@
 
 use bevy_app::App;
 use bevy_ecs::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     BdSet,
@@ -17,18 +18,18 @@ use crate::{
 // ── Components ──
 
 /// Marks an entity as an item.
-#[derive(Component, Debug, Clone, Default)]
+#[derive(Component, Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Item;
 
 /// An entity that can hold items.
-#[derive(Component, Debug, Clone, Default)]
+#[derive(Component, Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Container {
     pub capacity: Option<i32>,
     pub allowed_tags: Vec<String>,
 }
 
 /// Equipment slot kind.
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum SlotKind {
     Weapon,
     Armor,
@@ -37,20 +38,20 @@ pub enum SlotKind {
 }
 
 /// An equipment slot on an entity.
-#[derive(Component, Debug, Clone)]
+#[derive(Component, Debug, Clone, Serialize, Deserialize)]
 pub struct EquipmentSlot {
     pub kind: SlotKind,
     pub accepted_tags: Vec<String>,
 }
 
 /// An item can be used to produce effects.
-#[derive(Component, Debug, Clone)]
+#[derive(Component, Debug, Clone, Serialize, Deserialize)]
 pub struct Usable {
     pub consume_on_use: bool,
     pub effects: Vec<UseEffect>,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum UseEffect {
     Heal(i32),
     RestoreAp(i32),

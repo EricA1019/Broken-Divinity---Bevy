@@ -5,6 +5,7 @@
 
 use bevy_app::App;
 use bevy_ecs::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use crate::{
     BdSet,
@@ -17,7 +18,7 @@ use crate::{
 // ── Component ──
 
 /// A single pool with current/min/max bounds.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Pool {
     pub kind: PoolKind,
     pub current: i32,
@@ -44,7 +45,7 @@ impl Pool {
 }
 
 /// Collection of pools on an entity.
-#[derive(Component, Debug, Clone)]
+#[derive(Component, Debug, Clone, Serialize, Deserialize)]
 pub struct Pools {
     pools: Vec<Pool>,
 }
@@ -57,6 +58,11 @@ impl Pools {
     /// Get a pool by kind.
     pub fn get(&self, kind: PoolKind) -> Option<&Pool> {
         self.pools.iter().find(|p| p.kind == kind)
+    }
+
+    /// Iterate over all pools.
+    pub fn iter(&self) -> impl Iterator<Item = &Pool> {
+        self.pools.iter()
     }
 
     /// Get mutable access to a pool by kind.

@@ -1,6 +1,7 @@
 //! Signal types for the BD Kernel — intents, requests, and results.
 
 use bevy_ecs::{entity::Entity, prelude::*};
+use serde::{Deserialize, Serialize};
 
 use crate::{components::Position, direction::Direction};
 
@@ -71,7 +72,7 @@ pub enum DenialReason {
 // ── Pool deltas ──
 
 /// Kind of pool (health, AP, stress, etc.).
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PoolKind {
     Health,
     ActionPoints,
@@ -82,7 +83,7 @@ pub enum PoolKind {
 }
 
 /// Tag categorizing a pool delta for modifier routing.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum DeltaTag {
     Physical,
     Divine,
