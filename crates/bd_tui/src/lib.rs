@@ -93,6 +93,7 @@ fn map_input_to_intents(
     mut messages: MessageReader<KeyMessage>,
     player: Query<Entity, With<Player>>,
     enemies: Query<(Entity, &Position), (With<BlocksMovement>, Without<Player>)>,
+    survivors: Query<(Entity, &Position), With<bd_core::colony::survivors::Survivor>>,
     player_pos: Query<&Position, With<Player>>,
     mut action_writer: MessageWriter<ActionIntent>,
     mut screen_writer: MessageWriter<ScreenIntent>,
@@ -222,6 +223,25 @@ fn map_input_to_intents(
                 screen_writer.write(ScreenIntent {
                     screen_id: "combat".into(),
                 });
+            }
+            // Assign nearest survivor (outpost mode only)
+            KeyCode::Char('a') => {
+                if *mode == bd_core::spatial::GameMode::Outpost {
+                    if let Ok(player_pos) = player_pos.single() {
+                        let nearest = survivors.iter()
+                            .min_by_key(|(_, sp)| {
+                                ((player_pos.x - sp.x).abs() + (player_pos.y - sp.y).abs()) as u32
+                            });
+                        if let Some((survivor_entity, _)) = nearest {
+                            action_writer.write(ActionIntent {
+                                actor: player_entity,
+                                action_id: "ability.assign_task".into(),
+                                direction: None,
+                                target: Some(survivor_entity),
+                            });
+                        }
+                    }
+                }
             }
             // Travel to dungeon (outpost → tactical)
             KeyCode::Char('t') => {

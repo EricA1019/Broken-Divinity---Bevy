@@ -24,6 +24,9 @@ pub struct StatsViewModel {
     pub hp_max: i32,
     pub ap_current: i32,
     pub ap_max: i32,
+    pub supplies: i32,
+    pub faith: i32,
+    pub party_names: Vec<String>,
 }
 
 #[derive(Resource, Debug, Clone, Default)]
@@ -94,18 +97,32 @@ pub(crate) fn register_view_models(app: &mut App) {
             build_action_list_vm,
             build_map_vm,
             build_container_vm,
+            build_party_vm,
         )
             .in_set(BdSet::ViewModelBuild),
     );
 }
 
-fn build_stats_vm(player_pools: Query<&Pools, With<Player>>, mut vm: ResMut<StatsViewModel>) {
+fn build_stats_vm(
+    player_pools: Query<&Pools, With<Player>>,
+    mut vm: ResMut<StatsViewModel>,
+    colony_res: Res<bd_core::colony::production::ColonyResources>,
+) {
     if let Ok(pools) = player_pools.single() {
         vm.hp_current = pools.get(PoolKind::Health).map_or(0, |p| p.current);
         vm.hp_max = pools.get(PoolKind::Health).map_or(0, |p| p.max);
         vm.ap_current = pools.get(PoolKind::ActionPoints).map_or(0, |p| p.current);
         vm.ap_max = pools.get(PoolKind::ActionPoints).map_or(0, |p| p.max);
     }
+    vm.supplies = colony_res.pools.get(PoolKind::Supplies).map_or(0, |p| p.current);
+    vm.faith = colony_res.pools.get(PoolKind::Faith).map_or(0, |p| p.current);
+}
+
+fn build_party_vm(
+    survivors: Query<&Name, With<bd_core::colony::survivors::Survivor>>,
+    mut vm: ResMut<StatsViewModel>,
+) {
+    vm.party_names = survivors.iter().map(|n| n.0.clone()).collect();
 }
 
 fn build_log_vm(log: Res<GameLog>, mut vm: ResMut<LogViewModel>) {

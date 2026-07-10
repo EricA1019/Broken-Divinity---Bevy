@@ -143,6 +143,7 @@ pub fn process_transitions(
     mut mode: ResMut<GameMode>,
     mut game_log: ResMut<GameLog>,
     mut map: ResMut<SmokeMap>,
+    mut colony_res: ResMut<crate::colony::production::ColonyResources>,
     query: Query<(Entity, Option<&TransientEntity>, Option<&PersistentEntity>)>,
 ) {
     for msg in messages.read() {
@@ -183,6 +184,10 @@ pub fn process_transitions(
                     format!("Entering {node_name}.", node_name = node_name),
                     LogLevel::Info,
                 );
+                // Deduct travel supplies
+                if let Some(supplies) = colony_res.pools.get_mut(PoolKind::Supplies) {
+                    supplies.current = (supplies.current - TRAVEL_SUPPLIES_COST).max(0);
+                }
                 // Generate dungeon on first entry
                 spawn_dungeon_location(&mut commands, &mut map);
             }
@@ -308,6 +313,8 @@ pub fn register_spatial(app: &mut App) {
     tracing::info!("Spatial module registered");
 }
 
+/// Supplies deducted when traveling from outpost to a dungeon.
+pub const TRAVEL_SUPPLIES_COST: i32 = 2;
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -324,6 +331,7 @@ mod tests {
         app.insert_resource(OutpostState::default());
         app.insert_resource(TravelMap::default());
         app.insert_resource(GameLog::default());
+        app.insert_resource(crate::colony::production::ColonyResources::default());
         app.insert_resource(SmokeMap::new(10, 10, crate::components::Tile::Floor));
         app.add_message::<TransitionIntent>();
         app.add_systems(bevy_app::Update, process_transitions);

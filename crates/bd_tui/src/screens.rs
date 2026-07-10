@@ -521,6 +521,15 @@ fn render_stats_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext)
                 ratatui::style::Style::default().fg(ratatui::style::Color::Blue),
             ),
         ]),
+        ratatui::text::Line::from(""),
+        ratatui::text::Line::styled(
+            format!("Supplies: {}", ctx.stats.supplies),
+            ratatui::style::Style::default().fg(ratatui::style::Color::Yellow),
+        ),
+        ratatui::text::Line::styled(
+            format!("Faith: {}", ctx.stats.faith),
+            ratatui::style::Style::default().fg(ratatui::style::Color::Cyan),
+        ),
     ];
 
     let para = ratatui::widgets::Paragraph::new(text);
@@ -760,17 +769,19 @@ fn render_outpost_party_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRender
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let lines: Vec<ratatui::text::Line> = ctx
-        .container
-        .items
-        .iter()
-        .map(|item| {
+    let lines: Vec<ratatui::text::Line> = if ctx.stats.party_names.is_empty() {
+        vec![ratatui::text::Line::styled(
+            " (empty)",
+            ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray),
+        )]
+    } else {
+        ctx.stats.party_names.iter().map(|name| {
             ratatui::text::Line::styled(
-                format!(" {}", item.name),
+                format!(" {}", name),
                 ratatui::style::Style::default().fg(ratatui::style::Color::White),
             )
-        })
-        .collect();
+        }).collect()
+    };
 
     let para = ratatui::widgets::Paragraph::new(lines);
     frame.render_widget(para, inner);

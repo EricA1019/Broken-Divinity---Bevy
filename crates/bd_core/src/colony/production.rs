@@ -36,18 +36,32 @@ impl Default for ColonyResources {
 /// Processes production at day change: stations produce, survivors eat.
 pub fn process_production(
     mut colony_res: ResMut<ColonyResources>,
-    query: Query<(Entity, &SurvivorTask), With<Survivor>>,
+    survivors_query: Query<&SurvivorTask, With<Survivor>>,
+    stations_query: Query<&crate::colony::stations::StationType, With<crate::colony::stations::Station>>,
     game_time: Res<GameTime>,
-    mut delta_writer: bevy_ecs::message::MessageWriter<crate::signals::PoolDeltaRequested>,
+    mut last_day: bevy_ecs::system::Local<u64>,
 ) {
-    if game_time.turn != 0 {
+    if game_time.day == *last_day || game_time.day == 0 {
         return;
     }
+    *last_day = game_time.day;
 
-    // Survivors consume food - directly modify colony resources
-    let supplies = colony_res.pools.get_mut(PoolKind::Supplies);
-    if let Some(s) = supplies {
-        s.current = (s.current - FOOD_PER_SURVIVOR_PER_DAY * query.iter().count() as i32).max(0);
+    // Survivors consume food
+    let survivor_count = survivors_query.iter().count() as i32;
+    if let Some(supplies) = colony_res.pools.get_mut(PoolKind::Supplies) {
+        supplies.current = (supplies.current - survivor_count * crate::colony::survivors::FOOD_PER_SURVIVOR_PER_DAY).max(0);
+    }
+
+    // Stations produce resources
+    let blueprints = crate::colony::stations::default_station_blueprints();
+    for station_type in stations_query.iter() {
+        if let Some(bp) = blueprints.iter().find(|b| b.station_type == *station_type) {
+            if let Some((kind, amount)) = bp.produces {
+                if let Some(pool) = colony_res.pools.get_mut(kind) {
+                    pool.current = (pool.current + amount).min(pool.max);
+                }
+            }
+        }
     }
 }
 
