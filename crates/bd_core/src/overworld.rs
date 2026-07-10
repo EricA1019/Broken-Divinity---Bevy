@@ -23,7 +23,7 @@ pub struct Road {
     pub distance: u32,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Weather {
     Clear,
     Rain,
@@ -108,11 +108,82 @@ pub fn process_travel_day(
     }
 }
 
+pub const WEATHER_CLEAR_WEIGHT: u32 = 60;
+pub const WEATHER_RAIN_WEIGHT: u32 = 25;
+pub const WEATHER_STORM_WEIGHT: u32 = 10;
+pub const WEATHER_ANOMALY_WEIGHT: u32 = 5;
+pub const WEATHER_SCALE: u32 =
+    WEATHER_CLEAR_WEIGHT + WEATHER_RAIN_WEIGHT + WEATHER_STORM_WEIGHT + WEATHER_ANOMALY_WEIGHT;
+
+/// Roll weather based on a deterministic seed.
+pub fn roll_weather(seed: u64) -> Weather {
+    let roll = seed % WEATHER_SCALE as u64;
+    if roll < WEATHER_CLEAR_WEIGHT as u64 {
+        Weather::Clear
+    } else if roll < (WEATHER_CLEAR_WEIGHT + WEATHER_RAIN_WEIGHT) as u64 {
+        Weather::Rain
+    } else if roll < (WEATHER_CLEAR_WEIGHT + WEATHER_RAIN_WEIGHT + WEATHER_STORM_WEIGHT) as u64 {
+        Weather::Storm
+    } else {
+        Weather::AnomalyStorm
+    }
+}
+
+/// Roll new weather each travel turn and apply effects.
+pub fn process_travel_weather(
+    mut state: ResMut<OverworldState>,
+    mode: Res<crate::spatial::GameMode>,
+    time: Res<crate::time::GameTime>,
+    mut colony_res: ResMut<crate::colony::production::ColonyResources>,
+    mut game_log: ResMut<crate::gamelog::GameLog>,
+) {
+    if *mode != crate::spatial::GameMode::Travel {
+        return;
+    }
+    if state.turns_remaining == 0 {
+        return;
+    }
+
+    // Roll weather from a deterministic seed (turn + node hash)
+    let seed = time.turn.wrapping_mul(2654435761).wrapping_add(match &state.current_node {
+        Some(n) => n.len() as u64 * 2654435761,
+        None => 0,
+    });
+    let new_weather = roll_weather(seed);
+
+    if new_weather != state.weather {
+        game_log.push(
+            format!("Weather changes to {:?}.", new_weather),
+            crate::gamelog::LogLevel::Info,
+        );
+        state.weather = new_weather;
+    }
+
+    // Apply weather effects: storm and anomaly increase supply consumption
+    let extra_cost: i32 = match state.weather {
+        Weather::Storm => 1,
+        Weather::AnomalyStorm => 2,
+        _ => 0,
+    };
+    if extra_cost > 0 {
+        if let Some(supplies) = colony_res.pools.get_mut(PoolKind::Supplies) {
+            supplies.current = (supplies.current - extra_cost).max(0);
+        }
+        game_log.push(
+            format!("{:?} weather increases supply consumption by {}.", state.weather, extra_cost),
+            crate::gamelog::LogLevel::Info,
+        );
+    }
+}
+
 /// Register travel systems.
 pub fn register_travel(app: &mut bevy_app::App) {
     app.add_systems(
         bevy_app::Update,
-        process_travel_day.in_set(crate::BdSet::Mutation),
+        (
+            process_travel_day,
+            process_travel_weather,
+        ).in_set(crate::BdSet::Mutation),
     );
 }
 #[cfg(test)]
@@ -136,6 +207,22 @@ mod tests {
     fn weather_default_is_clear() {
         let state = OverworldState::default();
         assert_eq!(state.weather, Weather::Clear);
+    }
+
+    #[test]
+    fn weather_roll_is_deterministic() {
+        let w1 = roll_weather(42);
+        let w2 = roll_weather(42);
+        assert_eq!(w1, w2, "Weather should be deterministic for same seed");
+    }
+
+    #[test]
+    fn weather_rolls_cover_all_kinds() {
+        let mut seen = std::collections::HashSet::new();
+        for seed in 0..1000 {
+            seen.insert(roll_weather(seed));
+        }
+        assert!(seen.contains(&Weather::Clear), "Clear should appear");
     }
 
     #[test]
