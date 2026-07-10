@@ -103,12 +103,31 @@ fn map_input_to_intents(
     mut game_log: ResMut<GameLog>,
     mut pending_station: ResMut<bd_core::colony::stations::PendingStationBuild>,
     mut pending_build_idx: Local<i8>,
+    current_event: Res<bd_core::events::CurrentEvent>,
+    mut event_writer: MessageWriter<bd_core::signals::EventSelected>,
 ) {
     use crossterm::event::KeyCode;
 
     let Ok(player_entity) = player.single() else {
         return;
     };
+
+    // If an event is active, only number keys for choices are handled
+    if current_event.is_active() {
+        for key in messages.read() {
+            match key.code {
+                KeyCode::Char(c @ '1'..='9') => {
+                    let idx = (c as u8 - b'1') as usize;
+                    event_writer.write(bd_core::signals::EventSelected {
+                        actor: player_entity,
+                        choice_index: idx,
+                    });
+                }
+                _ => {} // swallow all other input during events
+            }
+        }
+        return;
+    }
 
     for key in messages.read() {
         match key.code {

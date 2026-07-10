@@ -57,6 +57,20 @@ pub struct ActionDenied {
     pub reason: DenialReason,
 }
 
+/// Trigger an event (dialogue, encounter, moral choice, etc.).
+#[derive(Message, Debug, Clone)]
+pub struct EventTrigger {
+    pub actor: Entity,
+    pub event_id: String,
+}
+
+/// Player selected a choice in an active event.
+#[derive(Message, Debug, Clone)]
+pub struct EventSelected {
+    pub actor: Entity,
+    pub choice_index: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DenialReason {
     NotEnoughPool(PoolKind),

@@ -83,6 +83,16 @@ pub struct ItemEntryVm {
     pub usable: bool,
 }
 
+// ── Event view model ──
+
+#[derive(Resource, Debug, Clone, Default)]
+pub struct EventViewModel {
+    pub speaker: String,
+    pub text: String,
+    pub choices: Vec<String>,
+    pub active: bool,
+}
+
 pub(crate) fn register_view_models(app: &mut App) {
     app.insert_resource(StatsViewModel::default());
     app.insert_resource(LogViewModel::default());
@@ -90,6 +100,7 @@ pub(crate) fn register_view_models(app: &mut App) {
     app.insert_resource(MapViewModel::default());
     app.insert_resource(ActorPanelViewModel::default());
     app.insert_resource(ContainerViewModel::default());
+    app.insert_resource(EventViewModel::default());
     app.add_systems(
         bevy_app::Update,
         (
@@ -99,6 +110,7 @@ pub(crate) fn register_view_models(app: &mut App) {
             build_map_vm,
             build_container_vm,
             build_party_vm,
+            build_event_vm,
         )
             .in_set(BdSet::ViewModelBuild),
     );
@@ -258,6 +270,28 @@ fn build_container_vm(
     }
 
     vm.items = entries;
+}
+
+/// Build the event view model from the CurrentEvent resource.
+fn build_event_vm(
+    current: Res<bd_core::events::CurrentEvent>,
+    registry: Res<bd_core::events::EventRegistry>,
+    mut vm: ResMut<EventViewModel>,
+) {
+    if !current.is_active() {
+        vm.active = false;
+        return;
+    }
+    if let Some(event_def) = registry.get(&current.event_id) {
+        if let Some(node) = event_def.nodes.get(&current.node_id) {
+            vm.speaker = node.speaker.clone();
+            vm.text = node.text.clone();
+            vm.choices = node.choices.iter().map(|c| c.label.clone()).collect();
+            vm.active = true;
+            return;
+        }
+    }
+    vm.active = false;
 }
 
 #[cfg(test)]

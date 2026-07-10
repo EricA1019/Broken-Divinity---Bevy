@@ -123,6 +123,14 @@ pub fn default_status_definitions() -> Vec<StatusDefinition> {
             stack_policy: StackPolicy::Single,
             default_duration: 3,
         },
+        StatusDefinition {
+            id: "status.gabriels_witness".into(),
+            label: "Gabriel's Witness".into(),
+            triggers: vec![Trigger::OnTurnStart],
+            modifiers: vec![],
+            stack_policy: StackPolicy::Single,
+            default_duration: -1, // permanent
+        },
     ]
 }
 

@@ -28,6 +28,7 @@ pub mod factory;
 pub mod colony;
 pub mod combat;
 pub mod dialogue;
+pub mod events;
 pub mod factions;
 pub mod gabriel;
 pub mod inventory;
@@ -116,6 +117,19 @@ impl Plugin for BdCorePlugin {
         app.add_message::<crate::signals::MoveIntent>();
         app.add_message::<crate::signals::MoveBlocked>();
         app.add_message::<crate::signals::EntityMoved>();
+
+        // Register event system resources and messages
+        app.insert_resource(crate::events::default_event_registry());
+        app.insert_resource(crate::events::CurrentEvent::default());
+        app.add_message::<crate::signals::EventTrigger>();
+        app.add_message::<crate::signals::EventSelected>();
+        crate::events::register_events(app);
+
+        // Register Gabriel encounter trigger
+        app.add_systems(
+            bevy_app::Update,
+            crate::events::trigger_gabriel_encounter.in_set(crate::BdSet::IntentCollection),
+        );
 
         // Register time system (observes existing messages)
         time::register_time(app);

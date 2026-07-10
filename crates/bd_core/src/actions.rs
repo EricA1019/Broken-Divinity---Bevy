@@ -73,6 +73,8 @@ pub enum Effect {
     SpawnEntity(String),
     /// Set a survivor's task.
     SetSurvivorTask(String),
+    /// Set a named flag (event state, global markers).
+    Flag(String, bool),
 }
 
 /// Definition of an action: what it costs, requires, and produces.
@@ -601,6 +603,11 @@ fn resolve_action_effects(
                         if player_flag.is_some() {
                             game_log.push(format!("Task set to {} for survivor.", task), LogLevel::Info);
                         }
+                    }
+                }
+                Effect::Flag(flag_name, value) => {
+                    if player_flag.is_some() {
+                        game_log.push(format!("Flag '{}' set to {}", flag_name, value), LogLevel::Info);
                     }
                 }
             }
