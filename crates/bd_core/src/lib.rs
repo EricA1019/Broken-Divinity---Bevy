@@ -30,6 +30,7 @@ pub mod combat;
 pub mod dialogue;
 pub mod events;
 pub mod factions;
+use factions::register_factions;
 pub mod gabriel;
 pub mod inventory;
 pub mod overworld;
@@ -197,7 +198,10 @@ impl Plugin for BdCorePlugin {
             .resource_mut::<crate::actions::ActionRegistry>()
             .register(crate::combat::register_take_cover_action());
 
-        // Register party actions
+        // Register faction systems
+    register_factions(app);
+
+    // Register party actions
         app.world_mut()
             .resource_mut::<crate::actions::ActionRegistry>()
             .register(crate::party::register_add_to_party_action());
