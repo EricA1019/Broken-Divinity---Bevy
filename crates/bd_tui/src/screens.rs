@@ -231,18 +231,13 @@ pub fn default_screen_registry() -> ScreenRegistry {
         ],
     });
 
-    // Outpost screen: resources, party, travel options
+    // Outpost screen: resources, party, travel options, shelter map
     reg.register(ScreenDefinition {
         id: "outpost".into(),
         panels: vec![
             PanelDefinition {
                 id: "outpost_party".into(),
                 layout: PanelLayout::Left { width_pct: 30 },
-                view_model: "ContainerViewModel".into(),
-            },
-            PanelDefinition {
-                id: "outpost_travel".into(),
-                layout: PanelLayout::Main,
                 view_model: "ContainerViewModel".into(),
             },
             PanelDefinition {
@@ -254,6 +249,16 @@ pub fn default_screen_registry() -> ScreenRegistry {
                 id: "log".into(),
                 layout: PanelLayout::Bottom { height_pct: 20 },
                 view_model: "LogViewModel".into(),
+            },
+            PanelDefinition {
+                id: "outpost_travel".into(),
+                layout: PanelLayout::Bottom { height_pct: 10 },
+                view_model: "ContainerViewModel".into(),
+            },
+            PanelDefinition {
+                id: "map".into(),
+                layout: PanelLayout::Main,
+                view_model: "MapViewModel".into(),
             },
         ],
     });

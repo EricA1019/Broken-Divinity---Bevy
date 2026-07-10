@@ -8,6 +8,7 @@ use bevy_app::App;
 use bevy_ecs::prelude::*;
 use serde::{Deserialize, Serialize};
 
+use crate::map::SmokeMap;
 use crate::{
     gamelog::{GameLog, LogLevel},
     pools::{Pool, Pools},
@@ -55,6 +56,8 @@ pub struct OutpostState {
     pub resources: Pools,
     /// Entity IDs of party members currently at the outpost.
     pub party: Vec<Entity>,
+    /// The persistent shelter map (never regenerated on revisit).
+    pub map: SmokeMap,
 }
 
 impl Default for OutpostState {
@@ -65,6 +68,7 @@ impl Default for OutpostState {
                 Pool::new(PoolKind::Morale, 50, 0, 100),
             ]),
             party: Vec::new(),
+            map: crate::colony::shelter::create_shelter_map(),
         }
     }
 }
@@ -190,6 +194,43 @@ pub fn process_transitions(
 // ---------------------------------------------------------------------------
 
 /// Register spatial/transition resources and systems.
+/// Initialize the outpost with starter entities on first entry.
+pub fn initialize_outpost(
+    mut commands: Commands,
+    mut outpost: ResMut<OutpostState>,
+    mut game_log: ResMut<GameLog>,
+    mode: Res<GameMode>,
+) {
+    if *mode != GameMode::Outpost {
+        return;
+    }
+    // Only initialize once
+    if !outpost.party.is_empty() {
+        return;
+    }
+
+    // Set the shelter map as the outpost map
+    outpost.map = crate::colony::shelter::create_shelter_map();
+
+    // Spawn a few starter survivors
+    for i in 0..3 {
+        let x = 5 + i as i32 * 5;
+        let y = 5;
+        let survivor = commands.spawn((
+            crate::components::Position { x, y },
+            crate::components::Name(format!("Survivor {}", i + 1)),
+            crate::colony::survivors::Survivor,
+            crate::colony::survivors::SurvivorTask::Idle,
+            crate::colony::survivors::default_survivor_pools(),
+            crate::components::BlocksMovement,
+            PersistentEntity,
+        )).id();
+        outpost.party.push(survivor);
+    }
+
+    game_log.push("Survivors gather at the shelter.", crate::gamelog::LogLevel::Info);
+}
+
 pub fn register_spatial(app: &mut App) {
     app.insert_resource(GameMode::default());
     app.insert_resource(OutpostState::default());
@@ -201,6 +242,11 @@ pub fn register_spatial(app: &mut App) {
         bevy_app::Update,
         process_transitions
             .in_set(crate::BdSet::IntentCollection),
+    );
+
+    app.add_systems(
+        bevy_app::Startup,
+        initialize_outpost,
     );
 
     tracing::info!("Spatial module registered");

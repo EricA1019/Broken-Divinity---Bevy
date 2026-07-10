@@ -81,6 +81,20 @@ pub enum PoolKind {
     Faith,
     Morale,
     Supplies,
+    Mood,
+    Sanity,
+    Temperance,
+    Justice,
+    Prudence,
+    Fortitude,
+    Thumos,
+    Metis,
+    Kleos,
+    RepPuritans,
+    RepWanderers,
+    RepBrokenChoir,
+    RepDemons,
+    RepHumanSettlements,
 }
 
 /// Tag categorizing a pool delta for modifier routing.

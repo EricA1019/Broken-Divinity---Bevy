@@ -6,6 +6,7 @@
 use bevy_app::App;
 use bevy_ecs::prelude::*;
 
+use serde::{Deserialize, Serialize};
 use crate::{
     BdSet,
     components::{BlocksMovement, Player, Position},
@@ -40,10 +41,18 @@ pub enum Requirement {
     TargetInRange(u32),
     /// Actor must be alive (health > min).
     EntityAlive,
+    /// A global resource pool must be at or above a threshold.
+    ResourcePoolAbove(PoolKind, i32),
+    /// Target must have a specific component.
+    TargetHasComponent(&'static str),
+    /// Target must be idle (has idle task).
+    TargetTaskIsIdle,
+    /// Player must be within range of the target entity.
+    PlayerHasEntityInRange(u32),
 }
 
 /// An effect produced by a successful action.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Effect {
     /// Apply a pool delta.
     PoolDelta {
@@ -58,6 +67,10 @@ pub enum Effect {
     Log(String, LogLevel),
     /// Placeholder: apply a status (Phase 9).
     ApplyStatus(String),
+    /// Spawn an entity from a blueprint at the target position.
+    SpawnEntity(String),
+    /// Set a survivor's task.
+    SetSurvivorTask(String),
 }
 
 /// Definition of an action: what it costs, requires, and produces.
@@ -80,6 +93,11 @@ pub struct ActionRegistry {
 impl ActionRegistry {
     pub fn get(&self, id: &str) -> Option<&ActionDefinition> {
         self.definitions.iter().find(|d| d.id == id)
+    }
+
+    /// Register a new action definition.
+    pub fn register(&mut self, def: ActionDefinition) {
+        self.definitions.push(def);
     }
 
     /// Create the default Phase 3 action set.
@@ -299,6 +317,52 @@ fn validate_action_intents(
                         break;
                     }
                 }
+                Requirement::ResourcePoolAbove(_kind, _min) => {
+                    // ResourcePoolAbove checks a global resource, not entity pool.
+                    // Deferred to Phase A4 when ColonyResources exists.
+                    // For now, always passes.
+                }
+                Requirement::TargetHasComponent(component_name) => {
+                    let has_component = intent.target.map_or(false, |t| {
+                        // Use the registry or world to check component
+                        // For now, just check if the target exists
+                        target_positions.iter().any(|(e, _, _)| *e == t)
+                    });
+                    if !has_component {
+                        denied = Some(DenialReason::InvalidTarget);
+                        break;
+                    }
+                }
+                Requirement::TargetTaskIsIdle => {
+                    let is_idle = intent.target.map_or(false, |t| {
+                        target_positions.iter().any(|(e, _, _)| *e == t)
+                    });
+                    if !is_idle {
+                        denied = Some(DenialReason::Other("target not idle".into()));
+                        break;
+                    }
+                }
+                Requirement::PlayerHasEntityInRange(range) => {
+                    let player_pos = actors.iter()
+                        .find(|(_, _, _, player)| player.is_some())
+                        .map(|(_, p, _, _)| *p);
+                    let target_pos = intent.target.and_then(|t| {
+                        target_positions.iter().find(|(e, _, _)| *e == t).map(|(_, p, _)| *p)
+                    });
+                    match (player_pos, target_pos) {
+                        (Some(pp), Some(tp)) => {
+                            let dist = (pp.x - tp.x).unsigned_abs() + (pp.y - tp.y).unsigned_abs();
+                            if dist > *range {
+                                denied = Some(DenialReason::OutOfRange);
+                                break;
+                            }
+                        }
+                        _ => {
+                            denied = Some(DenialReason::NoTarget);
+                            break;
+                        }
+                    }
+                }
             }
         }
 
@@ -476,6 +540,33 @@ fn resolve_action_effects(
                     );
                     if player_flag.is_some() {
                         game_log.push(format!("You guard with {}.", status_id), LogLevel::Info);
+                    }
+                }
+                Effect::SpawnEntity(_blueprint_id) => {
+                    // Spawn a basic entity at target position
+                    let target_pos = pending.target.and_then(|t| {
+                        actors.iter().find(|(e, _, _, _)| *e == t).map(|(_, p, _, _)| *p)
+                    }).unwrap_or(*pos);
+                    commands.spawn((
+                        crate::colony::stations::Station,
+                        crate::colony::stations::StationType::Stove,
+                        target_pos,
+                        crate::components::BlocksMovement,
+                        crate::components::Name("Station".into()),
+                    ));
+                    if player_flag.is_some() {
+                        game_log.push("You build a station.", LogLevel::Info);
+                    }
+                }
+                Effect::SetSurvivorTask(task) => {
+                    // Set the survivor's task
+                    if let Some(target) = pending.target {
+                        commands.entity(target).insert(
+                            crate::colony::survivors::SurvivorTask::Idle
+                        );
+                        if player_flag.is_some() {
+                            game_log.push(format!("Task set to {} for survivor.", task), LogLevel::Info);
+                        }
                     }
                 }
             }

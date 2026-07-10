@@ -180,13 +180,22 @@ fn build_map_vm(
     player_pos: Query<&Position, With<Player>>,
     enemies: Query<&Position, (With<BlocksMovement>, Without<Player>)>,
     mut vm: ResMut<MapViewModel>,
+    mode: Res<bd_core::spatial::GameMode>,
+    outpost: Res<bd_core::spatial::OutpostState>,
 ) {
-    vm.width = map.width;
-    vm.height = map.height;
+    // Use shelter map in outpost mode, dungeon map otherwise
+    let active_map = if *mode == bd_core::spatial::GameMode::Outpost {
+        &outpost.map
+    } else {
+        &map
+    };
+
+    vm.width = active_map.width;
+    vm.height = active_map.height;
     vm.tiles.clear();
-    for y in 0..map.height {
-        for x in 0..map.width {
-            vm.tiles.push(map.get(x, y).unwrap_or(Tile::Wall));
+    for y in 0..active_map.height {
+        for x in 0..active_map.width {
+            vm.tiles.push(active_map.get(x, y).unwrap_or(Tile::Wall));
         }
     }
     vm.player_pos = player_pos.single().ok().copied();

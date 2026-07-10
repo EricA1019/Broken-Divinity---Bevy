@@ -163,6 +163,28 @@ fn resolve_pool_deltas(
     }
 }
 
+
+
+// ── Entity cleanup ──
+
+/// Observes EntityDefeated messages and despawns the defeated entities.
+/// Generic: handles any entity regardless of how it was spawned.
+fn cleanup_defeated_entities(
+    mut defeated: bevy_ecs::message::MessageReader<EntityDefeated>,
+    mut commands: Commands,
+) {
+    for msg in defeated.read() {
+        commands.entity(msg.entity).despawn();
+    }
+}
+
+/// Register the cleanup system.
+pub fn register_cleanup(app: &mut bevy_app::App) {
+    app.add_systems(
+        bevy_app::Update,
+        cleanup_defeated_entities.in_set(crate::BdSet::ResultEmission),
+    );
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -253,7 +275,9 @@ mod tests {
         let e = spawn_with_pools(&mut app, 2, 3);
         send_delta(&mut app, e, PoolKind::Health, -10);
         app.update();
-        assert_eq!(get_pool(&app, e, PoolKind::Health), 0); // clamped to min
+        // Health hit min which triggers EntityDefeated, entity cleaned up
+        assert!(!app.world().entities().contains(e),
+            "Entity should be despawned after hitting 0 health");
     }
 
     #[test]
@@ -285,13 +309,14 @@ mod tests {
         let e = spawn_with_pools(&mut app, 5, 3);
         send_delta(&mut app, e, PoolKind::Health, -100);
         app.update();
-        // Entity should be at 0 health
-        assert_eq!(get_pool(&app, e, PoolKind::Health), 0);
         // Defeated message should have been emitted
         let defeated_count = app
             .world()
             .resource::<bevy_ecs::message::Messages<EntityDefeated>>()
             .len();
         assert!(defeated_count > 0, "Expected EntityDefeated message");
+        // Entity should have been cleaned up
+        assert!(!app.world().entities().contains(e),
+            "Entity should be despawned after fatal damage");
     }
 }
