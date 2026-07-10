@@ -279,7 +279,6 @@ pub fn initialize_outpost(
             crate::colony::survivors::Survivor,
             crate::colony::survivors::SurvivorTask::Idle,
             crate::colony::survivors::default_survivor_pools(),
-            crate::components::BlocksMovement,
             PersistentEntity,
         )).id();
         outpost.party.push(survivor);

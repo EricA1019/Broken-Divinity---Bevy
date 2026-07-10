@@ -119,8 +119,17 @@ impl Plugin for BdCorePlugin {
         // Register entity cleanup on defeat
         pools::register_cleanup(app);
 
+        // Register colony resources (must exist before actions validate them)
+        app.insert_resource(crate::colony::production::ColonyResources::default());
+        app.insert_resource(crate::party::PartyState::default());
+        app.insert_resource(crate::overworld::OverworldState::default());
+        app.insert_resource(crate::dialogue::DialogueLog::default());
+        app.insert_resource(crate::gabriel::GabrielState::default());
+
         // Register action system (replaces direct movement systems)
         actions::register_actions(app);
+
+        // Register colony resources...<!--  DUPLICATE MARKER -->
 
         // Register status/trigger/modifier system
         statuses::register_statuses(app);
@@ -172,12 +181,7 @@ impl Plugin for BdCorePlugin {
             .resource_mut::<crate::actions::ActionRegistry>()
             .register(crate::overworld::register_begin_travel_action());
 
-        // Register colony resources
-        app.insert_resource(crate::colony::production::ColonyResources::default());
-        app.insert_resource(crate::party::PartyState::default());
-        app.insert_resource(crate::overworld::OverworldState::default());
-        app.insert_resource(crate::dialogue::DialogueLog::default());
-        app.insert_resource(crate::gabriel::GabrielState::default());
+
 
         // Register production and raid systems
         app.add_systems(

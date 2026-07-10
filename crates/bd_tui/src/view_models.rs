@@ -248,7 +248,10 @@ mod tests {
 
     fn test_app() -> App {
         let mut app = App::new();
+        // Minimal plugins needed for schedule execution
         app.add_plugins(bd_core::BdCorePlugin);
+        app.insert_resource(bd_core::colony::production::ColonyResources::default());
+        // Insert all view model resources
         app.insert_resource(StatsViewModel::default());
         app.insert_resource(ActionListViewModel::default());
         app.insert_resource(MapViewModel::default());

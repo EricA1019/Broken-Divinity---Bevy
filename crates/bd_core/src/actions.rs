@@ -9,6 +9,8 @@ use bevy_ecs::prelude::*;
 use serde::{Deserialize, Serialize};
 use crate::{
     BdSet,
+    colony::production::ColonyResources,
+    colony::survivors::{Survivor, SurvivorTask},
     components::{BlocksMovement, Player, Position},
     direction::Direction,
     gamelog::{GameLog, LogLevel},
@@ -220,8 +222,10 @@ fn validate_action_intents(
     mut denied_writer: bevy_ecs::message::MessageWriter<ActionDenied>,
     mut game_log: ResMut<GameLog>,
     mut trace: ResMut<SignalTrace>,
+    colony_res: Res<ColonyResources>,
     actors: Query<(Entity, &Position, Option<&Pools>, Option<&Player>)>,
     targets: Query<(Entity, &Position, Option<&Player>)>,
+    survivors: Query<(Entity, &SurvivorTask), With<Survivor>>,
 ) {
     let target_positions: Vec<(Entity, &Position, Option<&Player>)> = targets.iter().collect();
 
@@ -317,16 +321,20 @@ fn validate_action_intents(
                         break;
                     }
                 }
-                Requirement::ResourcePoolAbove(_kind, _min) => {
-                    // ResourcePoolAbove checks a global resource, not entity pool.
-                    // Deferred to Phase A4 when ColonyResources exists.
-                    // For now, always passes.
+                Requirement::ResourcePoolAbove(kind, min) => {
+                    // Check a global ColonyResources pool instead of entity pool
+                    let current = colony_res.pools.get(*kind).map_or(0, |p| p.current);
+                    if current < *min {
+                        denied = Some(DenialReason::NotEnoughPool(*kind));
+                        break;
+                    }
                 }
                 Requirement::TargetHasComponent(component_name) => {
                     let has_component = intent.target.map_or(false, |t| {
-                        // Use the registry or world to check component
-                        // For now, just check if the target exists
-                        target_positions.iter().any(|(e, _, _)| *e == t)
+                        match *component_name {
+                            "Survivor" => survivors.iter().any(|(e, _)| e == t),
+                            _ => target_positions.iter().any(|(e, _, _)| *e == t),
+                        }
                     });
                     if !has_component {
                         denied = Some(DenialReason::InvalidTarget);
@@ -335,7 +343,9 @@ fn validate_action_intents(
                 }
                 Requirement::TargetTaskIsIdle => {
                     let is_idle = intent.target.map_or(false, |t| {
-                        target_positions.iter().any(|(e, _, _)| *e == t)
+                        survivors.iter()
+                            .find(|(e, _)| *e == t)
+                            .map_or(false, |(_, task)| matches!(task, SurvivorTask::Idle))
                     });
                     if !is_idle {
                         denied = Some(DenialReason::Other("target not idle".into()));
@@ -542,28 +552,46 @@ fn resolve_action_effects(
                         game_log.push(format!("You guard with {}.", status_id), LogLevel::Info);
                     }
                 }
-                Effect::SpawnEntity(_blueprint_id) => {
-                    // Spawn a basic entity at target position
-                    let target_pos = pending.target.and_then(|t| {
-                        actors.iter().find(|(e, _, _, _)| *e == t).map(|(_, p, _, _)| *p)
+                Effect::SpawnEntity(blueprint_id) => {
+                    use crate::colony::stations::{Station, StationType};
+                    // Determine station type from blueprint ID
+                    let station_type = match blueprint_id.as_str() {
+                        "blueprint.station.stove" => StationType::Stove,
+                        "blueprint.station.altar" => StationType::Altar,
+                        "blueprint.station.workshop" => StationType::Workshop,
+                        "blueprint.station.bed" => StationType::Bed,
+                        "blueprint.station.storage" => StationType::Storage,
+                        _ => StationType::Stove,
+                    };
+                    // Build at tile in direction offset, not on player
+                    let build_pos = pending.direction.map(|dir| {
+                        let (dx, dy) = dir.delta();
+                        crate::components::Position { x: pos.x + dx, y: pos.y + dy }
                     }).unwrap_or(*pos);
                     commands.spawn((
-                        crate::colony::stations::Station,
-                        crate::colony::stations::StationType::Stove,
-                        target_pos,
+                        Station,
+                        station_type,
+                        build_pos,
                         crate::components::BlocksMovement,
-                        crate::components::Name("Station".into()),
+                        crate::components::Name(format!("{:?}", station_type)),
                     ));
                     if player_flag.is_some() {
-                        game_log.push("You build a station.", LogLevel::Info);
+                        game_log.push(
+                            format!("You build a {:?}.", station_type),
+                            LogLevel::Info,
+                        );
                     }
                 }
                 Effect::SetSurvivorTask(task) => {
-                    // Set the survivor's task
+                    // Set the survivor's task based on the parameter string
                     if let Some(target) = pending.target {
-                        commands.entity(target).insert(
-                            crate::colony::survivors::SurvivorTask::Idle
-                        );
+                        use crate::colony::survivors::SurvivorTask;
+                        let new_task = match task.as_str() {
+                            "Idle" => SurvivorTask::Idle,
+                            "Resting" => SurvivorTask::Resting,
+                            _ => SurvivorTask::Idle,
+                        };
+                        commands.entity(target).insert(new_task);
                         if player_flag.is_some() {
                             game_log.push(format!("Task set to {} for survivor.", task), LogLevel::Info);
                         }

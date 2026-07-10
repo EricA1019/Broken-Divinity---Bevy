@@ -15,7 +15,7 @@ use bevy_ecs::{
     message::{MessageReader, MessageWriter},
     query::{With, Without},
     schedule::IntoScheduleConfigs,
-    system::{Query, Res, ResMut},
+    system::{Local, Query, Res, ResMut},
 };
 use bevy_ratatui::{RatatuiContext, event::KeyMessage};
 use ratatui::{
@@ -29,6 +29,7 @@ use bd_core::{
     BdSet, HelpLine,
     components::{BlocksMovement, Player, Position},
     direction::Direction,
+    gamelog::{GameLog, LogLevel},
     signals::ActionIntent,
     spatial::TransitionIntent,
 };
@@ -98,6 +99,8 @@ fn map_input_to_intents(
     mut transition_writer: MessageWriter<TransitionIntent>,
     mut exit: MessageWriter<bevy_app::AppExit>,
     mode: Res<bd_core::spatial::GameMode>,
+    mut game_log: ResMut<GameLog>,
+    mut pending_build: Local<bool>,
 ) {
     use crossterm::event::KeyCode;
 
@@ -109,36 +112,76 @@ fn map_input_to_intents(
         match key.code {
             // Movement
             KeyCode::Char('w') | KeyCode::Up => {
-                action_writer.write(ActionIntent {
-                    actor: player_entity,
-                    action_id: "ability.move".into(),
-                    direction: Some(Direction::North),
-                    target: None,
-                });
+                if *pending_build {
+                    *pending_build = false;
+                    action_writer.write(ActionIntent {
+                        actor: player_entity,
+                        action_id: "ability.build".into(),
+                        direction: Some(Direction::North),
+                        target: None,
+                    });
+                } else {
+                    action_writer.write(ActionIntent {
+                        actor: player_entity,
+                        action_id: "ability.move".into(),
+                        direction: Some(Direction::North),
+                        target: None,
+                    });
+                }
             }
             KeyCode::Char('s') | KeyCode::Down => {
-                action_writer.write(ActionIntent {
-                    actor: player_entity,
-                    action_id: "ability.move".into(),
-                    direction: Some(Direction::South),
-                    target: None,
-                });
+                if *pending_build {
+                    *pending_build = false;
+                    action_writer.write(ActionIntent {
+                        actor: player_entity,
+                        action_id: "ability.build".into(),
+                        direction: Some(Direction::South),
+                        target: None,
+                    });
+                } else {
+                    action_writer.write(ActionIntent {
+                        actor: player_entity,
+                        action_id: "ability.move".into(),
+                        direction: Some(Direction::South),
+                        target: None,
+                    });
+                }
             }
             KeyCode::Char('d') | KeyCode::Right => {
-                action_writer.write(ActionIntent {
-                    actor: player_entity,
-                    action_id: "ability.move".into(),
-                    direction: Some(Direction::East),
-                    target: None,
-                });
+                if *pending_build {
+                    *pending_build = false;
+                    action_writer.write(ActionIntent {
+                        actor: player_entity,
+                        action_id: "ability.build".into(),
+                        direction: Some(Direction::East),
+                        target: None,
+                    });
+                } else {
+                    action_writer.write(ActionIntent {
+                        actor: player_entity,
+                        action_id: "ability.move".into(),
+                        direction: Some(Direction::East),
+                        target: None,
+                    });
+                }
             }
             KeyCode::Char('a') | KeyCode::Left => {
-                action_writer.write(ActionIntent {
-                    actor: player_entity,
-                    action_id: "ability.move".into(),
-                    direction: Some(Direction::West),
-                    target: None,
-                });
+                if *pending_build {
+                    *pending_build = false;
+                    action_writer.write(ActionIntent {
+                        actor: player_entity,
+                        action_id: "ability.build".into(),
+                        direction: Some(Direction::West),
+                        target: None,
+                    });
+                } else {
+                    action_writer.write(ActionIntent {
+                        actor: player_entity,
+                        action_id: "ability.move".into(),
+                        direction: Some(Direction::West),
+                        target: None,
+                    });
+                }
             }
             // Wait
             KeyCode::Char('.') => {
@@ -205,15 +248,13 @@ fn map_input_to_intents(
                     screen_id: "outpost".into(),
                 });
             }
-            // Build station (outpost mode only)
+            // Build station (outpost mode only) — pending build then direction
             KeyCode::Char('b') => {
                 if *mode == bd_core::spatial::GameMode::Outpost {
-                    action_writer.write(ActionIntent {
-                        actor: player_entity,
-                        action_id: "ability.build".into(),
-                        direction: None,
-                        target: None,
-                    });
+                    *pending_build = !*pending_build;
+                    if *pending_build {
+                        game_log.push("Build: press direction to place station", LogLevel::Info);
+                    }
                 }
             }
             // Debug overlay toggle
@@ -222,9 +263,14 @@ fn map_input_to_intents(
                     screen_id: "debug".into(),
                 });
             }
-            // Quit
+            // Quit (or cancel pending build)
             KeyCode::Char('q') | KeyCode::Esc => {
-                exit.write_default();
+                if *pending_build {
+                    *pending_build = false;
+                    game_log.push("Build cancelled.", LogLevel::Info);
+                } else {
+                    exit.write_default();
+                }
             }
             _ => {}
         }
