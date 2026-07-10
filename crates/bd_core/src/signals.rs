@@ -107,6 +107,13 @@ pub enum DeltaTag {
     MovementCost,
     /// Generic action cost or effect.
     Action,
+    // ── Damage types (Phase B) ──
+    Ballistic,
+    Slash,
+    Blunt,
+    Celestial,
+    Infernal,
+    Thaumic,
 }
 
 /// Request to change a pool value. Negative = damage/cost, positive = heal/restore.

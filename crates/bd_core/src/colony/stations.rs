@@ -11,6 +11,19 @@ use crate::{
     signals::{DeltaTag, PoolKind},
 };
 
+// ── Pending station build (set by UI, consumed by action system) ──
+
+/// Pending station type to build, set by TUI when cycling station types.
+/// Reset to `None` after the build action is processed.
+#[derive(Resource, Debug, Clone)]
+pub struct PendingStationBuild(pub Option<StationType>);
+
+impl Default for PendingStationBuild {
+    fn default() -> Self {
+        Self(None)
+    }
+}
+
 // ── Constants ──
 
 /// Maximum number of stations allowed in the shelter.

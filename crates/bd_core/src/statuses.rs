@@ -115,6 +115,14 @@ pub fn default_status_definitions() -> Vec<StatusDefinition> {
             stack_policy: StackPolicy::Single,
             default_duration: 3,
         },
+        StatusDefinition {
+            id: "status.breakdown".into(),
+            label: "Breakdown".into(),
+            triggers: vec![Trigger::OnTurnStart],
+            modifiers: vec![Modifier::Multiply(1.5)],
+            stack_policy: StackPolicy::Single,
+            default_duration: 3,
+        },
     ]
 }
 

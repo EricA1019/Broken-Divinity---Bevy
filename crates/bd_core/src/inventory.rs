@@ -394,6 +394,7 @@ mod tests {
                 item: potion,
             });
         app.update();
+        app.update(); // second frame to process pool deltas
         let hp = app
             .world()
             .get::<Pools>(player)

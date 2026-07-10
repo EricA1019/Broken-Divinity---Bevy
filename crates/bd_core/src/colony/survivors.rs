@@ -107,7 +107,7 @@ pub fn consume_shelter_resources(
         return;
     }
 
-    for (entity, mut pools, task) in query.iter_mut() {
+    for (entity, pools, task) in query.iter_mut() {
         // Skip non-survivors
         if pools.get(PoolKind::Mood).is_none() {
             continue;

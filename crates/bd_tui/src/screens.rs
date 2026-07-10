@@ -530,6 +530,11 @@ fn render_stats_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext)
             format!("Faith: {}", ctx.stats.faith),
             ratatui::style::Style::default().fg(ratatui::style::Color::Cyan),
         ),
+        ratatui::text::Line::from(""),
+        ratatui::text::Line::styled(
+            format!("Day: {}", ctx.stats.day),
+            ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray),
+        ),
     ];
 
     let para = ratatui::widgets::Paragraph::new(text);

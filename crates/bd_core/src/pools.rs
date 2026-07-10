@@ -9,6 +9,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     BdSet,
+
     gamelog::{GameLog, LogLevel},
     signals::{EntityDefeated, PoolDeltaApplied, PoolDeltaRequested, PoolKind},
     statuses::Statuses,
@@ -123,6 +124,8 @@ fn resolve_pool_deltas(
             req.amount
         };
 
+
+
         let before = pool.current;
         let amount_applied = pool.apply_delta(modified_amount);
         let after = pool.current;
@@ -183,6 +186,29 @@ pub fn register_cleanup(app: &mut bevy_app::App) {
     app.add_systems(
         bevy_app::Update,
         cleanup_defeated_entities.in_set(crate::BdSet::ResultEmission),
+    );
+}
+
+// ── Movement feedback ──
+
+/// Consume MoveBlocked messages and push to the game log.
+fn log_move_blocked(
+    mut blocked: bevy_ecs::message::MessageReader<crate::signals::MoveBlocked>,
+    mut game_log: ResMut<GameLog>,
+) {
+    for msg in blocked.read() {
+        game_log.push(
+            format!("Blocked: {:?}", msg.reason),
+            LogLevel::Warn,
+        );
+    }
+}
+
+/// Register the move-blocked logging system.
+pub fn register_move_feedback(app: &mut bevy_app::App) {
+    app.add_systems(
+        bevy_app::Update,
+        log_move_blocked.in_set(crate::BdSet::ResultEmission),
     );
 }
 #[cfg(test)]
@@ -318,5 +344,33 @@ mod tests {
         // Entity should have been cleaned up
         assert!(!app.world().entities().contains(e),
             "Entity should be despawned after fatal damage");
+    }
+
+    #[test]
+    fn move_blocked_logs_message() {
+        let mut app = test_app();
+        use crate::components::{Player, Position, Tile};
+        use crate::map::SmokeMap;
+        app.world_mut().insert_resource(SmokeMap::new(10, 10, Tile::Floor));
+        app.world_mut().resource_scope(|world, mut map: Mut<SmokeMap>| {
+            map.set(6, 5, Tile::Wall);
+        });
+        let p = app.world_mut().spawn((
+            Player,
+            Position { x: 5, y: 5 },
+            Pools::new(vec![Pool::new(PoolKind::ActionPoints, 3, 0, 3)]),
+        )).id();
+        app.world_mut()
+            .resource_mut::<bevy_ecs::message::Messages<crate::signals::ActionIntent>>()
+            .write(crate::signals::ActionIntent {
+                actor: p,
+                action_id: "ability.move".into(),
+                direction: Some(crate::direction::Direction::East),
+                target: None,
+            });
+        app.update();
+        let log = app.world().resource::<GameLog>();
+        let has_blocked = log.iter().any(|e| e.message.contains("Blocked"));
+        assert!(has_blocked, "Expected 'Blocked' in log");
     }
 }

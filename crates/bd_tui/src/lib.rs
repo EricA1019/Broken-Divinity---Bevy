@@ -101,7 +101,8 @@ fn map_input_to_intents(
     mut exit: MessageWriter<bevy_app::AppExit>,
     mode: Res<bd_core::spatial::GameMode>,
     mut game_log: ResMut<GameLog>,
-    mut pending_build: Local<bool>,
+    mut pending_station: ResMut<bd_core::colony::stations::PendingStationBuild>,
+    mut pending_build_idx: Local<i8>,
 ) {
     use crossterm::event::KeyCode;
 
@@ -113,8 +114,9 @@ fn map_input_to_intents(
         match key.code {
             // Movement
             KeyCode::Char('w') | KeyCode::Up => {
-                if *pending_build {
-                    *pending_build = false;
+                if *pending_build_idx >= 0 {
+                    *pending_build_idx = -1;
+                    // pending_station already set by 'b' key handler
                     action_writer.write(ActionIntent {
                         actor: player_entity,
                         action_id: "ability.build".into(),
@@ -131,8 +133,8 @@ fn map_input_to_intents(
                 }
             }
             KeyCode::Char('s') | KeyCode::Down => {
-                if *pending_build {
-                    *pending_build = false;
+                if *pending_build_idx >= 0 {
+                    *pending_build_idx = -1;
                     action_writer.write(ActionIntent {
                         actor: player_entity,
                         action_id: "ability.build".into(),
@@ -149,8 +151,8 @@ fn map_input_to_intents(
                 }
             }
             KeyCode::Char('d') | KeyCode::Right => {
-                if *pending_build {
-                    *pending_build = false;
+                if *pending_build_idx >= 0 {
+                    *pending_build_idx = -1;
                     action_writer.write(ActionIntent {
                         actor: player_entity,
                         action_id: "ability.build".into(),
@@ -167,8 +169,8 @@ fn map_input_to_intents(
                 }
             }
             KeyCode::Char('a') | KeyCode::Left => {
-                if *pending_build {
-                    *pending_build = false;
+                if *pending_build_idx >= 0 {
+                    *pending_build_idx = -1;
                     action_writer.write(ActionIntent {
                         actor: player_entity,
                         action_id: "ability.build".into(),
@@ -271,9 +273,18 @@ fn map_input_to_intents(
             // Build station (outpost mode only) — pending build then direction
             KeyCode::Char('b') => {
                 if *mode == bd_core::spatial::GameMode::Outpost {
-                    *pending_build = !*pending_build;
-                    if *pending_build {
-                        game_log.push("Build: press direction to place station", LogLevel::Info);
+                    if *pending_build_idx >= 0 {
+                        // Cycle to next station type
+                        let bps = bd_core::colony::stations::default_station_blueprints();
+                        let next = (*pending_build_idx as usize + 1) % bps.len();
+                        *pending_build_idx = next as i8;
+                        pending_station.0 = Some(bps[next].station_type);
+                        game_log.push(format!("Build: {:?} ({} Supplies)", bps[next].station_type, bps[next].build_cost_supplies), LogLevel::Info);
+                    } else {
+                        *pending_build_idx = 0;
+                        let bps = bd_core::colony::stations::default_station_blueprints();
+                        pending_station.0 = Some(bps[0].station_type);
+                        game_log.push(format!("Build: {:?} ({} Supplies)", bps[0].station_type, bps[0].build_cost_supplies), LogLevel::Info);
                     }
                 }
             }
@@ -285,8 +296,9 @@ fn map_input_to_intents(
             }
             // Quit (or cancel pending build)
             KeyCode::Char('q') | KeyCode::Esc => {
-                if *pending_build {
-                    *pending_build = false;
+                if *pending_build_idx >= 0 {
+                    *pending_build_idx = -1;
+                    pending_station.0 = None;
                     game_log.push("Build cancelled.", LogLevel::Info);
                 } else {
                     exit.write_default();

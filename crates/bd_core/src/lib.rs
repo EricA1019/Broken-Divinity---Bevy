@@ -17,6 +17,7 @@ pub mod pools;
 pub mod procgen;
 pub mod save;
 pub mod spatial;
+use spatial::register_spatial;
 pub mod signals;
 pub mod statuses;
 pub mod time;
@@ -105,6 +106,12 @@ impl Plugin for BdCorePlugin {
         app.insert_resource(TriggerExecutionGuard::default());
         app.insert_resource(HelpLine::default());
 
+        // Register CombatRng for d100 damage variance
+        app.init_resource::<crate::combat::CombatRng>();
+
+        // Register spatial systems (transitions, game mode)
+        register_spatial(app);
+
         // Register movement-related message types (used by actions)
         app.add_message::<crate::signals::MoveIntent>();
         app.add_message::<crate::signals::MoveBlocked>();
@@ -119,8 +126,12 @@ impl Plugin for BdCorePlugin {
         // Register entity cleanup on defeat
         pools::register_cleanup(app);
 
+        // Register movement feedback (blocked log)
+        pools::register_move_feedback(app);
+
         // Register colony resources (must exist before actions validate them)
-        app.insert_resource(crate::colony::production::ColonyResources::default());
+        app.init_resource::<crate::colony::stations::PendingStationBuild>();
+    app.insert_resource(crate::colony::production::ColonyResources::default());
         app.insert_resource(crate::party::PartyState::default());
         app.insert_resource(crate::overworld::OverworldState::default());
         app.insert_resource(crate::dialogue::DialogueLog::default());
@@ -133,6 +144,10 @@ impl Plugin for BdCorePlugin {
 
         // Register status/trigger/modifier system
         statuses::register_statuses(app);
+        // Register sanity drain, threshold, and recovery systems
+        sanity::register_sanity(app);
+        // Register virtue gain systems
+        virtues::register_virtues(app);
         inventory::register_inventory(app);
 
         // Register station build action
@@ -181,6 +196,8 @@ impl Plugin for BdCorePlugin {
             .resource_mut::<crate::actions::ActionRegistry>()
             .register(crate::overworld::register_begin_travel_action());
 
+    // Register travel system
+    crate::overworld::register_travel(app);
 
 
         // Register production and raid systems

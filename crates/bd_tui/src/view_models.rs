@@ -26,6 +26,7 @@ pub struct StatsViewModel {
     pub ap_max: i32,
     pub supplies: i32,
     pub faith: i32,
+    pub day: u64,
     pub party_names: Vec<String>,
 }
 
@@ -107,6 +108,7 @@ fn build_stats_vm(
     player_pools: Query<&Pools, With<Player>>,
     mut vm: ResMut<StatsViewModel>,
     colony_res: Res<bd_core::colony::production::ColonyResources>,
+    game_time: Res<bd_core::time::GameTime>,
 ) {
     if let Ok(pools) = player_pools.single() {
         vm.hp_current = pools.get(PoolKind::Health).map_or(0, |p| p.current);
@@ -116,6 +118,7 @@ fn build_stats_vm(
     }
     vm.supplies = colony_res.pools.get(PoolKind::Supplies).map_or(0, |p| p.current);
     vm.faith = colony_res.pools.get(PoolKind::Faith).map_or(0, |p| p.current);
+    vm.day = game_time.day;
 }
 
 fn build_party_vm(

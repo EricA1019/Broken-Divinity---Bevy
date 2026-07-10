@@ -144,6 +144,7 @@ pub fn process_transitions(
     mut game_log: ResMut<GameLog>,
     mut map: ResMut<SmokeMap>,
     mut colony_res: ResMut<crate::colony::production::ColonyResources>,
+    mut overworld: Option<ResMut<crate::overworld::OverworldState>>,
     query: Query<(Entity, Option<&TransientEntity>, Option<&PersistentEntity>)>,
 ) {
     for msg in messages.read() {
@@ -177,6 +178,11 @@ pub fn process_transitions(
                     format!("Travelling to {node_name}..."),
                     LogLevel::Info,
                 );
+                // Set travel duration
+                if let Some(ref mut ow) = overworld {
+                    ow.turns_remaining = 3;
+                    ow.current_node = msg.node_id.clone();
+                }
             }
             GameMode::Tactical => {
                 let node_name = msg.node_id.as_deref().unwrap_or("the ruin");
@@ -188,6 +194,10 @@ pub fn process_transitions(
                 if let Some(supplies) = colony_res.pools.get_mut(PoolKind::Supplies) {
                     supplies.current = (supplies.current - TRAVEL_SUPPLIES_COST).max(0);
                 }
+                game_log.push(
+                    format!("Colony supplies: {}", colony_res.pools.get(PoolKind::Supplies).map_or(0, |p| p.current)),
+                    LogLevel::Info,
+                );
                 // Generate dungeon on first entry
                 spawn_dungeon_location(&mut commands, &mut map);
             }
@@ -241,6 +251,18 @@ fn spawn_dungeon_location(commands: &mut Commands, map: &mut ResMut<SmokeMap>) {
                     commands.entity(entity).remove::<BlocksMovement>();
                 }
             }
+        }
+    }
+
+    // Spawn a SanityPressure entity deeper in the dungeon
+    if let Some(room) = plan.rooms.get(3.min(plan.rooms.len() - 1)) {
+        let sp_pos = Position { x: room.center().x, y: room.center().y };
+        if map.is_walkable(sp_pos.x, sp_pos.y) {
+            commands.spawn((
+                Position { x: sp_pos.x, y: sp_pos.y },
+                crate::sanity::SanityPressure { radius: 2, drain_per_turn: 5 },
+                Name("Aura of Dread".into()),
+            ));
         }
     }
 

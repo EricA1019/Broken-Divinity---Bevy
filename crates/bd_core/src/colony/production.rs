@@ -7,7 +7,7 @@ use crate::{
     pools::{Pool, Pools},
     signals::PoolKind,
     time::GameTime,
-    colony::survivors::{Survivor, SurvivorTask, FOOD_PER_SURVIVOR_PER_DAY},
+    colony::survivors::{Survivor, SurvivorTask},
 };
 
 // ── Constants ──

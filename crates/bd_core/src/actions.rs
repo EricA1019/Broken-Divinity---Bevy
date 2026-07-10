@@ -462,6 +462,7 @@ fn resolve_action_effects(
     mut delta_writer: bevy_ecs::message::MessageWriter<PoolDeltaRequested>,
     mut moved_writer: bevy_ecs::message::MessageWriter<EntityMoved>,
     mut blocked_writer: bevy_ecs::message::MessageWriter<MoveBlocked>,
+    mut pending_station: ResMut<crate::colony::stations::PendingStationBuild>,
     actors: Query<(Entity, &Position, &PendingAction, Option<&Player>)>,
     blockers: Query<&Position, With<BlocksMovement>>,
 ) {
@@ -554,14 +555,19 @@ fn resolve_action_effects(
                 }
                 Effect::SpawnEntity(blueprint_id) => {
                     use crate::colony::stations::{Station, StationType};
-                    // Determine station type from blueprint ID
-                    let station_type = match blueprint_id.as_str() {
-                        "blueprint.station.stove" => StationType::Stove,
-                        "blueprint.station.altar" => StationType::Altar,
-                        "blueprint.station.workshop" => StationType::Workshop,
-                        "blueprint.station.bed" => StationType::Bed,
-                        "blueprint.station.storage" => StationType::Storage,
-                        _ => StationType::Stove,
+                    // Determine station type: check PendingStationBuild resource first,
+                    // then fall back to parsing the blueprint_id.
+                    let station_type = if let Some(st) = pending_station.0.take() {
+                        st
+                    } else {
+                        match blueprint_id.as_str() {
+                            "blueprint.station" | "blueprint.station.stove" => StationType::Stove,
+                            "blueprint.station.altar" => StationType::Altar,
+                            "blueprint.station.workshop" => StationType::Workshop,
+                            "blueprint.station.bed" => StationType::Bed,
+                            "blueprint.station.storage" => StationType::Storage,
+                            _ => StationType::Stove,
+                        }
                     };
                     // Build at tile in direction offset, not on player
                     let build_pos = pending.direction.map(|dir| {
@@ -725,6 +731,7 @@ mod tests {
             .id();
         send_action(&mut app, p, "ability.wait", None, None);
         app.update();
+        app.update(); // second frame to process pool deltas
         let ap = app
             .world()
             .get::<Pools>(p)
@@ -764,6 +771,7 @@ mod tests {
         let dummy = spawn_dummy(&mut app, 6, 5); // adjacent
         send_action(&mut app, p, "ability.attack", None, Some(dummy));
         app.update();
+        app.update(); // second frame to process pool deltas from action effects
         let hp = app
             .world()
             .get::<Pools>(dummy)
