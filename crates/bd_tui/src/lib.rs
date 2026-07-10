@@ -41,7 +41,7 @@ use screens::{
 };
 use theme::ThemeRegistry;
 use view_models::{
-    ActionListViewModel, ContainerViewModel, LogViewModel, MapViewModel,
+    ActionListViewModel, ContainerViewModel, EventViewModel, LogViewModel, MapViewModel,
     StatsViewModel,
 };
 use visual::SymbolRegistry;
@@ -77,6 +77,7 @@ impl Plugin for BdTuiPlugin {
         app.add_systems(
             bevy_app::Update,
             (
+                sync_event_screen.in_set(BdSet::IntentCollection),
                 map_input_to_intents.in_set(BdSet::Input),
                 screens::process_screen_intents.in_set(BdSet::IntentCollection),
                 draw_ui.in_set(BdSet::Render),
@@ -84,6 +85,24 @@ impl Plugin for BdTuiPlugin {
         );
 
         tracing::info!("BdTuiPlugin initialized");
+    }
+}
+
+/// Observe CurrentEvent and switch to/from the event screen.
+fn sync_event_screen(
+    current: Res<bd_core::events::CurrentEvent>,
+    mut screen_writer: MessageWriter<ScreenIntent>,
+    screen_state: Res<ScreenState>,
+) {
+    if current.is_active() && screen_state.current != "event" {
+        screen_writer.write(ScreenIntent {
+            screen_id: "event".into(),
+        });
+    }
+    if !current.is_active() && screen_state.current == "event" {
+        screen_writer.write(ScreenIntent {
+            screen_id: "combat".into(),
+        });
     }
 }
 
@@ -353,6 +372,7 @@ fn draw_ui(
     log_vm: Res<LogViewModel>,
     action_vm: Res<ActionListViewModel>,
     container_vm: Res<ContainerViewModel>,
+    event_vm: Res<EventViewModel>,
     symbols: Res<SymbolRegistry>,
     theme: Res<ThemeRegistry>,
     help: Res<HelpLine>,
@@ -372,6 +392,7 @@ fn draw_ui(
             log: &log_vm,
             actions: &action_vm,
             container: &container_vm,
+            event: &event_vm,
             symbols: &symbols,
             theme: &theme,
         };

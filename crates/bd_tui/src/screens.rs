@@ -16,7 +16,7 @@ use super::{
     render_grid::RenderCellGrid,
     theme::ThemeRegistry,
     view_models::{
-        ActionListViewModel, ContainerViewModel, LogViewModel, MapViewModel,
+        ActionListViewModel, ContainerViewModel, EventViewModel, LogViewModel, MapViewModel,
         StatsViewModel,
     },
     visual::{SymbolRegistry, VisualToken},
@@ -74,6 +74,7 @@ pub struct WidgetRenderContext<'a> {
     pub log: &'a LogViewModel,
     pub actions: &'a ActionListViewModel,
     pub container: &'a ContainerViewModel,
+    pub event: &'a EventViewModel,
     pub symbols: &'a SymbolRegistry,
     pub theme: &'a ThemeRegistry,
 }
@@ -263,6 +264,33 @@ pub fn default_screen_registry() -> ScreenRegistry {
         ],
     });
 
+    // Event screen: player interruption with choices
+    reg.register(ScreenDefinition {
+        id: "event".into(),
+        panels: vec![
+            PanelDefinition {
+                id: "stats".into(),
+                layout: PanelLayout::Right { width_pct: 25 },
+                view_model: "StatsViewModel".into(),
+            },
+            PanelDefinition {
+                id: "event_text".into(),
+                layout: PanelLayout::Main,
+                view_model: "EventViewModel".into(),
+            },
+            PanelDefinition {
+                id: "event_choices".into(),
+                layout: PanelLayout::Bottom { height_pct: 25 },
+                view_model: "EventViewModel".into(),
+            },
+            PanelDefinition {
+                id: "log".into(),
+                layout: PanelLayout::Bottom { height_pct: 15 },
+                view_model: "LogViewModel".into(),
+            },
+        ],
+    });
+
     // Debug screen: signal trace viewer + entity info
     reg.register(ScreenDefinition {
         id: "debug".into(),
@@ -336,6 +364,16 @@ pub fn default_widget_registry() -> WidgetRegistry {
         panel_id: "debug_trace".into(),
         view_model: "LogViewModel".into(),
         render: Box::new(render_debug_trace_widget),
+    });
+    reg.register(WidgetBinding {
+        panel_id: "event_text".into(),
+        view_model: "EventViewModel".into(),
+        render: Box::new(render_event_widget),
+    });
+    reg.register(WidgetBinding {
+        panel_id: "event_choices".into(),
+        view_model: "EventViewModel".into(),
+        render: Box::new(render_event_choices_widget),
     });
 
     reg
@@ -868,6 +906,36 @@ fn render_debug_trace_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderCo
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+/// Render the event dialogue text and speaker.
+fn render_event_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
+    if !ctx.event.active {
+        return;
+    }
+    let text = format!("[{}]
+{}
+", ctx.event.speaker, ctx.event.text);
+    let para = ratatui::widgets::Paragraph::new(text)
+        .style(ratatui::style::Style::default().fg(ratatui::style::Color::White))
+        .block(ratatui::widgets::Block::default().title(" Event ").borders(ratatui::widgets::Borders::ALL));
+    frame.render_widget(para, area);
+}
+
+/// Render the event choice list as numbered options.
+fn render_event_choices_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
+    if !ctx.event.active || ctx.event.choices.is_empty() {
+        return;
+    }
+    let mut text = "Your choice:".to_string();
+    for (i, choice) in ctx.event.choices.iter().enumerate() {
+        text.push_str(&format!("
+{}. {}", i + 1, choice));
+    }
+    let para = ratatui::widgets::Paragraph::new(text)
+        .style(ratatui::style::Style::default().fg(ratatui::style::Color::Yellow))
+        .block(ratatui::widgets::Block::default().title(" Choices ").borders(ratatui::widgets::Borders::ALL));
+    frame.render_widget(para, area);
+}
 
 #[cfg(test)]
 mod tests {

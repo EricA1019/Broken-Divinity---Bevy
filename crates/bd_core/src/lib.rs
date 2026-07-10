@@ -128,7 +128,7 @@ impl Plugin for BdCorePlugin {
         // Register Gabriel encounter trigger
         app.add_systems(
             bevy_app::Update,
-            crate::events::trigger_gabriel_encounter.in_set(crate::BdSet::IntentCollection),
+            crate::events::trigger_gabriel_encounter.in_set(crate::BdSet::Mutation),
         );
 
         // Register time system (observes existing messages)
