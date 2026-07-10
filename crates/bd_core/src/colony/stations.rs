@@ -91,7 +91,6 @@ pub fn register_station_actions() -> ActionDefinition {
         label: "Build".into(),
         requirements: vec![
             Requirement::HasPoolAtLeast(PoolKind::Supplies, STATION_BUILD_COST_SUPPLIES),
-            Requirement::TileWalkable,
         ],
         cost_effects: vec![Effect::PoolDelta {
             kind: PoolKind::Supplies,
@@ -160,7 +159,6 @@ mod tests {
         let def = register_station_actions();
         assert_eq!(def.id, "ability.build");
         assert!(def.requirements.iter().any(|r| matches!(r, Requirement::HasPoolAtLeast(PoolKind::Supplies, _))));
-        assert!(def.requirements.iter().any(|r| matches!(r, Requirement::TileWalkable)));
     }
 
     #[test]

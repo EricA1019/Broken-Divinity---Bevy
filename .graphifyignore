@@ -1,0 +1,18 @@
+# Rust build artifacts
+target/
+
+# Graphify tool checkout (not part of the game project)
+graphify/
+
+# Audio assets (792 wav files - not useful for knowledge graph)
+asset/Audio*/
+
+# Build lock file
+Cargo.lock
+
+# MEX workspace metadata
+.mex/
+
+# Git
+.git/
+.github/

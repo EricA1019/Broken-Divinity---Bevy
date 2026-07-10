@@ -42,6 +42,7 @@ impl BlueprintRegistry {
                     pools: vec![
                         (PoolKind::Health, 20, 0, 20),
                         (PoolKind::ActionPoints, 3, 0, 3),
+                        (PoolKind::Supplies, 10, 0, 50),
                     ],
                     statuses: vec![],
                     visual: Some("Player".into()),

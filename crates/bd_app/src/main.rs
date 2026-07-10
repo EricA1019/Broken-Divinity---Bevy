@@ -83,8 +83,8 @@ fn main() {
     // Override defaults with RON content at startup
     app.add_systems(Startup, apply_ron_content);
 
-    // Spawn initial entities
-    app.add_systems(Startup, spawn_world);
+    // Spawn player in outpost at startup (no dungeon yet)
+    app.add_systems(Startup, spawn_outpost_player);
 
     app.run();
     tracing::info!("Broken Divinity Kernel exited cleanly");
@@ -129,81 +129,32 @@ fn apply_ron_content(
     }
 }
 
-/// Generate a procedural location and spawn the MVP entities.
-fn spawn_world(
+/// Spawn the player at the shelter outpost at startup.
+fn spawn_outpost_player(
     mut commands: Commands,
     mut game_log: ResMut<GameLog>,
-    mut map: ResMut<SmokeMap>,
 ) {
     let registry = BlueprintRegistry::phase18_defaults();
 
-    // Generate a procedural ruin
-    let seed = 42; // could be read from config later
-    let template = LocationTemplate::ruin();
-    let plan = generate_location(&template, seed);
+    // Spawn player in the center of the shelter
+    let player_pos = Position {
+        x: bd_core::colony::shelter::SHELTER_WIDTH / 2,
+        y: bd_core::colony::shelter::SHELTER_HEIGHT / 2,
+    };
 
-    // Replace the default smoke map with the generated one
-    *map = SmokeMap::from_tiles(plan.width, plan.height, &plan.tiles);
-
-    // Set entrance tile as Door
-    map.set(plan.entrance.x, plan.entrance.y, bd_core::components::Tile::Door);
-
-    // Spawn player at the entrance
     if let Some(bp) = registry.get("blueprint.player") {
-        spawn_from_blueprint(bp, Some(plan.entrance), &[], &mut commands);
+        let entity = spawn_from_blueprint(bp, Some(player_pos), &[], &mut commands);
+        commands.entity(entity).insert(bd_core::spatial::PersistentEntity);
     }
 
-    // Spawn enemies on spawn zones
-    let enemy_blueprints = ["blueprint.rat", "blueprint.skeleton"];
-    for (i, zone) in plan.spawn_zones.iter().enumerate() {
-        let bp_id = enemy_blueprints[i % enemy_blueprints.len()];
-        if let Some(bp) = registry.get(bp_id) {
-            spawn_from_blueprint(bp, Some(*zone), &[], &mut commands);
-        }
-    }
+    // Grant initial colony supplies via ColonyResources
+    game_log.push("You survey the shelter. Survivors are gathering.", LogLevel::Info);
+    game_log.push("b: build | t: travel | i: inventory", LogLevel::Info);
 
-    // Spawn items scattered in rooms
-    let item_bps = [
-        "blueprint.healing_potion",
-        "blueprint.sword",
-        "blueprint.shield",
-        "blueprint.smite_scroll",
-        "blueprint.gold_pile",
-    ];
-    for (i, bp_id) in item_bps.iter().enumerate() {
-        if let Some(room) = plan.rooms.get((i + 1) % plan.rooms.len()) {
-            let pos = Position {
-                x: room.x + 1,
-                y: room.y + 1 + i as i32 % 2,
-            };
-            if map.is_walkable(pos.x, pos.y) {
-                if let Some(bp) = registry.get(bp_id) {
-                    let entity = spawn_from_blueprint(bp, Some(pos), &[], &mut commands);
-                    commands.entity(entity).insert(BlocksMovement);
-                    // Remove BlocksMovement for items (they shouldn't block)
-                    commands.entity(entity).remove::<BlocksMovement>();
-                }
-            }
-        }
-    }
-
-    // Place exit marker on the first exit position
-    if let Some(exit_pos) = plan.exits.first() {
-        map.set(exit_pos.x, exit_pos.y, bd_core::components::Tile::Door);
-        // Spawn an exit entity marker
-        commands.spawn((
-            ExitTile,
-            *exit_pos,
-            Name("Exit".into()),
-        ));
-    }
-
-    game_log.push("You enter a crumbling ruin...", LogLevel::Info);
-    game_log.push("WASD: move | f: attack | g: guard | .: wait | i: inventory",
-        LogLevel::Info,
-    );
-    game_log.push("Find your way to the exit >", LogLevel::Info);
+    game_log.push("You survey the shelter. Survivors are gathering.", LogLevel::Info);
+    game_log.push("b: build | a: assign | t: travel | i: inventory", LogLevel::Info);
 }
+
 
 /// Run content validation and exit.
 fn run_validation() {

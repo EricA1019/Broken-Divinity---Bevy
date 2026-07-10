@@ -1,0 +1,18 @@
+[
+    // ── Melee Lane (Thumos + Melee Training) ─────────────────
+    (id: "HeavySwing", name: "Heavy Swing", description: "+2 melee damage", lane_label: "Thumos + Melee Training", required_level: 3),
+    (id: "CleaveStrike", name: "Cleave Strike", description: "Chance to hit adjacent enemy on melee kill", lane_label: "Thumos + Melee Training", required_level: 6),
+    (id: "Unstoppable", name: "Unstoppable", description: "Immune to stun during melee attacks", lane_label: "Thumos + Melee Training", required_level: 9),
+    // ── Ranged Lane (Prudence + Ranged Training) ──────────────
+    (id: "SteadyAim", name: "Steady Aim", description: "+10 ranged accuracy", lane_label: "Prudence + Ranged Training", required_level: 3),
+    (id: "QuickReload", name: "Quick Reload", description: "Reload costs 0 AP", lane_label: "Prudence + Ranged Training", required_level: 6),
+    (id: "Deadeye", name: "Deadeye", description: "Critical hits deal triple damage", lane_label: "Prudence + Ranged Training", required_level: 9),
+    // ── Stealth Lane (Metis + Quiet Movement) ─────────────────
+    (id: "GhostStep", name: "Ghost Step", description: "+5 DEF against enemy attacks", lane_label: "Metis + Quiet Movement", required_level: 3),
+    (id: "FalseTrail", name: "False Trail", description: "+10 DEF against ranged enemy attacks", lane_label: "Metis + Quiet Movement", required_level: 6),
+    (id: "AmbushExtraction", name: "Ambush Extraction", description: "Enemy misses grant +1 extra Quiet Movement XP", lane_label: "Metis + Quiet Movement", required_level: 9),
+    // ── Toughness Lane (Fortitude + Melee Training) ───────────
+    (id: "ThickSkin", name: "Thick Skin", description: "+2 base armor rating", lane_label: "Fortitude + Melee Training", required_level: 3),
+    (id: "SecondWind", name: "Second Wind", description: "Auto-heal 5 HP when below 20%", lane_label: "Fortitude + Melee Training", required_level: 6),
+    (id: "IronWill", name: "Iron Will", description: "Sanity exposure reduced by 50%", lane_label: "Fortitude + Melee Training", required_level: 9),
+]

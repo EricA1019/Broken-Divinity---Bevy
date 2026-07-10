@@ -142,6 +142,7 @@ pub fn process_transitions(
     mut commands: Commands,
     mut mode: ResMut<GameMode>,
     mut game_log: ResMut<GameLog>,
+    mut map: ResMut<SmokeMap>,
     query: Query<(Entity, Option<&TransientEntity>, Option<&PersistentEntity>)>,
 ) {
     for msg in messages.read() {
@@ -182,12 +183,68 @@ pub fn process_transitions(
                     format!("Entering {node_name}.", node_name = node_name),
                     LogLevel::Info,
                 );
+                // Generate dungeon on first entry
+                spawn_dungeon_location(&mut commands, &mut map);
             }
         }
 
         tracing::info!("Game mode: {from:?} → {:?}", msg.target);
     }
 }
+
+/// Generate a procedural dungeon and spawn entities when entering tactical mode.
+fn spawn_dungeon_location(commands: &mut Commands, map: &mut ResMut<SmokeMap>) {
+    use crate::components::{BlocksMovement, ExitTile, Name, Position, Tile};
+    use crate::factory::{BlueprintRegistry, spawn_from_blueprint};
+    use crate::map::SmokeMap;
+    use crate::procgen::{LocationTemplate, generate_location};
+
+    let registry = BlueprintRegistry::phase18_defaults();
+    let seed: u64 = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let template = LocationTemplate::ruin();
+    let plan = generate_location(&template, seed);
+
+    **map = SmokeMap::from_tiles(plan.width, plan.height, &plan.tiles);
+    map.set(plan.entrance.x, plan.entrance.y, Tile::Door);
+
+    if let Some(bp) = registry.get("blueprint.player") {
+        let entity = spawn_from_blueprint(bp, Some(plan.entrance), &[], commands);
+        commands.entity(entity).insert(PersistentEntity);
+    }
+
+    let enemy_blueprints = ["blueprint.rat", "blueprint.skeleton"];
+    for (i, zone) in plan.spawn_zones.iter().enumerate() {
+        let bp_id = enemy_blueprints[i % enemy_blueprints.len()];
+        if let Some(bp) = registry.get(bp_id) {
+            let entity = spawn_from_blueprint(bp, Some(*zone), &[], commands);
+            commands.entity(entity).insert(TransientEntity);
+        }
+    }
+
+    let item_bps = ["blueprint.healing_potion", "blueprint.sword", "blueprint.shield",
+        "blueprint.smite_scroll", "blueprint.gold_pile"];
+    for (i, bp_id) in item_bps.iter().enumerate() {
+        if let Some(room) = plan.rooms.get((i + 1) % plan.rooms.len()) {
+            let pos = Position { x: room.x + 1, y: room.y + 1 + i as i32 % 2 };
+            if map.is_walkable(pos.x, pos.y) {
+                if let Some(bp) = registry.get(bp_id) {
+                    let entity = spawn_from_blueprint(bp, Some(pos), &[], commands);
+                    commands.entity(entity).insert(BlocksMovement);
+                    commands.entity(entity).remove::<BlocksMovement>();
+                }
+            }
+        }
+    }
+
+    if let Some(exit_pos) = plan.exits.first() {
+        map.set(exit_pos.x, exit_pos.y, Tile::Door);
+        commands.spawn((ExitTile, *exit_pos, Name("Exit".into())));
+    }
+}
+
 
 // ---------------------------------------------------------------------------
 // Registration

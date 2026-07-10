@@ -97,6 +97,7 @@ fn map_input_to_intents(
     mut screen_writer: MessageWriter<ScreenIntent>,
     mut transition_writer: MessageWriter<TransitionIntent>,
     mut exit: MessageWriter<bevy_app::AppExit>,
+    mode: Res<bd_core::spatial::GameMode>,
 ) {
     use crossterm::event::KeyCode;
 
@@ -179,14 +180,19 @@ fn map_input_to_intents(
                     screen_id: "combat".into(),
                 });
             }
-            // Travel to next location (outpost → travel → tactical)
+            // Travel to dungeon (outpost → tactical)
             KeyCode::Char('t') => {
+                let target = if *mode == bd_core::spatial::GameMode::Outpost {
+                    bd_core::spatial::GameMode::Tactical
+                } else {
+                    bd_core::spatial::GameMode::Outpost
+                };
                 transition_writer.write(TransitionIntent {
-                    target: bd_core::spatial::GameMode::Travel,
+                    target,
                     node_id: Some("ruin.ancient_temple".into()),
                 });
                 screen_writer.write(ScreenIntent {
-                    screen_id: "combat".into(),
+                    screen_id: if target == bd_core::spatial::GameMode::Tactical { "combat" } else { "outpost" }.into(),
                 });
             }
             // Return to outpost
@@ -198,6 +204,17 @@ fn map_input_to_intents(
                 screen_writer.write(ScreenIntent {
                     screen_id: "outpost".into(),
                 });
+            }
+            // Build station (outpost mode only)
+            KeyCode::Char('b') => {
+                if *mode == bd_core::spatial::GameMode::Outpost {
+                    action_writer.write(ActionIntent {
+                        actor: player_entity,
+                        action_id: "ability.build".into(),
+                        direction: None,
+                        target: None,
+                    });
+                }
             }
             // Debug overlay toggle
             KeyCode::F(1) => {
