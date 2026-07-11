@@ -1,15 +1,35 @@
 # Known Issues — Broken Divinity Kernel
 
-**Date**: 2026-07-09  
-**Phase**: 24 (Production-Ready Gate)
+**Date**: 2026-07-11  
+**Phase**: GDD Gap Closure Complete
 
 This document tracks known limitations, unimplemented features, and design gaps. Issues are not blockers for the production gate — they represent follow-up work.
 
 ## Critical (no known critical issues)
 
-All 157 tests pass. Content validation passes. Release build runs.
+All 144 tests pass (bd_core). 1 pre-existing TUI failure accepted. Content validation passes. Release build runs.
 
 ## Gameplay gaps
+
+### Day counter advances every frame (no turn gating)
+- **Impact**: Day/time counter in stats panel increments rapidly, making time feel meaningless.
+- **Root cause**: `advance_time` system runs every frame with no rate limiting or turn-gating.
+- **Fix**: Gate time advancement to actual player actions (e.g., only on "wait" or "move" actions).
+
+### Travel log shows duplicate "Entering" messages
+- **Impact**: When arriving at dungeon via travel, "Entering ruin.ancient_temple." appears twice in the log.
+- **Root cause**: Travel system writes TransitionIntent; log is pushed both by travel system and process_transitions.
+- **Fix**: Deduplicate or remove the log message from one of the two locations.
+
+### Colony supplies always 0 during travel
+- **Impact**: Outpost starts with supplies but they are not transferred to the player on travel.
+- **Root cause**: ColonyResources and player Pools are separate; no supply transfer on transition.
+- **Fix**: On Outpost->Travel transition, deduct travel supplies from ColonyResources.
+
+### Ammo component never consumed
+- **Impact**: Ammo component and reload action exist but ranged attacks never consume ammo.
+- **Root cause**: No system wires ammo deduction to attack actions.
+- **Fix**: Add a system that observes ActionIntent for ability.aimed_attack and deducts from Ammo.
 
 ### Game-over/win condition not wired
 - **Impact**: Player can die (HP reaches 0) but no game-over screen or restart flow. All enemies can be defeated but no victory condition.

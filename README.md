@@ -15,12 +15,13 @@ Controls:
 | `.` | Wait (restore AP) |
 | `F` | Attack nearest enemy |
 | `G` | Guard (defensive stance) |
+| `B` | Cycle station type (Stove→Altar→Workshop→Bed→Storage) |
 | `I` | Inventory screen |
 | `Z` | Combat screen |
-| `R` | Return to outpost |
 | `T` | Travel to next location |
-| `F1` | Debug overlay |
-| `Q` / `Esc` | Quit |
+| `R` | Return to outpost |
+| `1`-`9` | Select event/dialogue choice |
+| `Q` / `Esc` | Quit / Cancel build mode |
 
 ## Build & Run
 
