@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::map::SmokeMap;
 use crate::{
+    components::Player,
     gamelog::{GameLog, LogLevel},
     pools::{Pool, Pools},
     signals::PoolKind,
@@ -143,9 +144,11 @@ pub fn process_transitions(
     mut mode: ResMut<GameMode>,
     mut game_log: ResMut<GameLog>,
     mut map: ResMut<SmokeMap>,
+    outpost: Res<OutpostState>,
     mut colony_res: ResMut<crate::colony::production::ColonyResources>,
     mut overworld: Option<ResMut<crate::overworld::OverworldState>>,
     query: Query<(Entity, Option<&TransientEntity>, Option<&PersistentEntity>)>,
+    player_query: Query<Entity, With<Player>>,
 ) {
     for msg in messages.read() {
         let from = *mode;
@@ -171,6 +174,8 @@ pub fn process_transitions(
         match msg.target {
             GameMode::Outpost => {
                 game_log.push("You return to the outpost.", LogLevel::Info);
+                // Sync global map to shelter map so movement validation works
+                *map = outpost.map.clone();
             }
             GameMode::Travel => {
                 let node_name = msg.node_id.as_deref().unwrap_or("unknown");
@@ -199,7 +204,7 @@ pub fn process_transitions(
                     LogLevel::Info,
                 );
                 // Generate dungeon on first entry
-                spawn_dungeon_location(&mut commands, &mut map);
+                spawn_dungeon_location(&mut commands, &mut map, &player_query);
             }
         }
 
@@ -208,8 +213,12 @@ pub fn process_transitions(
 }
 
 /// Generate a procedural dungeon and spawn entities when entering tactical mode.
-fn spawn_dungeon_location(commands: &mut Commands, map: &mut ResMut<SmokeMap>) {
-    use crate::components::{BlocksMovement, ExitTile, Name, Position, Tile};
+fn spawn_dungeon_location(
+    commands: &mut Commands,
+    map: &mut ResMut<SmokeMap>,
+    player_query: &Query<Entity, With<Player>>,
+) {
+    use crate::components::{BlocksMovement, ExitTile, Name, Player, Position, Tile};
     use crate::factory::{BlueprintRegistry, spawn_from_blueprint};
     use crate::map::SmokeMap;
     use crate::procgen::{LocationTemplate, generate_location};
@@ -225,7 +234,10 @@ fn spawn_dungeon_location(commands: &mut Commands, map: &mut ResMut<SmokeMap>) {
     **map = SmokeMap::from_tiles(plan.width, plan.height, &plan.tiles);
     map.set(plan.entrance.x, plan.entrance.y, Tile::Door);
 
-    if let Some(bp) = registry.get("blueprint.player") {
+    // Move existing player to dungeon entrance instead of creating duplicate
+    if let Some(existing_player) = player_query.iter().next() {
+        commands.entity(existing_player).insert(plan.entrance);
+    } else if let Some(bp) = registry.get("blueprint.player") {
         let entity = spawn_from_blueprint(bp, Some(plan.entrance), &[], commands);
         commands.entity(entity).insert(PersistentEntity);
     }
@@ -283,6 +295,7 @@ pub fn initialize_outpost(
     mut commands: Commands,
     mut outpost: ResMut<OutpostState>,
     mut game_log: ResMut<GameLog>,
+    mut map: ResMut<SmokeMap>,
     mode: Res<GameMode>,
 ) {
     if *mode != GameMode::Outpost {
@@ -295,6 +308,10 @@ pub fn initialize_outpost(
 
     // Set the shelter map as the outpost map
     outpost.map = crate::colony::shelter::create_shelter_map();
+    // Sync global map only if still using default 20x12 (not a test/custom map)
+    if map.width == 20 && map.height == 12 {
+        *map = outpost.map.clone();
+    }
 
     // Spawn a few starter survivors
     for i in 0..3 {

@@ -465,6 +465,7 @@ fn resolve_action_effects(
     mut moved_writer: bevy_ecs::message::MessageWriter<EntityMoved>,
     mut blocked_writer: bevy_ecs::message::MessageWriter<MoveBlocked>,
     mut pending_station: ResMut<crate::colony::stations::PendingStationBuild>,
+    mut should_advance: ResMut<crate::time::ShouldAdvanceTime>,
     actors: Query<(Entity, &Position, &PendingAction, Option<&Player>)>,
     blockers: Query<&Position, With<BlocksMovement>>,
 ) {
@@ -476,6 +477,10 @@ fn resolve_action_effects(
             "EffectResolve",
             format!("entity={:?} action={}", entity, pending.action_id),
         );
+        // Set time advancement flag for player actions
+        if player_flag.is_some() {
+            should_advance.0 = true;
+        }
         let Some(def) = registry.get(&pending.action_id) else {
             commands.entity(entity).remove::<PendingAction>();
             continue;

@@ -390,7 +390,8 @@ mod tests {
             .insert_resource(SmokeMap::default_smoke_map());
         app.update();
         let vm = app.world().resource::<MapViewModel>();
-        assert_eq!(vm.width, 20);
+        // Width is now 40 because startup syncs to shelter map
+        assert_eq!(vm.width, 40);
         assert_eq!(vm.player_pos, Some(Position { x: 5, y: 5 }));
     }
 

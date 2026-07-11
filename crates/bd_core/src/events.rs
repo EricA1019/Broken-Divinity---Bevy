@@ -339,7 +339,8 @@ pub fn trigger_gabriel_encounter(
     if gabriel.appeared {
         return;
     }
-    let Ok(player_entity) = player.single() else {
+    // Use iter().next() to handle potential duplicate player entities
+    let Some(player_entity) = player.iter().next() else {
         return;
     };
 

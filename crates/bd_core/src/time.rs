@@ -16,6 +16,10 @@ pub const TURNS_PER_DAY: u64 = 24;
 
 // ── Resource ──
 
+/// Flag set when an action was processed this frame, cleared after time advance.
+#[derive(Resource, Debug, Default)]
+pub struct ShouldAdvanceTime(pub bool);
+
 /// Tracks the current game day and turn.
 #[derive(Resource, Debug, Clone, Serialize, Deserialize)]
 pub struct GameTime {
@@ -33,6 +37,7 @@ impl Default for GameTime {
 
 pub(crate) fn register_time(app: &mut App) {
     app.insert_resource(GameTime::default());
+    app.init_resource::<ShouldAdvanceTime>();
     app.add_systems(
         bevy_app::Update,
         advance_time.in_set(BdSet::ResultEmission),
@@ -41,9 +46,16 @@ pub(crate) fn register_time(app: &mut App) {
 
 // ── System ──
 
-/// Advances `GameTime` by one turn every frame.
+/// Advances `GameTime` by one turn only when a player action was processed.
 /// Runs in `ResultEmission` after all gameplay state mutations.
-fn advance_time(mut game_time: ResMut<GameTime>) {
+fn advance_time(
+    mut game_time: ResMut<GameTime>,
+    mut should_advance: ResMut<ShouldAdvanceTime>,
+) {
+    if !should_advance.0 {
+        return;
+    }
+    should_advance.0 = false;
     game_time.turn += 1;
     if game_time.turn >= TURNS_PER_DAY {
         game_time.day += 1;
@@ -75,6 +87,8 @@ mod tests {
         let mut app = test_app();
         app.update();
         let t1 = app.world().resource::<GameTime>().turn;
+        // Set advance flag so time advances
+        app.world_mut().resource_mut::<ShouldAdvanceTime>().0 = true;
         app.update();
         let t2 = app.world().resource::<GameTime>().turn;
         assert_eq!(t2 - t1, 1);
@@ -84,6 +98,7 @@ mod tests {
     fn day_increments_after_turns_per_day() {
         let mut app = test_app();
         for _ in 0..TURNS_PER_DAY {
+            app.world_mut().resource_mut::<ShouldAdvanceTime>().0 = true;
             app.update();
         }
         let time = app.world().resource::<GameTime>();

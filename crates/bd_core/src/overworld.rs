@@ -79,6 +79,7 @@ pub fn process_travel_day(
     mut colony_res: ResMut<crate::colony::production::ColonyResources>,
     mut transition_writer: bevy_ecs::message::MessageWriter<crate::spatial::TransitionIntent>,
     mut game_log: ResMut<crate::gamelog::GameLog>,
+    mut should_advance: ResMut<crate::time::ShouldAdvanceTime>,
 ) {
     if *mode != crate::spatial::GameMode::Travel {
         return;
@@ -86,6 +87,9 @@ pub fn process_travel_day(
     if state.turns_remaining == 0 {
         return;
     }
+
+    // Advance time for travel turns
+    should_advance.0 = true;
 
     // Deduct food from colony resources
     if let Some(supplies) = colony_res.pools.get_mut(PoolKind::Supplies) {
