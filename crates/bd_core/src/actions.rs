@@ -381,6 +381,9 @@ fn validate_action_intents(
         if let Some(reason) = denied {
             if player_flag.is_some() {
                 let msg = match &reason {
+                    DenialReason::NotEnoughPool(PoolKind::ActionPoints) => {
+                        "Not enough ActionPoints. Wait (.) to restore 1 AP.".into()
+                    }
                     DenialReason::NotEnoughPool(kind) => {
                         format!("Not enough {:?}.", kind)
                     }
@@ -828,5 +831,60 @@ mod tests {
         for r in &reasons {
             assert!(!format!("{:?}", r).is_empty());
         }
+    }
+
+    #[test]
+    fn ap_denial_includes_wait_hint() {
+        let mut app = test_app();
+        use crate::pools::Pools;
+        app.world_mut().insert_resource(SmokeMap::new(10, 10, Tile::Floor));
+        let p = app.world_mut().spawn((
+            Player,
+            Position { x: 5, y: 5 },
+            Pools::new(vec![Pool::new(PoolKind::ActionPoints, 0, 0, 3)]),
+        )).id();
+        app.world_mut()
+            .resource_mut::<Messages<crate::signals::ActionIntent>>()
+            .write(ActionIntent {
+                actor: p,
+                action_id: "ability.move".into(),
+                direction: Some(Direction::East),
+                target: None,
+            });
+        app.update();
+        let log = app.world().resource::<GameLog>();
+        let has_hint = log.iter().any(|e| e.message.contains("Wait (.)"));
+        assert!(has_hint, "AP denial should include wait hint, got: {:?}",
+            log.iter().map(|e| &e.message).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn item_pickup_logs_item_name() {
+        let mut app = test_app();
+        app.world_mut().insert_resource(SmokeMap::new(10, 10, Tile::Floor));
+        use crate::inventory::Item;
+        // Player at (5,5) with 1 AP (enough for one move)
+        let p = app.world_mut().spawn((
+            Player,
+            Position { x: 5, y: 5 },
+            Pools::new(vec![
+                Pool::new(PoolKind::ActionPoints, 1, 0, 3),
+                Pool::new(PoolKind::Health, 10, 0, 10),
+            ]),
+        )).id();
+        // Item at (6,5) — NOT BlocksMovement so player can walk on it
+        let _item = app.world_mut().spawn((
+            crate::components::Name("Healing Potion".into()),
+            Item,
+            Position { x: 6, y: 5 },
+        )).id();
+        // Move east onto the item
+        send_action(&mut app, p, "ability.move", Some(Direction::East), None);
+        app.update();
+
+        let log = app.world().resource::<GameLog>();
+        let has_pickup = log.iter().any(|e| e.message.contains("Healing Potion"));
+        assert!(has_pickup, "Item pickup log should mention item name, got: {:?}",
+            log.iter().map(|e| &e.message).collect::<Vec<_>>());
     }
 }

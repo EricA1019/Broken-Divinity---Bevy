@@ -11,7 +11,7 @@ use crate::{
     BdSet,
 
     gamelog::{GameLog, LogLevel},
-    signals::{EntityDefeated, PoolDeltaApplied, PoolDeltaRequested, PoolKind},
+    signals::{EntityDefeated, EntityMoved, PoolDeltaApplied, PoolDeltaRequested, PoolKind},
     statuses::Statuses,
     trace::SignalTrace,
 };
@@ -87,6 +87,11 @@ pub(crate) fn register_pools(app: &mut App) {
     app.add_systems(
         bevy_app::Update,
         resolve_pool_deltas.in_set(BdSet::Mutation),
+    );
+
+    app.add_systems(
+        bevy_app::Update,
+        log_combat_damage.in_set(BdSet::ResultEmission),
     );
 }
 
@@ -175,9 +180,44 @@ fn resolve_pool_deltas(
 fn cleanup_defeated_entities(
     mut defeated: bevy_ecs::message::MessageReader<EntityDefeated>,
     mut commands: Commands,
+    mut game_log: ResMut<GameLog>,
+    names: Query<&crate::components::Name>,
 ) {
     for msg in defeated.read() {
+        // Log defeat with entity name
+        let entity_name = names.get(msg.entity)
+            .map(|n| n.0.as_str())
+            .unwrap_or("An enemy");
+        game_log.push(
+            format!("{entity_name} is defeated!"),
+            LogLevel::Combat,
+        );
         commands.entity(msg.entity).despawn();
+    }
+}
+
+/// Observe PoolDeltaApplied messages and log combat damage amounts.
+/// Does NOT modify resolve_pool_deltas — separate observer (SRP).
+fn log_combat_damage(
+    mut applied: bevy_ecs::message::MessageReader<PoolDeltaApplied>,
+    mut game_log: ResMut<GameLog>,
+    names: Query<&crate::components::Name>,
+) {
+    for msg in applied.read() {
+        if msg.kind != PoolKind::Health {
+            continue;
+        }
+        let amount = msg.amount_applied;
+        if amount >= 0 {
+            continue; // healing, not damage
+        }
+        let target_name = names.get(msg.target)
+            .map(|n| n.0.as_str())
+            .unwrap_or("target");
+        game_log.push(
+            format!("{target_name} takes {} damage!", -amount),
+            LogLevel::Combat,
+        );
     }
 }
 
@@ -204,11 +244,39 @@ fn log_move_blocked(
     }
 }
 
+/// Observe EntityMoved messages and log items at the destination.
+/// Player walks onto an item tile → log the item name.
+fn log_item_pickup(
+    mut moved: bevy_ecs::message::MessageReader<EntityMoved>,
+    mut game_log: ResMut<GameLog>,
+    player: Query<(), With<crate::components::Player>>,
+    items_at_pos: Query<(&crate::components::Name, &crate::components::Position), With<crate::inventory::Item>>,
+) {
+    for msg in moved.read() {
+        // Only log pickups for player movement
+        if player.get(msg.entity).is_err() {
+            continue;
+        }
+        // Check if any item is at the destination position
+        for (item_name, _pos) in items_at_pos.iter() {
+            if *_pos == msg.to {
+                game_log.push(
+                    format!("You found a {}!", item_name.0),
+                    LogLevel::Info,
+                );
+            }
+        }
+    }
+}
+
 /// Register the move-blocked logging system.
 pub fn register_move_feedback(app: &mut bevy_app::App) {
     app.add_systems(
         bevy_app::Update,
-        log_move_blocked.in_set(crate::BdSet::ResultEmission),
+        (
+            log_move_blocked,
+            log_item_pickup,
+        ).in_set(crate::BdSet::ResultEmission),
     );
 }
 #[cfg(test)]
@@ -372,5 +440,44 @@ mod tests {
         let log = app.world().resource::<GameLog>();
         let has_blocked = log.iter().any(|e| e.message.contains("Blocked"));
         assert!(has_blocked, "Expected 'Blocked' in log");
+    }
+
+    #[test]
+    fn damage_is_logged_to_combat_channel() {
+        let mut app = test_app();
+        use crate::components::Name;
+        // Spawn a target that will take damage
+        let target = app.world_mut().spawn((
+            Name("Rat".into()),
+            Pools::new(vec![Pool::new(PoolKind::Health, 10, 0, 10)]),
+        )).id();
+        // Deal 5 damage
+        send_delta(&mut app, target, PoolKind::Health, -5);
+        app.update();
+
+        let log = app.world().resource::<GameLog>();
+        let has_damage = log.iter().any(|e| e.message.contains("5") && e.message.contains("Rat"));
+        assert!(has_damage, "Damage log should contain amount and target name, got: {:?}",
+            log.iter().map(|e| &e.message).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn defeat_is_logged_to_combat_channel() {
+        let mut app = test_app();
+        use crate::components::Name;
+        // Spawn enemy with Name and minimal Health
+        let e = app.world_mut().spawn((
+            Name("Rat".into()),
+            Pools::new(vec![Pool::new(PoolKind::Health, 1, 0, 5)]),
+        )).id();
+        // Deal lethal damage
+        send_delta(&mut app, e, PoolKind::Health, -5);
+        app.update();
+        let log = app.world().resource::<GameLog>();
+        let has_defeat = log.iter().any(|e| e.message.contains("Rat") && e.message.contains("defeated"));
+        assert!(has_defeat, "Defeat log should mention 'Rat' and 'defeated', got: {:?}",
+            log.iter().map(|e| &e.message).collect::<Vec<_>>());
+        // Entity should be despawned
+        assert!(!app.world().entities().contains(e), "Entity should be despawned after defeat");
     }
 }
