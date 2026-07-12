@@ -7,7 +7,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use bevy_app::{PanicHandlerPlugin, ScheduleRunnerPlugin, Startup};
-use bevy_ecs::system::{Commands, ResMut};
+use bevy_ecs::system::{Commands, Res, ResMut};
 
 use bd_core::components::Position;
 use bd_core::factory::{BlueprintRegistry, spawn_from_blueprint};
@@ -79,8 +79,11 @@ fn main() {
     // Override defaults with RON content at startup
     app.add_systems(Startup, apply_ron_content);
 
-    // Spawn player in outpost at startup (no dungeon yet)
-    app.add_systems(Startup, spawn_outpost_player);
+    // Spawn player when entering outpost mode (Startup + transitions)
+    app.add_systems(
+        bevy_app::Update,
+        spawn_outpost_player,
+    );
 
     app.run();
     tracing::info!("Broken Divinity Kernel exited cleanly");
@@ -129,7 +132,12 @@ fn apply_ron_content(
 fn spawn_outpost_player(
     mut commands: Commands,
     mut game_log: ResMut<GameLog>,
+    mode: Res<bd_core::spatial::GameMode>,
 ) {
+    // Only spawn when the game is in Outpost mode (not Title)
+    if *mode != bd_core::spatial::GameMode::Outpost {
+        return;
+    }
     let registry = BlueprintRegistry::phase18_defaults();
 
     // Spawn player in the center of the shelter

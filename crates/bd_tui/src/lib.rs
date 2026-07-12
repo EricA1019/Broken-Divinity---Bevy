@@ -117,7 +117,7 @@ fn map_input_to_intents(
     screen_state: Res<ScreenState>,
     mut screen_writer: MessageWriter<ScreenIntent>,
     mut transition_writer: MessageWriter<TransitionIntent>,
-    mode: Res<bd_core::spatial::GameMode>,
+    mut mode: ResMut<bd_core::spatial::GameMode>,
     mut game_log: ResMut<GameLog>,
     mut pending_station: ResMut<bd_core::colony::stations::PendingStationBuild>,
     mut pending_build_idx: Local<i8>,
@@ -127,12 +127,23 @@ fn map_input_to_intents(
 ) {
     use crossterm::event::KeyCode;
 
+    // If in Title mode, any key transitions to Outpost (no player needed yet)
+    if *mode == bd_core::spatial::GameMode::Title {
+        if messages.read().next().is_some() {
+            // Any key starts the game
+            *mode = bd_core::spatial::GameMode::Outpost;
+            screen_writer.write(ScreenIntent {
+                screen_id: "outpost".into(),
+            });
+        }
+        return;
+    }
+
     let Ok(player_entity) = player.single() else {
         return;
     };
 
     // Drain stale terminal input once on first frame.
-    // Must run here (not Startup) because Ratatui initializes raw mode later.
     if !*has_drained {
         *has_drained = true;
         while crossterm::event::poll(std::time::Duration::ZERO).unwrap_or(false) {

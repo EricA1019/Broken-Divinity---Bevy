@@ -23,8 +23,10 @@ use crate::{
 /// The current game mode — determines which systems and screens are active.
 #[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum GameMode {
-    /// The outpost/shelter — resource management, travel planning.
+    /// Title screen shown at launch before any gameplay.
     #[default]
+    Title,
+    /// The outpost/shelter — resource management, travel planning.
     Outpost,
     /// Travelling between locations (time passes, events possible).
     Travel,
@@ -172,6 +174,7 @@ pub fn process_transitions(
         *mode = msg.target;
 
         match msg.target {
+            GameMode::Title => {}
             GameMode::Outpost => {
                 game_log.push("You return to the outpost.", LogLevel::Info);
                 // Sync global map to shelter map so movement validation works
@@ -345,8 +348,8 @@ pub fn register_spatial(app: &mut App) {
     );
 
     app.add_systems(
-        bevy_app::Startup,
-        initialize_outpost,
+        bevy_app::Update,
+        initialize_outpost.in_set(crate::BdSet::IntentCollection),
     );
 
     tracing::info!("Spatial module registered");
@@ -363,6 +366,13 @@ mod tests {
     use super::*;
     use crate::components::Position;
     use crate::map::SmokeMap;
+
+    #[test]
+    fn title_screen_is_default_on_launch() {
+        let mode = GameMode::default();
+        assert_eq!(mode, GameMode::Title,
+            "Game should start in Title mode, got {:?}", mode);
+    }
 
     fn test_app() -> bevy_app::App {
         let mut app = bevy_app::App::new();

@@ -11,6 +11,45 @@ use bevy_ecs::prelude::*;
 /// Width percentage for the stats/info right-side panel.
 const STATS_PANEL_WIDTH_PCT: u16 = 28;
 
+/// HP percentage above which the value is shown in green (healthy).
+const HP_GREEN_THRESHOLD_PCT: i32 = 50;
+/// HP percentage below which the value is shown in yellow (wounded).
+const HP_YELLOW_THRESHOLD_PCT: i32 = 25;
+/// Above this ratio HP is green, below it yellow, below HP_YELLOW_THRESHOLD it's red.
+fn hp_color(current: i32, max: i32) -> ratatui::style::Color {
+    if max <= 0 {
+        return ratatui::style::Color::Red;
+    }
+    let pct = (current * 100) / max;
+    if pct >= HP_GREEN_THRESHOLD_PCT {
+        ratatui::style::Color::Green
+    } else if pct >= HP_YELLOW_THRESHOLD_PCT {
+        ratatui::style::Color::Yellow
+    } else {
+        ratatui::style::Color::Red
+    }
+}
+
+/// AP color: cyan when full, blue otherwise.
+fn ap_color(current: i32, max: i32) -> ratatui::style::Color {
+    if max > 0 && current >= max {
+        ACCENT_COLOR
+    } else {
+        ratatui::style::Color::Blue
+    }
+}
+
+// ── UI color constants ──
+
+/// Panel border color.
+const BORDER_COLOR: ratatui::style::Color = ratatui::style::Color::Gray;
+/// Default panel text color.
+const TEXT_COLOR: ratatui::style::Color = ratatui::style::Color::White;
+/// Secondary/muted text color.
+const MUTED_COLOR: ratatui::style::Color = ratatui::style::Color::DarkGray;
+/// Highlight/accent color (labels, active items).
+const ACCENT_COLOR: ratatui::style::Color = ratatui::style::Color::Cyan;
+
 use ratatui::{
     layout::Rect,
     Frame,
@@ -171,7 +210,7 @@ pub struct ScreenState {
 impl Default for ScreenState {
     fn default() -> Self {
         Self {
-            current: "outpost".into(),
+            current: "title".into(),
         }
     }
 }
@@ -183,6 +222,18 @@ impl Default for ScreenState {
 /// Build the two canonical screen definitions: combat and inventory.
 pub fn default_screen_registry() -> ScreenRegistry {
     let mut reg = ScreenRegistry::new();
+
+    // Title screen: splash shown at launch
+    reg.register(ScreenDefinition {
+        id: "title".into(),
+        panels: vec![
+            PanelDefinition {
+                id: "title_splash".into(),
+                layout: PanelLayout::Main,
+                view_model: "StatsViewModel".into(),
+            },
+        ],
+    });
 
     // Combat screen: map + stats | log + actions
     reg.register(ScreenDefinition {
@@ -345,9 +396,45 @@ pub fn default_screen_registry() -> ScreenRegistry {
 }
 
 /// Build the default widget registry with all known renderers.
+/// Render the title screen splash.
+fn render_title_splash_widget(frame: &mut Frame, area: Rect, _ctx: &WidgetRenderContext) {
+    let title = r#"  ____             _      ___     _ _            _   _
+ | __ ) _ __ ___  | | __ |_ _|_ _(_) |_ ___  _ _| |_(_)_ __   __ _
+ |  _ \| '__/ _ \| |/ /   | || '__| | __/ _ \| / /  _| | '  \ / _` |
+ | |_) | | | (_) |   <   | || |  | | || (_) |   \| |_| | | | | (_| |
+ |_.__/|_|  \___/|_|\_\ |___|_|  |_|\__\___/|_|\_\__|_|_| |_|\__, |
+                                                               |___/"#;
+    let text = vec![
+        ratatui::text::Line::from(""),
+        ratatui::text::Line::styled(
+            title,
+            ratatui::style::Style::default().fg(ACCENT_COLOR).add_modifier(ratatui::style::Modifier::BOLD),
+        ),
+        ratatui::text::Line::from(""),
+        ratatui::text::Line::styled(
+            format!("  Kernel v{}  ", env!("CARGO_PKG_VERSION")),
+            ratatui::style::Style::default().fg(MUTED_COLOR),
+        ),
+        ratatui::text::Line::from(""),
+        ratatui::text::Line::styled(
+            "  Press any key to begin",
+            ratatui::style::Style::default().fg(ACCENT_COLOR),
+        ),
+    ];
+    let para = ratatui::widgets::Paragraph::new(text)
+        .alignment(ratatui::layout::Alignment::Center)
+        .wrap(ratatui::widgets::Wrap { trim: false });
+    frame.render_widget(para, area);
+}
+
 pub fn default_widget_registry() -> WidgetRegistry {
     let mut reg = WidgetRegistry::new();
 
+    reg.register(WidgetBinding {
+        panel_id: "title_splash".into(),
+        view_model: "StatsViewModel".into(),
+        render: Box::new(render_title_splash_widget),
+    });
     reg.register(WidgetBinding {
         panel_id: "map".into(),
         view_model: "MapViewModel".into(),
@@ -591,7 +678,7 @@ fn render_stats_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext)
             ratatui::text::Span::styled("HP: ", ratatui::style::Style::default().fg(ratatui::style::Color::Gray)),
             ratatui::text::Span::styled(
                 format!("{}/{}", ctx.stats.hp_current, ctx.stats.hp_max),
-                ratatui::style::Style::default().fg(ratatui::style::Color::Red),
+                ratatui::style::Style::default().fg(hp_color(ctx.stats.hp_current, ctx.stats.hp_max)),
             ),
         ]),
         ratatui::text::Line::from(""),
@@ -599,7 +686,7 @@ fn render_stats_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext)
             ratatui::text::Span::styled("AP: ", ratatui::style::Style::default().fg(ratatui::style::Color::Gray)),
             ratatui::text::Span::styled(
                 format!("{}/{}", ctx.stats.ap_current, ctx.stats.ap_max),
-                ratatui::style::Style::default().fg(ratatui::style::Color::Blue),
+                ratatui::style::Style::default().fg(ap_color(ctx.stats.ap_current, ctx.stats.ap_max)),
             ),
         ]),
         ratatui::text::Line::from(""),
@@ -609,12 +696,12 @@ fn render_stats_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext)
         ),
         ratatui::text::Line::styled(
             format!("Faith: {}", ctx.stats.faith),
-            ratatui::style::Style::default().fg(ratatui::style::Color::Cyan),
+            ratatui::style::Style::default().fg(ACCENT_COLOR),
         ),
         ratatui::text::Line::from(""),
         ratatui::text::Line::styled(
             format!("Day: {}", ctx.stats.day),
-            ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray),
+            ratatui::style::Style::default().fg(MUTED_COLOR),
         ),
     ];
 
@@ -673,7 +760,7 @@ fn render_actions_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContex
             let key_style = if a.enabled {
                 ratatui::style::Style::default().fg(ratatui::style::Color::Yellow)
             } else {
-                ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray)
+                ratatui::style::Style::default().fg(MUTED_COLOR)
             };
             let mut parts = vec![
                 ratatui::text::Span::styled(format!("{} ", a.key_hint), key_style),
@@ -737,7 +824,7 @@ fn render_equipment_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderCont
         .map(|item| {
             ratatui::text::Line::styled(
                 format!(" {}", item.name),
-                ratatui::style::Style::default().fg(ratatui::style::Color::Cyan),
+                ratatui::style::Style::default().fg(ACCENT_COLOR),
             )
         })
         .collect();
@@ -858,7 +945,7 @@ fn render_outpost_party_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRender
     let lines: Vec<ratatui::text::Line> = if ctx.stats.party_names.is_empty() {
         vec![ratatui::text::Line::styled(
             " (empty)",
-            ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray),
+            ratatui::style::Style::default().fg(MUTED_COLOR),
         )]
     } else {
         ctx.stats.party_names.iter().map(|name| {
@@ -887,19 +974,19 @@ fn render_outpost_travel_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRende
             ratatui::text::Line::from(""),
             ratatui::text::Line::styled(
                 " Press 't' to travel to a dungeon.",
-                ratatui::style::Style::default().fg(ratatui::style::Color::Cyan),
+                ratatui::style::Style::default().fg(ACCENT_COLOR),
             ),
             ratatui::text::Line::from(""),
             ratatui::text::Line::styled(
                 " Press 'i' to view inventory.",
-                ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray),
+                ratatui::style::Style::default().fg(MUTED_COLOR),
             ),
         ]
     } else {
         let mut lines = vec![
             ratatui::text::Line::styled(
                 " Reachable locations:",
-                ratatui::style::Style::default().fg(ratatui::style::Color::Cyan),
+                ratatui::style::Style::default().fg(ACCENT_COLOR),
             ),
             ratatui::text::Line::from(""),
         ];
@@ -915,7 +1002,7 @@ fn render_outpost_travel_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRende
         lines.push(
             ratatui::text::Line::styled(
                 " Press 't' to travel | 'i' inventory",
-                ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray),
+                ratatui::style::Style::default().fg(MUTED_COLOR),
             ),
         );
         lines
@@ -933,7 +1020,7 @@ fn render_help_keys_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderCont
     let block = ratatui::widgets::Block::default()
         .title(" Help ")
         .borders(ratatui::widgets::Borders::ALL)
-        .style(ratatui::style::Style::default().fg(ratatui::style::Color::Cyan));
+        .style(ratatui::style::Style::default().fg(ACCENT_COLOR));
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -941,7 +1028,7 @@ fn render_help_keys_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderCont
         ratatui::text::Line::from(""),
         ratatui::text::Line::styled(
             " Keybindings:",
-            ratatui::style::Style::default().fg(ratatui::style::Color::Cyan).add_modifier(ratatui::style::Modifier::BOLD),
+            ratatui::style::Style::default().fg(ACCENT_COLOR).add_modifier(ratatui::style::Modifier::BOLD),
         ),
         ratatui::text::Line::from(""),
     ];
@@ -955,7 +1042,7 @@ fn render_help_keys_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderCont
     lines.push(ratatui::text::Line::from(""));
     lines.push(ratatui::text::Line::styled(
         " Press '?' or Esc to close",
-        ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray),
+        ratatui::style::Style::default().fg(MUTED_COLOR),
     ));
 
     let para = ratatui::widgets::Paragraph::new(lines);
@@ -1118,6 +1205,15 @@ mod tests {
         let result = validate_screens(&screens, &empty_widgets);
         assert!(!result.valid);
         assert!(result.errors.iter().any(|e| e.contains("no widget registered")));
+    }
+
+    #[test]
+    fn hp_color_changes_with_threshold() {
+        // Verify color constants are reasonable
+        assert!(HP_GREEN_THRESHOLD_PCT > 0, "HP_GREEN_THRESHOLD_PCT should be positive");
+        assert!(HP_YELLOW_THRESHOLD_PCT > 0, "HP_YELLOW_THRESHOLD_PCT should be positive");
+        assert!(HP_GREEN_THRESHOLD_PCT > HP_YELLOW_THRESHOLD_PCT,
+            "HP_GREEN_THRESHOLD_PCT should be above HP_YELLOW_THRESHOLD_PCT");
     }
 
     #[test]
