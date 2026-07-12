@@ -41,7 +41,7 @@ use screens::{
 };
 use theme::ThemeRegistry;
 use view_models::{
-    ActionListViewModel, ContainerViewModel, EventViewModel, LogViewModel, MapViewModel,
+    ActionListViewModel, ContainerViewModel, EventViewModel, HelpViewModel, LogViewModel, MapViewModel,
     StatsViewModel,
 };
 use visual::SymbolRegistry;
@@ -114,6 +114,7 @@ fn map_input_to_intents(
     survivors: Query<(Entity, &Position), With<bd_core::colony::survivors::Survivor>>,
     player_pos: Query<&Position, With<Player>>,
     mut action_writer: MessageWriter<ActionIntent>,
+    screen_state: Res<ScreenState>,
     mut screen_writer: MessageWriter<ScreenIntent>,
     mut transition_writer: MessageWriter<TransitionIntent>,
     mode: Res<bd_core::spatial::GameMode>,
@@ -289,6 +290,19 @@ fn map_input_to_intents(
                 });
             }
 
+
+            // Toggle help screen
+            KeyCode::Char('?') => {
+                if screen_state.current == "help" {
+                    screen_writer.write(ScreenIntent {
+                        screen_id: "combat".into(),
+                    });
+                } else {
+                    screen_writer.write(ScreenIntent {
+                        screen_id: "help".into(),
+                    });
+                }
+            }
             // Travel to dungeon (outpost → tactical)
             KeyCode::Char('t') => {
                 let target = if *mode == bd_core::spatial::GameMode::Outpost {
@@ -393,6 +407,7 @@ fn draw_ui(
     action_vm: Res<ActionListViewModel>,
     container_vm: Res<ContainerViewModel>,
     event_vm: Res<EventViewModel>,
+    help_vm: Res<HelpViewModel>,
     symbols: Res<SymbolRegistry>,
     theme: Res<ThemeRegistry>,
     help: Res<HelpLine>,
@@ -415,6 +430,7 @@ fn draw_ui(
             actions: &action_vm,
             container: &container_vm,
             event: &event_vm,
+            help: &help_vm,
             symbols: &symbols,
             theme: &theme,
             travel_map: &travel_map,

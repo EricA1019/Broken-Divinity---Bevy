@@ -88,6 +88,31 @@ pub struct ItemEntryVm {
 
 // ── Event view model ──
 
+#[derive(Resource, Debug, Clone)]
+pub struct HelpViewModel {
+    pub keys: Vec<(String, String)>,
+}
+
+impl Default for HelpViewModel {
+    fn default() -> Self {
+        Self {
+            keys: vec![
+                ("WASD".into(), "Move".into()),
+                (".".into(), "Wait (restore 1 AP)".into()),
+                ("f".into(), "Attack nearest enemy".into()),
+                ("g".into(), "Guard (reduce damage)".into()),
+                ("t".into(), "Travel to dungeon".into()),
+                ("r".into(), "Return to outpost".into()),
+                ("i".into(), "Toggle inventory".into()),
+                ("b".into(), "Build / cycle station".into()),
+                ("a".into(), "Assign survivor task".into()),
+                ("?".into(), "Toggle help".into()),
+                ("Esc / q".into(), "Cancel build / Quit".into()),
+            ],
+        }
+    }
+}
+
 #[derive(Resource, Debug, Clone, Default)]
 pub struct EventViewModel {
     pub speaker: String,
@@ -103,6 +128,7 @@ pub(crate) fn register_view_models(app: &mut App) {
     app.insert_resource(MapViewModel::default());
     app.insert_resource(ActorPanelViewModel::default());
     app.insert_resource(ContainerViewModel::default());
+    app.insert_resource(HelpViewModel::default());
     app.insert_resource(EventViewModel::default());
     app.add_systems(
         bevy_app::Update,

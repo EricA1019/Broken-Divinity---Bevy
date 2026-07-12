@@ -20,7 +20,7 @@ use super::{
     render_grid::RenderCellGrid,
     theme::ThemeRegistry,
     view_models::{
-        ActionListViewModel, ContainerViewModel, EventViewModel, LogViewModel, MapViewModel,
+        ActionListViewModel, ContainerViewModel, EventViewModel, HelpViewModel, LogViewModel, MapViewModel,
         StatsViewModel,
     },
     visual::{SymbolRegistry, VisualToken},
@@ -79,6 +79,7 @@ pub struct WidgetRenderContext<'a> {
     pub actions: &'a ActionListViewModel,
     pub container: &'a ContainerViewModel,
     pub event: &'a EventViewModel,
+    pub help: &'a HelpViewModel,
     pub symbols: &'a SymbolRegistry,
     pub theme: &'a ThemeRegistry,
     pub travel_map: &'a bd_core::spatial::TravelMap,
@@ -296,6 +297,28 @@ pub fn default_screen_registry() -> ScreenRegistry {
         ],
     });
 
+    // Help screen: keybindings overlay
+    reg.register(ScreenDefinition {
+        id: "help".into(),
+        panels: vec![
+            PanelDefinition {
+                id: "help_keys".into(),
+                layout: PanelLayout::Main,
+                view_model: "HelpViewModel".into(),
+            },
+            PanelDefinition {
+                id: "stats".into(),
+                layout: PanelLayout::Right { width_pct: STATS_PANEL_WIDTH_PCT },
+                view_model: "StatsViewModel".into(),
+            },
+            PanelDefinition {
+                id: "log".into(),
+                layout: PanelLayout::Bottom { height_pct: 15 },
+                view_model: "LogViewModel".into(),
+            },
+        ],
+    });
+
     // Debug screen: signal trace viewer + entity info
     reg.register(ScreenDefinition {
         id: "debug".into(),
@@ -379,6 +402,11 @@ pub fn default_widget_registry() -> WidgetRegistry {
         panel_id: "event_choices".into(),
         view_model: "EventViewModel".into(),
         render: Box::new(render_event_choices_widget),
+    });
+    reg.register(WidgetBinding {
+        panel_id: "help_keys".into(),
+        view_model: "HelpViewModel".into(),
+        render: Box::new(render_help_keys_widget),
     });
 
     reg
@@ -901,6 +929,39 @@ fn render_outpost_travel_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRende
 // Debug widget renderers
 // ---------------------------------------------------------------------------
 
+fn render_help_keys_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
+    let block = ratatui::widgets::Block::default()
+        .title(" Help ")
+        .borders(ratatui::widgets::Borders::ALL)
+        .style(ratatui::style::Style::default().fg(ratatui::style::Color::Cyan));
+    let inner = block.inner(area);
+    frame.render_widget(block, area);
+
+    let mut lines: Vec<ratatui::text::Line> = vec![
+        ratatui::text::Line::from(""),
+        ratatui::text::Line::styled(
+            " Keybindings:",
+            ratatui::style::Style::default().fg(ratatui::style::Color::Cyan).add_modifier(ratatui::style::Modifier::BOLD),
+        ),
+        ratatui::text::Line::from(""),
+    ];
+    for (key, action) in &ctx.help.keys {
+        let k = format!("  {key:7} → {action}");
+        lines.push(ratatui::text::Line::styled(
+            k,
+            ratatui::style::Style::default().fg(ratatui::style::Color::White),
+        ));
+    }
+    lines.push(ratatui::text::Line::from(""));
+    lines.push(ratatui::text::Line::styled(
+        " Press '?' or Esc to close",
+        ratatui::style::Style::default().fg(ratatui::style::Color::DarkGray),
+    ));
+
+    let para = ratatui::widgets::Paragraph::new(lines);
+    frame.render_widget(para, inner);
+}
+
 fn render_debug_trace_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
     let block = ratatui::widgets::Block::default()
         .title(" Signal Trace (F1: toggle) ")
@@ -981,6 +1042,18 @@ mod tests {
         let has_panel = registry.get("outpost").unwrap().panels.iter().any(|p| p.id == "outpost_travel");
         // The panel exists; rendering logic is verified in render tests
         assert!(has_panel, "Travel panel should be registered in combat screen");
+    }
+
+    #[test]
+    fn help_screen_displays_keybindings() {
+        let registry = default_screen_registry();
+        let help = registry.get("help");
+        assert!(help.is_some(), "Help screen should be registered");
+        let def = help.unwrap();
+        assert_eq!(def.id, "help");
+        // Should contain keybindings
+        let panel_ids: Vec<&str> = def.panels.iter().map(|p| p.id.as_str()).collect();
+        assert!(panel_ids.contains(&"help_keys"), "Help screen should have help_keys panel");
     }
 
     #[test]
