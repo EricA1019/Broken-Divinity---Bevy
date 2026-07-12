@@ -62,6 +62,31 @@ impl RenderCellGrid {
         }
     }
 
+    /// Set a cell with an explicit glyph character, bypassing token lookup.
+    /// Used for enemy type glyphs (r, S, B) and other contextual symbols.
+    pub fn set_glyph(
+        &mut self,
+        x: u16,
+        y: u16,
+        glyph: char,
+        token: VisualToken,
+        symbols: &SymbolRegistry,
+        theme: &ThemeRegistry,
+    ) {
+        if x >= self.width || y >= self.height {
+            return;
+        }
+        let mut cell = make_cell(token, symbols, theme);
+        cell.glyph = glyph;
+        let idx = (y * self.width + x) as usize;
+        let existing = &self.cells[idx];
+        if cell.layer > existing.layer
+            || (cell.layer == existing.layer && cell.priority > existing.priority)
+        {
+            self.cells[idx] = cell;
+        }
+    }
+
     pub fn get(&self, x: u16, y: u16) -> Option<&RenderCell> {
         if x >= self.width || y >= self.height {
             return None;

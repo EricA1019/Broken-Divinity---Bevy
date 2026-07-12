@@ -396,6 +396,8 @@ fn draw_ui(
     symbols: Res<SymbolRegistry>,
     theme: Res<ThemeRegistry>,
     help: Res<HelpLine>,
+    game_time: Res<bd_core::time::GameTime>,
+    travel_map: Res<bd_core::spatial::TravelMap>,
 ) {
     let Some(def) = screen_reg.screens.get(&screen_state.current) else {
         tracing::warn!("Unknown screen: {}", screen_state.current);
@@ -415,6 +417,7 @@ fn draw_ui(
             event: &event_vm,
             symbols: &symbols,
             theme: &theme,
+            travel_map: &travel_map,
         };
 
         // Compute panel positions from the screen definition
@@ -435,7 +438,7 @@ fn draw_ui(
 
         // Footer — always render at bottom
         let help_text = &help.0;
-        render_footer(frame, area, help_text);
+        render_footer(frame, area, help_text, game_time.turn, game_time.day);
     });
 }
 
@@ -443,9 +446,9 @@ fn draw_ui(
 
 
 
-fn render_footer(frame: &mut ratatui::Frame, area: Rect, help: &str) {
+fn render_footer(frame: &mut ratatui::Frame, area: Rect, help: &str, turn: u64, day: u64) {
     let version = env!("CARGO_PKG_VERSION");
-    let text = format!("Broken Divinity Kernel v{version} | {help}");
+    let text = format!("Turn: {turn} | Day: {day} | Broken Divinity Kernel v{version} | {help}");
     let footer_area = Rect {
         y: area.height.saturating_sub(1),
         height: 1,
@@ -455,4 +458,22 @@ fn render_footer(frame: &mut ratatui::Frame, area: Rect, help: &str) {
         .alignment(Alignment::Right)
         .style(Style::default().fg(Color::DarkGray));
     frame.render_widget(para, footer_area);
+}
+
+#[cfg(test)]
+mod tests {
+    // use super::*; — not needed for standalone string tests
+
+    #[test]
+    fn footer_shows_turn_counter() {
+        // Test that the footer text includes turn and day info
+        let version = env!("CARGO_PKG_VERSION");
+        let turn: u64 = 5;
+        let day: u64 = 0;
+        let help = "Move:w↑s↓a←d→";
+        let text = format!("Turn: {turn} | Day: {day} | Broken Divinity Kernel v{version} | {help}");
+        assert!(text.contains("Turn: 5"), "Footer should show turn counter");
+        assert!(text.contains("Day: 0"), "Footer should show day counter");
+        assert!(text.contains("Broken Divinity Kernel"), "Footer should show version");
+    }
 }

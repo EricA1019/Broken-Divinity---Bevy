@@ -61,6 +61,9 @@ pub struct MapViewModel {
     pub tiles: Vec<Tile>,
     pub player_pos: Option<Position>,
     pub enemy_positions: Vec<Position>,
+    /// Per-enemy glyph characters at corresponding indices to enemy_positions.
+    /// When empty, all enemies render as default 'E'.
+    pub enemy_glyphs: Vec<(Position, char)>,
 }
 
 #[derive(Resource, Debug, Clone, Default)]
@@ -210,7 +213,7 @@ fn build_action_list_vm(
 fn build_map_vm(
     map: Res<SmokeMap>,
     player_pos: Query<&Position, With<Player>>,
-    enemies: Query<&Position, (With<BlocksMovement>, Without<Player>)>,
+    enemies: Query<(&Position, Option<&bd_core::components::Name>), (With<BlocksMovement>, Without<Player>)>,
     mut vm: ResMut<MapViewModel>,
     mode: Res<bd_core::spatial::GameMode>,
     outpost: Res<bd_core::spatial::OutpostState>,
@@ -231,7 +234,18 @@ fn build_map_vm(
         }
     }
     vm.player_pos = player_pos.single().ok().copied();
-    vm.enemy_positions = enemies.iter().copied().collect();
+    vm.enemy_positions.clear();
+    vm.enemy_glyphs.clear();
+    for (pos, name) in enemies.iter() {
+        vm.enemy_positions.push(*pos);
+        let glyph = name.map_or('E', |n| match n.0.as_str() {
+            "Rat" => 'r',
+            "Skeleton" => 'S',
+            "Boss" => 'B',
+            _ => 'E',
+        });
+        vm.enemy_glyphs.push((*pos, glyph));
+    }
 }
 
 /// Build the inventory container view model for the player.
@@ -416,5 +430,45 @@ mod tests {
         assert!(!actions.actions.is_empty());
         let map = app.world().resource::<MapViewModel>();
         assert!(map.width > 0);
+    }
+
+    #[test]
+    fn enemy_glyph_maps_by_name() {
+        let mut app = test_app();
+        // Spawn a Rat enemy at (3,3)
+        let _rat = app.world_mut().spawn((
+            Position { x: 3, y: 3 },
+            bd_core::components::BlocksMovement,
+            bd_core::components::Name("Rat".into()),
+        )).id();
+        // Spawn a Skeleton at (5,5)
+        let _skeleton = app.world_mut().spawn((
+            Position { x: 5, y: 5 },
+            bd_core::components::BlocksMovement,
+            bd_core::components::Name("Skeleton".into()),
+        )).id();
+        // Spawn an unnamed enemy at (7,7)
+        let _unknown = app.world_mut().spawn((
+            Position { x: 7, y: 7 },
+            bd_core::components::BlocksMovement,
+        )).id();
+
+        // Ensure map resource is set (test_app may have left default)
+        app.world_mut().insert_resource(SmokeMap::new(10, 10, Tile::Floor));
+
+        app.update();
+
+        let vm = app.world().resource::<MapViewModel>();
+        assert_eq!(vm.enemy_positions.len(), 3,
+            "Should find 3 enemy positions, got {:?}", vm.enemy_positions);
+        // Find the glyph for the Rat at (3,3)
+        let rat_glyph = vm.enemy_glyphs.iter().find(|(p, _)| p.x == 3 && p.y == 3).map(|(_, g)| *g);
+        assert_eq!(rat_glyph, Some('r'), "Rat should map to glyph 'r'");
+        // Find the glyph for the Skeleton at (5,5)
+        let skel_glyph = vm.enemy_glyphs.iter().find(|(p, _)| p.x == 5 && p.y == 5).map(|(_, g)| *g);
+        assert_eq!(skel_glyph, Some('S'), "Skeleton should map to glyph 'S'");
+        // Unknown enemy should be 'E'
+        let unknown_glyph = vm.enemy_glyphs.iter().find(|(p, _)| p.x == 7 && p.y == 7).map(|(_, g)| *g);
+        assert_eq!(unknown_glyph, Some('E'), "Unknown enemy should default to 'E'");
     }
 }
