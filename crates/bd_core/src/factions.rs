@@ -51,8 +51,8 @@ impl FactionReputation {
 /// For now: stub that only accepts direct delta requests.
 /// Phase 2: observe dialogue choices, combat outcomes, raid results.
 pub fn process_faction_events(
-    mut rep: ResMut<FactionReputation>,
-    mut game_log: ResMut<crate::gamelog::GameLog>,
+    _rep: ResMut<FactionReputation>,
+    _game_log: ResMut<crate::gamelog::GameLog>,
 ) {
     // Stub: empty. Future: listen for EventSelected messages with faction effects.
 }

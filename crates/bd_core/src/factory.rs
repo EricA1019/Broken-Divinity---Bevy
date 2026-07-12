@@ -343,4 +343,24 @@ mod tests {
         };
         assert_eq!(bp.visual, Some("Enemy".into()));
     }
+
+    #[test]
+    fn player_starts_with_full_action_points() {
+        let mut app = test_app();
+        let reg = BlueprintRegistry::phase18_defaults();
+        let bp = reg.get("blueprint.player").unwrap();
+        let e = spawn_from_blueprint(
+            bp,
+            Some(Position { x: 10, y: 6 }),
+            &[],
+            &mut app.world_mut().commands(),
+        );
+        app.update();
+        let pools = app.world().get::<Pools>(e).unwrap();
+        let ap = pools.get(PoolKind::ActionPoints).unwrap();
+        assert_eq!(ap.current, ap.max,
+            "Player should start with full ActionPoints (max = {})", ap.max);
+        assert!(ap.current > 0,
+            "Player ActionPoints should be greater than 0 at start");
+    }
 }

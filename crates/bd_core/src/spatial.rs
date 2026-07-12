@@ -218,7 +218,7 @@ fn spawn_dungeon_location(
     map: &mut ResMut<SmokeMap>,
     player_query: &Query<Entity, With<Player>>,
 ) {
-    use crate::components::{BlocksMovement, ExitTile, Name, Player, Position, Tile};
+    use crate::components::{BlocksMovement, ExitTile, Name, Position, Tile};
     use crate::factory::{BlueprintRegistry, spawn_from_blueprint};
     use crate::map::SmokeMap;
     use crate::procgen::{LocationTemplate, generate_location};

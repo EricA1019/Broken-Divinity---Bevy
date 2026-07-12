@@ -9,11 +9,9 @@ use std::time::Duration;
 use bevy_app::{PanicHandlerPlugin, ScheduleRunnerPlugin, Startup};
 use bevy_ecs::system::{Commands, ResMut};
 
-use bd_core::components::{BlocksMovement, ExitTile, Name, Position};
+use bd_core::components::Position;
 use bd_core::factory::{BlueprintRegistry, spawn_from_blueprint};
 use bd_core::gamelog::{GameLog, LogLevel};
-use bd_core::map::SmokeMap;
-use bd_core::procgen::{LocationTemplate, generate_location};
 use bd_core::HelpLine;
 
 mod config;
@@ -23,8 +21,9 @@ fn main() {
     let args: Vec<String> = std::env::args().collect();
     let validate_only = args.iter().any(|a| a == "--validate" || a == "-v");
 
-    // Initialize tracing
+    // Initialize tracing — write to stderr so TUI stdout stays clean
     tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "bd=info".into()),

@@ -48,7 +48,6 @@ use visual::SymbolRegistry;
 
 /// TUI plugin — registers input mapping and render systems.
 pub struct BdTuiPlugin;
-
 impl Plugin for BdTuiPlugin {
     fn build(&self, app: &mut App) {
         app.insert_resource(SymbolRegistry::phase5_defaults());
@@ -117,11 +116,11 @@ fn map_input_to_intents(
     mut action_writer: MessageWriter<ActionIntent>,
     mut screen_writer: MessageWriter<ScreenIntent>,
     mut transition_writer: MessageWriter<TransitionIntent>,
-    mut exit: MessageWriter<bevy_app::AppExit>,
     mode: Res<bd_core::spatial::GameMode>,
     mut game_log: ResMut<GameLog>,
     mut pending_station: ResMut<bd_core::colony::stations::PendingStationBuild>,
     mut pending_build_idx: Local<i8>,
+    mut has_drained: Local<bool>,
     current_event: Res<bd_core::events::CurrentEvent>,
     mut event_writer: MessageWriter<bd_core::signals::EventSelected>,
 ) {
@@ -130,6 +129,15 @@ fn map_input_to_intents(
     let Ok(player_entity) = player.single() else {
         return;
     };
+
+    // Drain stale terminal input once on first frame.
+    // Must run here (not Startup) because Ratatui initializes raw mode later.
+    if !*has_drained {
+        *has_drained = true;
+        while crossterm::event::poll(std::time::Duration::ZERO).unwrap_or(false) {
+            let _ = crossterm::event::read();
+        }
+    }
 
     // If an event is active, only number keys for choices are handled
     if current_event.is_active() {
@@ -207,7 +215,23 @@ fn map_input_to_intents(
                 }
             }
             KeyCode::Char('a') | KeyCode::Left => {
-                if *pending_build_idx >= 0 {
+                // In outpost mode, 'a' assigns nearest survivor to task
+                if *mode == bd_core::spatial::GameMode::Outpost {
+                    if let Ok(player_pos) = player_pos.single() {
+                        let nearest = survivors.iter()
+                            .min_by_key(|(_, sp)| {
+                                ((player_pos.x - sp.x).abs() + (player_pos.y - sp.y).abs()) as u32
+                            });
+                        if let Some((survivor_entity, _)) = nearest {
+                            action_writer.write(ActionIntent {
+                                actor: player_entity,
+                                action_id: "ability.assign_task".into(),
+                                direction: None,
+                                target: Some(survivor_entity),
+                            });
+                        }
+                    }
+                } else if *pending_build_idx >= 0 {
                     *pending_build_idx = -1;
                     action_writer.write(ActionIntent {
                         actor: player_entity,
@@ -264,25 +288,7 @@ fn map_input_to_intents(
                     screen_id: "combat".into(),
                 });
             }
-            // Assign nearest survivor (outpost mode only)
-            KeyCode::Char('a') => {
-                if *mode == bd_core::spatial::GameMode::Outpost {
-                    if let Ok(player_pos) = player_pos.single() {
-                        let nearest = survivors.iter()
-                            .min_by_key(|(_, sp)| {
-                                ((player_pos.x - sp.x).abs() + (player_pos.y - sp.y).abs()) as u32
-                            });
-                        if let Some((survivor_entity, _)) = nearest {
-                            action_writer.write(ActionIntent {
-                                actor: player_entity,
-                                action_id: "ability.assign_task".into(),
-                                direction: None,
-                                target: Some(survivor_entity),
-                            });
-                        }
-                    }
-                }
-            }
+
             // Travel to dungeon (outpost → tactical)
             KeyCode::Char('t') => {
                 let target = if *mode == bd_core::spatial::GameMode::Outpost {
@@ -333,13 +339,27 @@ fn map_input_to_intents(
                 });
             }
             // Quit (or cancel pending build)
+            // Use process::exit to prevent buffered keystrokes leaking to shell
             KeyCode::Char('q') | KeyCode::Esc => {
                 if *pending_build_idx >= 0 {
                     *pending_build_idx = -1;
                     pending_station.0 = None;
                     game_log.push("Build cancelled.", LogLevel::Info);
                 } else {
-                    exit.write_default();
+                    // Restore terminal and flush output before exit
+                    use std::io::Write;
+                    use crossterm::terminal::{disable_raw_mode, LeaveAlternateScreen};
+                    use crossterm::ExecutableCommand;
+                    // Drain pending events
+                    while crossterm::event::poll(std::time::Duration::ZERO).unwrap_or(false) {
+                        let _ = crossterm::event::read();
+                    }
+                    // Restore terminal state
+                    let _ = std::io::stdout().execute(LeaveAlternateScreen);
+                    let _ = disable_raw_mode();
+                    // Flush stdout so the shell sees a clean terminal
+                    let _ = std::io::stdout().flush();
+                    std::process::exit(0);
                 }
             }
             _ => {}
