@@ -392,35 +392,94 @@ pub fn default_screen_registry() -> ScreenRegistry {
         ],
     });
 
+    // Game over screen: shown when player dies
+    reg.register(ScreenDefinition {
+        id: "game_over".into(),
+        panels: vec![
+            PanelDefinition {
+                id: "game_over_splash".into(),
+                layout: PanelLayout::Main,
+                view_model: "StatsViewModel".into(),
+            },
+        ],
+    });
+
     reg
 }
 
 /// Build the default widget registry with all known renderers.
+/// Render the game over screen splash.
+fn render_game_over_splash_widget(frame: &mut Frame, area: Rect, _ctx: &WidgetRenderContext) {
+    let title = r#"   ____                         ___                 
+  / ___| __ _ _ __ ___   ___   / _ \__   _____ _ __ 
+ | |  _ / _` | '_ ` _ \ / _ \ | | | \ \ / / _ \ '__|
+ | |_| | (_| | | | | | |  __/ | |_| |\ V /  __/ |   
+  \____|\__,_|_| |_| |_|\___|  \___/  \_/ \___|_|   
+"#;
+    let text = vec![
+        ratatui::text::Line::from(""),
+        ratatui::text::Line::styled(
+            title,
+            ratatui::style::Style::default().fg(ratatui::style::Color::Red).add_modifier(ratatui::style::Modifier::BOLD),
+        ),
+        ratatui::text::Line::from(""),
+        ratatui::text::Line::styled(
+            "  You have died.",
+            ratatui::style::Style::default().fg(MUTED_COLOR),
+        ),
+        ratatui::text::Line::from(""),
+        ratatui::text::Line::styled(
+            "  Press any key to quit",
+            ratatui::style::Style::default().fg(ACCENT_COLOR),
+        ),
+    ];
+    let para = ratatui::widgets::Paragraph::new(text)
+        .alignment(ratatui::layout::Alignment::Center)
+        .wrap(ratatui::widgets::Wrap { trim: false });
+    frame.render_widget(para, area);
+}
+
 /// Render the title screen splash.
 fn render_title_splash_widget(frame: &mut Frame, area: Rect, _ctx: &WidgetRenderContext) {
-    let title = r#"  ____             _      ___     _ _            _   _
+    let text: Vec<ratatui::text::Line> = if area.width < 50 || area.height < 12 {
+        // Terminal too small for ASCII art — show minimal message
+        vec![
+            ratatui::text::Line::from(""),
+            ratatui::text::Line::styled(
+                "Broken Divinity Kernel",
+                ratatui::style::Style::default().fg(ACCENT_COLOR).add_modifier(ratatui::style::Modifier::BOLD),
+            ),
+            ratatui::text::Line::from(""),
+            ratatui::text::Line::styled(
+                "  Press any key to begin",
+                ratatui::style::Style::default().fg(ACCENT_COLOR),
+            ),
+        ]
+    } else {
+        let title = r#"  ____             _      ___     _ _            _   _
  | __ ) _ __ ___  | | __ |_ _|_ _(_) |_ ___  _ _| |_(_)_ __   __ _
  |  _ \| '__/ _ \| |/ /   | || '__| | __/ _ \| / /  _| | '  \ / _` |
  | |_) | | | (_) |   <   | || |  | | || (_) |   \| |_| | | | | (_| |
  |_.__/|_|  \___/|_|\_\ |___|_|  |_|\__\___/|_|\_\__|_|_| |_|\__, |
                                                                |___/"#;
-    let text = vec![
-        ratatui::text::Line::from(""),
-        ratatui::text::Line::styled(
-            title,
-            ratatui::style::Style::default().fg(ACCENT_COLOR).add_modifier(ratatui::style::Modifier::BOLD),
-        ),
-        ratatui::text::Line::from(""),
-        ratatui::text::Line::styled(
-            format!("  Kernel v{}  ", env!("CARGO_PKG_VERSION")),
-            ratatui::style::Style::default().fg(MUTED_COLOR),
-        ),
-        ratatui::text::Line::from(""),
-        ratatui::text::Line::styled(
-            "  Press any key to begin",
-            ratatui::style::Style::default().fg(ACCENT_COLOR),
-        ),
-    ];
+        vec![
+            ratatui::text::Line::from(""),
+            ratatui::text::Line::styled(
+                title,
+                ratatui::style::Style::default().fg(ACCENT_COLOR).add_modifier(ratatui::style::Modifier::BOLD),
+            ),
+            ratatui::text::Line::from(""),
+            ratatui::text::Line::styled(
+                format!("  Kernel v{}  ", env!("CARGO_PKG_VERSION")),
+                ratatui::style::Style::default().fg(MUTED_COLOR),
+            ),
+            ratatui::text::Line::from(""),
+            ratatui::text::Line::styled(
+                "  Press any key to begin",
+                ratatui::style::Style::default().fg(ACCENT_COLOR),
+            ),
+        ]
+    };
     let para = ratatui::widgets::Paragraph::new(text)
         .alignment(ratatui::layout::Alignment::Center)
         .wrap(ratatui::widgets::Wrap { trim: false });
@@ -434,6 +493,11 @@ pub fn default_widget_registry() -> WidgetRegistry {
         panel_id: "title_splash".into(),
         view_model: "StatsViewModel".into(),
         render: Box::new(render_title_splash_widget),
+    });
+    reg.register(WidgetBinding {
+        panel_id: "game_over_splash".into(),
+        view_model: "StatsViewModel".into(),
+        render: Box::new(render_game_over_splash_widget),
     });
     reg.register(WidgetBinding {
         panel_id: "map".into(),

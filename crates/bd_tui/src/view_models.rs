@@ -1,6 +1,7 @@
 //! View models — plain data structs between ECS and rendering.
 
 use bevy_app::App;
+use serde::{Deserialize, Serialize};
 use bevy_ecs::{
     prelude::*,
     query::With,
@@ -88,7 +89,7 @@ pub struct ItemEntryVm {
 
 // ── Event view model ──
 
-#[derive(Resource, Debug, Clone)]
+#[derive(Resource, Debug, Clone, Serialize, Deserialize)]
 pub struct HelpViewModel {
     pub keys: Vec<(String, String)>,
 }

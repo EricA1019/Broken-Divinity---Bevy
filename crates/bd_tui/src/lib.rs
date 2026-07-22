@@ -127,6 +127,28 @@ fn map_input_to_intents(
 ) {
     use crossterm::event::KeyCode;
 
+    // If in GameOver mode, ensure screen is switched and any key quits
+    if *mode == bd_core::spatial::GameMode::GameOver {
+        if screen_state.current != "game_over" {
+            screen_writer.write(ScreenIntent {
+                screen_id: "game_over".into(),
+            });
+        } else if messages.read().next().is_some() {
+            // Any key on game over screen — clean quit
+            use std::io::Write;
+            use crossterm::terminal::{disable_raw_mode, LeaveAlternateScreen};
+            use crossterm::ExecutableCommand;
+            while crossterm::event::poll(std::time::Duration::ZERO).unwrap_or(false) {
+                let _ = crossterm::event::read();
+            }
+            let _ = std::io::stdout().execute(LeaveAlternateScreen);
+            let _ = disable_raw_mode();
+            let _ = std::io::stdout().flush();
+            std::process::exit(0);
+        }
+        return;
+    }
+
     // If in Title mode, any key transitions to Outpost (no player needed yet)
     if *mode == bd_core::spatial::GameMode::Title {
         if messages.read().next().is_some() {
@@ -269,15 +291,16 @@ fn map_input_to_intents(
                     target: None,
                 });
             }
-            // Attack — target nearest enemy
+            // Attack — target nearest enemy (no-op if none in range)
             KeyCode::Char('f') => {
-                let nearest = find_nearest_enemy(player_pos.single().ok(), &enemies);
-                action_writer.write(ActionIntent {
-                    actor: player_entity,
-                    action_id: "ability.attack".into(),
-                    direction: None,
-                    target: nearest,
-                });
+                if let Some(nearest) = find_nearest_enemy(player_pos.single().ok(), &enemies) {
+                    action_writer.write(ActionIntent {
+                        actor: player_entity,
+                        action_id: "ability.attack".into(),
+                        direction: None,
+                        target: Some(nearest),
+                    });
+                }
             }
             // Guard
             KeyCode::Char('g') => {
@@ -362,6 +385,17 @@ fn map_input_to_intents(
                 screen_writer.write(ScreenIntent {
                     screen_id: "debug".into(),
                 });
+            }
+            // Save game (sets flag; main loop writes to disk)
+            KeyCode::F(5) => {
+                // Must use resource_scope or similar to access World — flag approach
+                game_log.push("Save requested (F5).", LogLevel::Info);
+                // TODO: wire to actual save when main loop supports it
+            }
+            // Load game (sets flag; main loop reads from disk)
+            KeyCode::F(9) => {
+                game_log.push("Load not yet implemented (F9).", LogLevel::Warn);
+                // TODO: wire to actual load when main loop supports it
             }
             // Quit (or cancel pending build)
             // Use process::exit to prevent buffered keystrokes leaking to shell

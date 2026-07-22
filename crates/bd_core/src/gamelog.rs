@@ -19,7 +19,7 @@ pub struct LogEntry {
 }
 
 /// Ring buffer of recent log messages, newest first.
-#[derive(Resource, Debug, Clone)]
+#[derive(Resource, Debug, Clone, Serialize, Deserialize)]
 pub struct GameLog {
     entries: Vec<LogEntry>,
     max_entries: usize,

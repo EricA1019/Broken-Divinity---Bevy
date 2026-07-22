@@ -23,6 +23,15 @@ use crate::{
     trace::SignalTrace,
 };
 
+// ── Constants ──
+
+/// Base damage dealt by a basic melee attack.
+const ATTACK_DAMAGE_BASE: i32 = 5;
+/// Action Points consumed by a basic attack.
+const ATTACK_AP_COST: i32 = 1;
+/// Log message emitted on attack.
+const ATTACK_LOG: &str = "You attack!";
+
 // ── Action definition ──
 
 /// Unique identifier for an action.
@@ -145,25 +154,25 @@ impl ActionRegistry {
                     id: "ability.attack".into(),
                     label: "Attack".into(),
                     requirements: vec![
-                        Requirement::HasPoolAtLeast(PoolKind::ActionPoints, 1),
+                        Requirement::HasPoolAtLeast(PoolKind::ActionPoints, ATTACK_AP_COST),
                         Requirement::TargetExists,
                         Requirement::TargetHostile,
                         Requirement::TargetInRange(1),
                     ],
                     cost_effects: vec![Effect::PoolDelta {
                         kind: PoolKind::ActionPoints,
-                        amount: -1,
+                        amount: -ATTACK_AP_COST,
                         tags: vec![DeltaTag::Action],
                         reason: "attack cost".into(),
                     }],
                     effects: vec![
                         Effect::PoolDelta {
                             kind: PoolKind::Health,
-                            amount: -5,
+                            amount: -ATTACK_DAMAGE_BASE,
                             tags: vec![DeltaTag::Physical],
                             reason: "attack hit".into(),
                         },
-                        Effect::Log("You attack!".into(), LogLevel::Combat),
+                        Effect::Log(ATTACK_LOG.into(), LogLevel::Combat),
                     ],
                 },
                 ActionDefinition {
@@ -758,6 +767,31 @@ mod tests {
     }
 
     #[test]
+    fn attack_no_target_does_not_self_harm() {
+        let mut app = test_app();
+        app.world_mut()
+            .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
+        let p = spawn_player(&mut app, 5, 5);
+        // Send attack with no target — should be denied by TargetExists
+        send_action(&mut app, p, "ability.attack", None, None);
+        app.update();
+        // Player HP should be unchanged (no self-damage)
+        let hp = app
+            .world()
+            .get::<Pools>(p)
+            .unwrap()
+            .get(PoolKind::Health)
+            .unwrap()
+            .current;
+        assert_eq!(hp, 20, "attack with no target must not damage self");
+        // Game log should contain the denial hint
+        let log = app.world().resource::<GameLog>();
+        let has_denial = log.iter().any(|e| e.message.contains("No target"));
+        assert!(has_denial, "denial should log 'No target' hint, got: {:?}",
+            log.iter().map(|e| &e.message).collect::<Vec<_>>());
+    }
+
+    #[test]
     fn attack_denied_out_of_range() {
         let mut app = test_app();
         app.world_mut()
@@ -787,14 +821,23 @@ mod tests {
         send_action(&mut app, p, "ability.attack", None, Some(dummy));
         app.update();
         app.update(); // second frame to process pool deltas from action effects
-        let hp = app
+        // Damage goes to enemy, not self
+        let dummy_hp = app
             .world()
             .get::<Pools>(dummy)
             .unwrap()
             .get(PoolKind::Health)
             .unwrap()
             .current;
-        assert_eq!(hp, 5); // 10 - 5
+        assert_eq!(dummy_hp, 5, "dummy should take 5 damage (10 - {})", ATTACK_DAMAGE_BASE);
+        let player_hp = app
+            .world()
+            .get::<Pools>(p)
+            .unwrap()
+            .get(PoolKind::Health)
+            .unwrap()
+            .current;
+        assert_eq!(player_hp, 20, "player should NOT take self-damage");
     }
 
     #[test]

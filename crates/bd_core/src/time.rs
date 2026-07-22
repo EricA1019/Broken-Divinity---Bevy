@@ -7,6 +7,8 @@ use bevy_app::App;
 use bevy_ecs::prelude::*;
 use serde::{Deserialize, Serialize};
 
+
+
 use crate::BdSet;
 
 // ── Constants ──
@@ -17,7 +19,7 @@ pub const TURNS_PER_DAY: u64 = 24;
 // ── Resource ──
 
 /// Flag set when an action was processed this frame, cleared after time advance.
-#[derive(Resource, Debug, Default)]
+#[derive(Resource, Debug, Default, Serialize, Deserialize)]
 pub struct ShouldAdvanceTime(pub bool);
 
 /// Tracks the current game day and turn.

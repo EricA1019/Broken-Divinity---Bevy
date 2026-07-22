@@ -42,7 +42,7 @@ pub struct EventDefinition {
 // ── Registry (data-driven, mirrors ActionRegistry) ──
 
 /// Resource holding all event definitions.
-#[derive(Resource, Debug, Clone, Default)]
+#[derive(Resource, Debug, Clone, Default, Serialize, Deserialize)]
 pub struct EventRegistry {
     definitions: Vec<EventDefinition>,
 }
@@ -63,7 +63,7 @@ impl EventRegistry {
 ///
 /// Two fields: the TUI reads `EventRegistry` to render the node text/choices.
 /// No duplicated data — single source of truth.
-#[derive(Resource, Debug, Clone, Default)]
+#[derive(Resource, Debug, Clone, Default, Serialize, Deserialize)]
 pub struct CurrentEvent {
     pub event_id: String,
     pub node_id: String,

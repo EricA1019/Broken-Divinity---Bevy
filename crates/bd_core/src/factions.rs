@@ -3,6 +3,7 @@
 use std::collections::HashMap;
 
 use bevy_ecs::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use crate::signals::PoolKind;
 
@@ -20,7 +21,7 @@ pub const ALL_FACTIONS: &[PoolKind] = &[
 
 /// Resource tracking reputation with each faction.
 /// Map key: faction PoolKind, value: current reputation.
-#[derive(Resource, Debug, Clone)]
+#[derive(Resource, Debug, Clone, Serialize, Deserialize)]
 pub struct FactionReputation {
     pub values: HashMap<PoolKind, i32>,
 }

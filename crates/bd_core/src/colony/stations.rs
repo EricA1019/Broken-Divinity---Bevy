@@ -15,7 +15,7 @@ use crate::{
 
 /// Pending station type to build, set by TUI when cycling station types.
 /// Reset to `None` after the build action is processed.
-#[derive(Resource, Debug, Clone)]
+#[derive(Resource, Debug, Clone, Serialize, Deserialize)]
 pub struct PendingStationBuild(pub Option<StationType>);
 
 impl Default for PendingStationBuild {

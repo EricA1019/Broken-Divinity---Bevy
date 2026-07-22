@@ -21,7 +21,7 @@ use crate::{
 // ---------------------------------------------------------------------------
 
 /// The current game mode — determines which systems and screens are active.
-#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Resource, Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 pub enum GameMode {
     /// Title screen shown at launch before any gameplay.
     #[default]
@@ -32,6 +32,8 @@ pub enum GameMode {
     Travel,
     /// Active tactical combat in a procedurally generated location.
     Tactical,
+    /// Player has been defeated — game over screen shown.
+    GameOver,
 }
 
 // ---------------------------------------------------------------------------
@@ -81,7 +83,7 @@ impl Default for OutpostState {
 // ---------------------------------------------------------------------------
 
 /// A location on the travel map.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TravelNode {
     pub id: String,
     pub name: String,
@@ -90,7 +92,7 @@ pub struct TravelNode {
 }
 
 /// The travel map — a list of reachable locations from the outpost.
-#[derive(Resource, Debug, Clone)]
+#[derive(Resource, Debug, Clone, Serialize, Deserialize)]
 pub struct TravelMap {
     pub nodes: Vec<TravelNode>,
 }
@@ -192,6 +194,7 @@ pub fn process_transitions(
                     ow.current_node = msg.node_id.clone();
                 }
             }
+            GameMode::GameOver => {}
             GameMode::Tactical => {
                 let node_name = msg.node_id.as_deref().unwrap_or("the ruin");
                 game_log.push(

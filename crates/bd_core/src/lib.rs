@@ -28,6 +28,7 @@ pub mod factory;
 pub mod colony;
 pub mod combat;
 pub mod dialogue;
+pub mod enemy_ai;
 pub mod events;
 pub mod factions;
 use factions::register_factions;
@@ -200,6 +201,9 @@ impl Plugin for BdCorePlugin {
 
         // Register faction systems
     register_factions(app);
+
+    // Register enemy AI (process_enemy_turns in BdSet::Input)
+    enemy_ai::register_enemy_ai(app);
 
     // Register party actions
         app.world_mut()

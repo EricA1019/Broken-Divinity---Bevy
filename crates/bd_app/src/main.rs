@@ -7,9 +7,12 @@ use std::path::Path;
 use std::time::Duration;
 
 use bevy_app::{PanicHandlerPlugin, ScheduleRunnerPlugin, Startup};
-use bevy_ecs::system::{Commands, Res, ResMut};
+use bevy_ecs::schedule::IntoScheduleConfigs;
+use bevy_ecs::system::{Commands, Query, Res, ResMut};
 
-use bd_core::components::Position;
+use bevy_ecs::entity::Entity;
+use bevy_ecs::query::With;
+use bd_core::components::{Player, Position};
 use bd_core::factory::{BlueprintRegistry, spawn_from_blueprint};
 use bd_core::gamelog::{GameLog, LogLevel};
 use bd_core::HelpLine;
@@ -82,7 +85,7 @@ fn main() {
     // Spawn player when entering outpost mode (Startup + transitions)
     app.add_systems(
         bevy_app::Update,
-        spawn_outpost_player,
+        spawn_outpost_player.in_set(bd_core::BdSet::IntentCollection),
     );
 
     app.run();
@@ -133,11 +136,17 @@ fn spawn_outpost_player(
     mut commands: Commands,
     mut game_log: ResMut<GameLog>,
     mode: Res<bd_core::spatial::GameMode>,
+    player: Query<Entity, With<Player>>,
 ) {
     // Only spawn when the game is in Outpost mode (not Title)
     if *mode != bd_core::spatial::GameMode::Outpost {
         return;
     }
+    // Once-only guard — player already spawned
+    if !player.is_empty() {
+        return;
+    }
+
     let registry = BlueprintRegistry::phase18_defaults();
 
     // Spawn player in the center of the shelter
@@ -152,9 +161,6 @@ fn spawn_outpost_player(
     }
 
     // Grant initial colony supplies via ColonyResources
-    game_log.push("You survey the shelter. Survivors are gathering.", LogLevel::Info);
-    game_log.push("b: build | t: travel | i: inventory", LogLevel::Info);
-
     game_log.push("You survey the shelter. Survivors are gathering.", LogLevel::Info);
     game_log.push("b: build | a: assign | t: travel | i: inventory", LogLevel::Info);
 }

@@ -125,6 +125,25 @@ pub struct RunSnapshot {
 // Save/load operations
 // ---------------------------------------------------------------------------
 
+/// Default save directory: $XDG_DATA_HOME/broken-divinity or ~/.local/share/broken-divinity.
+pub fn default_save_dir() -> PathBuf {
+    let base = std::env::var("XDG_DATA_HOME")
+        .map(PathBuf::from)
+        .unwrap_or_else(|_| {
+            let home = std::env::var("HOME").unwrap_or_else(|_| ".".into());
+            PathBuf::from(home).join(".local").join("share")
+        });
+    base.join("broken-divinity")
+}
+
+/// Flag set when the TUI requests a save. Read by `bd_app` main loop to call save_world.
+#[derive(Resource, Debug, Default)]
+pub struct SaveRequest(pub bool);
+
+/// Flag set when the TUI requests a load. Read by `bd_app` main loop to call load_world.
+#[derive(Resource, Debug, Default)]
+pub struct LoadRequest(pub bool);
+
 /// Errors that can occur during save/load.
 #[derive(Debug)]
 pub enum SaveError {
@@ -489,6 +508,7 @@ impl IntentReplayLog {
 mod tests {
     use super::*;
     use crate::components::Tile;
+    use bevy_app::App;
     
     fn test_snapshot() -> RunSnapshot {
         RunSnapshot {
@@ -696,5 +716,55 @@ mod tests {
         let restored: IntentReplayLog = ron::de::from_str(&ron).unwrap();
         assert_eq!(restored.seed, 42);
         assert_eq!(restored.intents, vec!["move_north", "wait", "move_east"]);
+    }
+
+    #[test]
+    fn save_roundtrip_preserves_state() {
+        let mut app = App::new();
+        app.add_plugins(crate::BdCorePlugin);
+        app.world_mut().insert_resource(SmokeMap::new(10, 10, Tile::Floor));
+
+        let player = app.world_mut()
+            .spawn((
+                Player,
+                Position { x: 5, y: 5 },
+                Pools::new(vec![Pool::new(PoolKind::Health, 15, 0, 20)]),
+            ))
+            .id();
+
+        // Save current state
+        let save_dir = std::env::temp_dir().join("bd_roundtrip_test");
+        let saved_path = save_world(app.world_mut(), 42, 0, &save_dir).unwrap();
+
+        // Modify world state
+        app.world_mut().entity_mut(player).insert(Position { x: 10, y: 10 });
+        let mut pools_borrow = app.world_mut().get_mut::<Pools>(player).unwrap();
+        let hp = pools_borrow.get_mut(PoolKind::Health).unwrap();
+        hp.current = 5;
+        drop(pools_borrow);
+
+        // Load saved state (empty blueprints — player uses components directly)
+        let blueprints = HashMap::new();
+        let (mut loaded_world, _loaded_seed) = load_world(&saved_path, &blueprints).unwrap();
+
+        // Verify restored position — the saved world has exactly one entity (player)
+        let all_entities: Vec<Entity> = loaded_world.query::<Entity>()
+            .iter(&loaded_world)
+            .collect();
+        assert!(!all_entities.is_empty(), "loaded world should have entities");
+        let loaded_player = all_entities[0];
+        let loaded_pos = loaded_world.get::<Position>(loaded_player).unwrap();
+        assert_eq!(*loaded_pos, Position { x: 5, y: 5 },
+            "player position should be restored to saved state");
+        let loaded_hp = loaded_world.get::<Pools>(loaded_player)
+            .unwrap()
+            .get(PoolKind::Health)
+            .unwrap()
+            .current;
+        assert_eq!(loaded_hp, 15,
+            "player health should be restored to saved state");
+
+        // Cleanup
+        let _ = std::fs::remove_dir_all(&save_dir);
     }
 }

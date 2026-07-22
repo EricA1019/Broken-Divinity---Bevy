@@ -225,8 +225,28 @@ fn log_combat_damage(
 pub fn register_cleanup(app: &mut bevy_app::App) {
     app.add_systems(
         bevy_app::Update,
-        cleanup_defeated_entities.in_set(crate::BdSet::ResultEmission),
+        (
+            observe_player_defeat,
+            cleanup_defeated_entities,
+        )
+            .chain()
+            .in_set(crate::BdSet::ResultEmission),
     );
+}
+
+/// Observes EntityDefeated messages and switches to GameOver when the player dies.
+/// Runs before `cleanup_defeated_entities` (chained above) so the Player component
+/// is still readable before the entity is despawned.
+fn observe_player_defeat(
+    mut defeated: bevy_ecs::message::MessageReader<EntityDefeated>,
+    player: Query<(), With<crate::components::Player>>,
+    mut mode: ResMut<crate::spatial::GameMode>,
+) {
+    for msg in defeated.read() {
+        if player.get(msg.entity).is_ok() {
+            *mode = crate::spatial::GameMode::GameOver;
+        }
+    }
 }
 
 // ── Movement feedback ──
@@ -395,6 +415,26 @@ mod tests {
             .resource::<bevy_ecs::message::Messages<EntityDefeated>>()
             .len();
         assert_eq!(defeated_count, 0);
+    }
+
+    #[test]
+    fn player_defeat_triggers_game_over() {
+        let mut app = test_app();
+        let player = spawn_with_pools(&mut app, 2, 3); // HP=2
+        // Set a gameplay mode so the test isn't starting from Title
+        app.world_mut().insert_resource(crate::spatial::GameMode::Tactical);
+
+        // Deal fatal damage
+        send_delta(&mut app, player, PoolKind::Health, -10);
+
+        app.update();
+
+        // Player should be despawned and mode should be GameOver
+        assert!(!app.world().entities().contains(player),
+            "player should be despawned on defeat");
+        let mode = *app.world().resource::<crate::spatial::GameMode>();
+        assert_eq!(mode, crate::spatial::GameMode::GameOver,
+            "defeating the player should switch mode to GameOver");
     }
 
     #[test]
