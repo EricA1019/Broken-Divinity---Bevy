@@ -46,17 +46,14 @@ const MUTED_COLOR: ratatui::style::Color = ratatui::style::Color::DarkGray;
 /// Highlight/accent color (labels, active items).
 const ACCENT_COLOR: ratatui::style::Color = ratatui::style::Color::Cyan;
 
-use ratatui::{
-    layout::Rect,
-    Frame,
-};
+use ratatui::{Frame, layout::Rect};
 
 use super::{
     render_grid::RenderCellGrid,
     theme::ThemeRegistry,
     view_models::{
-        ActionListViewModel, ContainerViewModel, EventViewModel, HelpViewModel, LogViewModel, MapViewModel,
-        StatsViewModel,
+        ActionListViewModel, ContainerViewModel, EventViewModel, HelpViewModel, LogViewModel,
+        MapViewModel, StatsViewModel,
     },
     visual::{SymbolRegistry, VisualToken},
 };
@@ -117,14 +114,14 @@ pub struct WidgetRenderContext<'a> {
     pub help: &'a HelpViewModel,
     pub symbols: &'a SymbolRegistry,
     pub theme: &'a ThemeRegistry,
-    pub travel_ctx: &'a bd_core::overworld::TravelContext,
+    pub travel_ctx: Option<&'a bd_core::overworld::TravelContext>,
 }
 
 /// A registered widget knows its view-model dependency and how to render.
 pub struct WidgetBinding {
     pub panel_id: String,
     pub view_model: String,
-#[allow(clippy::type_complexity)]
+    #[allow(clippy::type_complexity)]
     pub render: Box<dyn Fn(&mut Frame, Rect, &WidgetRenderContext) + Send + Sync>,
 }
 
@@ -222,13 +219,11 @@ pub fn default_screen_registry() -> ScreenRegistry {
     // Title screen: splash shown at launch
     reg.register(ScreenDefinition {
         id: "title".into(),
-        panels: vec![
-            PanelDefinition {
-                id: "title_splash".into(),
-                layout: PanelLayout::Main,
-                view_model: "StatsViewModel".into(),
-            },
-        ],
+        panels: vec![PanelDefinition {
+            id: "title_splash".into(),
+            layout: PanelLayout::Main,
+            view_model: "StatsViewModel".into(),
+        }],
     });
 
     // Combat screen: map + stats | log + actions
@@ -237,7 +232,9 @@ pub fn default_screen_registry() -> ScreenRegistry {
         panels: vec![
             PanelDefinition {
                 id: "stats".into(),
-                layout: PanelLayout::Right { width_pct: STATS_PANEL_WIDTH_PCT },
+                layout: PanelLayout::Right {
+                    width_pct: STATS_PANEL_WIDTH_PCT,
+                },
                 view_model: "StatsViewModel".into(),
             },
             PanelDefinition {
@@ -296,7 +293,9 @@ pub fn default_screen_registry() -> ScreenRegistry {
             },
             PanelDefinition {
                 id: "stats".into(),
-                layout: PanelLayout::Right { width_pct: STATS_PANEL_WIDTH_PCT },
+                layout: PanelLayout::Right {
+                    width_pct: STATS_PANEL_WIDTH_PCT,
+                },
                 view_model: "StatsViewModel".into(),
             },
             PanelDefinition {
@@ -323,7 +322,9 @@ pub fn default_screen_registry() -> ScreenRegistry {
         panels: vec![
             PanelDefinition {
                 id: "stats".into(),
-                layout: PanelLayout::Right { width_pct: STATS_PANEL_WIDTH_PCT },
+                layout: PanelLayout::Right {
+                    width_pct: STATS_PANEL_WIDTH_PCT,
+                },
                 view_model: "StatsViewModel".into(),
             },
             PanelDefinition {
@@ -355,7 +356,9 @@ pub fn default_screen_registry() -> ScreenRegistry {
             },
             PanelDefinition {
                 id: "stats".into(),
-                layout: PanelLayout::Right { width_pct: STATS_PANEL_WIDTH_PCT },
+                layout: PanelLayout::Right {
+                    width_pct: STATS_PANEL_WIDTH_PCT,
+                },
                 view_model: "StatsViewModel".into(),
             },
             PanelDefinition {
@@ -377,7 +380,9 @@ pub fn default_screen_registry() -> ScreenRegistry {
             },
             PanelDefinition {
                 id: "stats".into(),
-                layout: PanelLayout::Right { width_pct: STATS_PANEL_WIDTH_PCT },
+                layout: PanelLayout::Right {
+                    width_pct: STATS_PANEL_WIDTH_PCT,
+                },
                 view_model: "StatsViewModel".into(),
             },
             PanelDefinition {
@@ -391,13 +396,11 @@ pub fn default_screen_registry() -> ScreenRegistry {
     // Game over screen: shown when player dies
     reg.register(ScreenDefinition {
         id: "game_over".into(),
-        panels: vec![
-            PanelDefinition {
-                id: "game_over_splash".into(),
-                layout: PanelLayout::Main,
-                view_model: "StatsViewModel".into(),
-            },
-        ],
+        panels: vec![PanelDefinition {
+            id: "game_over_splash".into(),
+            layout: PanelLayout::Main,
+            view_model: "StatsViewModel".into(),
+        }],
     });
 
     reg
@@ -405,8 +408,10 @@ pub fn default_screen_registry() -> ScreenRegistry {
 
 /// Build the default widget registry with all known renderers.
 /// Render the game over screen splash.
-fn render_game_over_splash_widget(frame: &mut Frame, area: Rect, _ctx: &WidgetRenderContext) {
-    let style_title = ratatui::style::Style::default().fg(ratatui::style::Color::Red).add_modifier(ratatui::style::Modifier::BOLD);
+fn render_game_over_splash_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
+    let style_title = ratatui::style::Style::default()
+        .fg(ratatui::style::Color::Red)
+        .add_modifier(ratatui::style::Modifier::BOLD);
     let style_muted = ratatui::style::Style::default().fg(MUTED_COLOR);
     let style_accent = ratatui::style::Style::default().fg(ACCENT_COLOR);
 
@@ -417,7 +422,7 @@ fn render_game_over_splash_widget(frame: &mut Frame, area: Rect, _ctx: &WidgetRe
             ratatui::text::Line::from(""),
             ratatui::text::Line::styled("  You have died.", style_muted),
             ratatui::text::Line::from(""),
-            ratatui::text::Line::styled("  Press any key to quit", style_accent),
+            ratatui::text::Line::styled("  Press r to restart | q to quit", style_accent),
         ]
     } else {
         let title_lines = [
@@ -435,7 +440,10 @@ fn render_game_over_splash_widget(frame: &mut Frame, area: Rect, _ctx: &WidgetRe
             lines.push(ratatui::text::Line::styled(padded, style_title));
         }
         let died_line = format!("{indent}  You have died.");
-        let quit_line = format!("{indent}  Press any key to quit");
+        let quit_line = format!(
+            "{indent}  Press r to restart | q to quit ({} loot)",
+            ctx.stats.extracted_loot
+        );
         lines.push(ratatui::text::Line::from(""));
         lines.push(ratatui::text::Line::styled(died_line, style_muted));
         lines.push(ratatui::text::Line::from(""));
@@ -448,7 +456,9 @@ fn render_game_over_splash_widget(frame: &mut Frame, area: Rect, _ctx: &WidgetRe
 
 /// Render the title screen splash.
 fn render_title_splash_widget(frame: &mut Frame, area: Rect, _ctx: &WidgetRenderContext) {
-    let style_title = ratatui::style::Style::default().fg(ACCENT_COLOR).add_modifier(ratatui::style::Modifier::BOLD);
+    let style_title = ratatui::style::Style::default()
+        .fg(ACCENT_COLOR)
+        .add_modifier(ratatui::style::Modifier::BOLD);
     let style_muted = ratatui::style::Style::default().fg(MUTED_COLOR);
     let style_accent = ratatui::style::Style::default().fg(ACCENT_COLOR);
 
@@ -602,10 +612,7 @@ pub struct ScreenValidation {
 }
 
 /// Validate that all panels in all screens have registered widgets.
-pub fn validate_screens(
-    screens: &ScreenRegistry,
-    widgets: &WidgetRegistry,
-) -> ScreenValidation {
+pub fn validate_screens(screens: &ScreenRegistry, widgets: &WidgetRegistry) -> ScreenValidation {
     let mut errors = Vec::new();
 
     for (screen_id, def) in &screens.screens {
@@ -649,9 +656,10 @@ pub fn validate_screens(
 
     // Check for unused widgets (warnings, not errors)
     for panel_id in widgets.bindings.keys() {
-        let used = screens.screens.values().any(|def| {
-            def.panels.iter().any(|p| p.id == *panel_id)
-        });
+        let used = screens
+            .screens
+            .values()
+            .any(|def| def.panels.iter().any(|p| p.id == *panel_id));
         if !used {
             tracing::warn!("Widget '{panel_id}' is registered but not used in any screen");
         }
@@ -696,7 +704,14 @@ fn render_map_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
     // Render enemies with type-specific glyphs (r, S, B) or default 'E'
     for (pos, glyph) in &ctx.map.enemy_glyphs {
         if pos.x >= 0 && pos.x < w as i32 && pos.y >= 0 && pos.y < h as i32 {
-            grid.set_glyph(pos.x as u16, pos.y as u16, *glyph, VisualToken::Enemy, ctx.symbols, ctx.theme);
+            grid.set_glyph(
+                pos.x as u16,
+                pos.y as u16,
+                *glyph,
+                VisualToken::Enemy,
+                ctx.symbols,
+                ctx.theme,
+            );
         }
     }
     // Fallback: render any remaining enemy positions that didn't get glyphs
@@ -704,56 +719,110 @@ fn render_map_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
         if ep.x >= 0 && ep.x < w as i32 && ep.y >= 0 && ep.y < h as i32 {
             // Only render if not already covered by enemy_glyphs
             if !ctx.map.enemy_glyphs.iter().any(|(p, _)| p == ep) {
-                grid.set(ep.x as u16, ep.y as u16, VisualToken::Enemy, ctx.symbols, ctx.theme);
+                grid.set(
+                    ep.x as u16,
+                    ep.y as u16,
+                    VisualToken::Enemy,
+                    ctx.symbols,
+                    ctx.theme,
+                );
             }
         }
     }
 
     if let Some(pp) = ctx.map.player_pos {
         if pp.x >= 0 && pp.x < w as i32 && pp.y >= 0 && pp.y < h as i32 {
-            grid.set(pp.x as u16, pp.y as u16, VisualToken::Player, ctx.symbols, ctx.theme);
+            grid.set(
+                pp.x as u16,
+                pp.y as u16,
+                VisualToken::Player,
+                ctx.symbols,
+                ctx.theme,
+            );
         }
     }
 
     // Render survivors on shelter map as Ally tokens
     for (pos, glyph) in &ctx.map.survivor_glyphs {
         if pos.x >= 0 && pos.x < w as i32 && pos.y >= 0 && pos.y < h as i32 {
-            grid.set_glyph(pos.x as u16, pos.y as u16, *glyph, VisualToken::Ally, ctx.symbols, ctx.theme);
+            grid.set_glyph(
+                pos.x as u16,
+                pos.y as u16,
+                *glyph,
+                VisualToken::Ally,
+                ctx.symbols,
+                ctx.theme,
+            );
         }
     }
 
     // Render stations on map
     for (pos, glyph) in &ctx.map.station_glyphs {
         if pos.x >= 0 && pos.x < w as i32 && pos.y >= 0 && pos.y < h as i32 {
-            grid.set_glyph(pos.x as u16, pos.y as u16, *glyph, VisualToken::Item, ctx.symbols, ctx.theme);
+            grid.set_glyph(
+                pos.x as u16,
+                pos.y as u16,
+                *glyph,
+                VisualToken::Item,
+                ctx.symbols,
+                ctx.theme,
+            );
         }
     }
 
     // P15-C: Render Gabriel on shelter map
     if let Some((pos, glyph)) = &ctx.map.gabriel_glyph {
         if pos.x >= 0 && pos.x < w as i32 && pos.y >= 0 && pos.y < h as i32 {
-            grid.set_glyph(pos.x as u16, pos.y as u16, *glyph, VisualToken::Ally, ctx.symbols, ctx.theme);
+            grid.set_glyph(
+                pos.x as u16,
+                pos.y as u16,
+                *glyph,
+                VisualToken::Ally,
+                ctx.symbols,
+                ctx.theme,
+            );
         }
     }
 
     // P22-D: Render resource nodes on shelter map
     for (pos, glyph) in &ctx.map.resource_glyphs {
         if pos.x >= 0 && pos.x < w as i32 && pos.y >= 0 && pos.y < h as i32 {
-            grid.set_glyph(pos.x as u16, pos.y as u16, *glyph, VisualToken::Item, ctx.symbols, ctx.theme);
+            grid.set_glyph(
+                pos.x as u16,
+                pos.y as u16,
+                *glyph,
+                VisualToken::Item,
+                ctx.symbols,
+                ctx.theme,
+            );
         }
     }
 
     // P3-A: Render exit tiles (shelter gate, dungeon exits)
     for (pos, glyph) in &ctx.map.exit_glyphs {
         if pos.x >= 0 && pos.x < w as i32 && pos.y >= 0 && pos.y < h as i32 {
-            grid.set_glyph(pos.x as u16, pos.y as u16, *glyph, VisualToken::Exit, ctx.symbols, ctx.theme);
+            grid.set_glyph(
+                pos.x as u16,
+                pos.y as u16,
+                *glyph,
+                VisualToken::Exit,
+                ctx.symbols,
+                ctx.theme,
+            );
         }
     }
 
     // P2-C: Render build ghost cursor on shelter map
     if let Some((pos, glyph)) = &ctx.map.build_ghost {
         if pos.x >= 0 && pos.x < w as i32 && pos.y >= 0 && pos.y < h as i32 {
-            grid.set_glyph(pos.x as u16, pos.y as u16, *glyph, VisualToken::Selection, ctx.symbols, ctx.theme);
+            grid.set_glyph(
+                pos.x as u16,
+                pos.y as u16,
+                *glyph,
+                VisualToken::Selection,
+                ctx.symbols,
+                ctx.theme,
+            );
         }
     }
 
@@ -764,11 +833,13 @@ fn render_map_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
         for (i, (label, cost)) in menu.options.iter().enumerate() {
             let prefix = if i == menu.selected { "▶" } else { " " };
             let key = (i + 1).to_string();
-            menu_lines.push(ratatui::text::Line::from(
-                format!("{prefix} {key}. {label} ({cost} Supplies)")
-            ));
+            menu_lines.push(ratatui::text::Line::from(format!(
+                "{prefix} {key}. {label} ({cost} Supplies)"
+            )));
         }
-        menu_lines.push(ratatui::text::Line::from("↑↓/1-5:select Enter:confirm b:cancel"));
+        menu_lines.push(ratatui::text::Line::from(
+            "↑↓/1-5:select Enter:confirm b:cancel",
+        ));
     }
 
     let lines: Vec<ratatui::text::Line> = grid
@@ -783,7 +854,8 @@ fn render_map_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
         .collect();
 
     // Append build menu lines below the map grid if menu is open
-    let all_lines: Vec<ratatui::text::Line> = lines.into_iter().chain(menu_lines.into_iter()).collect();
+    let all_lines: Vec<ratatui::text::Line> =
+        lines.into_iter().chain(menu_lines.into_iter()).collect();
 
     let para = ratatui::widgets::Paragraph::new(all_lines);
     frame.render_widget(para, inner);
@@ -800,18 +872,26 @@ fn render_stats_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext)
 
     let text = vec![
         ratatui::text::Line::from(vec![
-            ratatui::text::Span::styled("HP: ", ratatui::style::Style::default().fg(ratatui::style::Color::Gray)),
+            ratatui::text::Span::styled(
+                "HP: ",
+                ratatui::style::Style::default().fg(ratatui::style::Color::Gray),
+            ),
             ratatui::text::Span::styled(
                 format!("{}/{}", ctx.stats.hp_current, ctx.stats.hp_max),
-                ratatui::style::Style::default().fg(hp_color(ctx.stats.hp_current, ctx.stats.hp_max)),
+                ratatui::style::Style::default()
+                    .fg(hp_color(ctx.stats.hp_current, ctx.stats.hp_max)),
             ),
         ]),
         ratatui::text::Line::from(""),
         ratatui::text::Line::from(vec![
-            ratatui::text::Span::styled("AP: ", ratatui::style::Style::default().fg(ratatui::style::Color::Gray)),
+            ratatui::text::Span::styled(
+                "AP: ",
+                ratatui::style::Style::default().fg(ratatui::style::Color::Gray),
+            ),
             ratatui::text::Span::styled(
                 format!("{}/{}", ctx.stats.ap_current, ctx.stats.ap_max),
-                ratatui::style::Style::default().fg(ap_color(ctx.stats.ap_current, ctx.stats.ap_max)),
+                ratatui::style::Style::default()
+                    .fg(ap_color(ctx.stats.ap_current, ctx.stats.ap_max)),
             ),
         ]),
         ratatui::text::Line::from(""),
@@ -830,6 +910,24 @@ fn render_stats_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext)
         ratatui::text::Line::styled(
             format!("Plants: {}", ctx.stats.wild_plants),
             ratatui::style::Style::default().fg(ratatui::style::Color::Green),
+        ),
+        ratatui::text::Line::styled(
+            format!(
+                "Stored loot: {}",
+                ctx.stats
+                    .stored_items
+                    .iter()
+                    .map(|(_, count)| *count)
+                    .sum::<u32>()
+            ),
+            ratatui::style::Style::default().fg(ratatui::style::Color::Cyan),
+        ),
+        ratatui::text::Line::styled(
+            format!(
+                "Last run: {:?} ({} loot)",
+                ctx.stats.run_outcome, ctx.stats.extracted_loot
+            ),
+            ratatui::style::Style::default().fg(MUTED_COLOR),
         ),
         ratatui::text::Line::from(""),
         ratatui::text::Line::styled(
@@ -987,17 +1085,22 @@ fn render_equipment_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderCont
 // ---------------------------------------------------------------------------
 
 /// Given a screen definition and a total area, compute (panel_id, rect) pairs.
-pub fn compute_panel_rects(
-    def: &ScreenDefinition,
-    total: Rect,
-) -> Vec<(String, Rect)> {
+pub fn compute_panel_rects(def: &ScreenDefinition, total: Rect) -> Vec<(String, Rect)> {
     if def.panels.is_empty() {
         return vec![];
     }
 
     // Separate main vs non-main panels
-    let non_main: Vec<&PanelDefinition> = def.panels.iter().filter(|p| !matches!(p.layout, PanelLayout::Main)).collect();
-    let main: Vec<&PanelDefinition> = def.panels.iter().filter(|p| matches!(p.layout, PanelLayout::Main)).collect();
+    let non_main: Vec<&PanelDefinition> = def
+        .panels
+        .iter()
+        .filter(|p| !matches!(p.layout, PanelLayout::Main))
+        .collect();
+    let main: Vec<&PanelDefinition> = def
+        .panels
+        .iter()
+        .filter(|p| matches!(p.layout, PanelLayout::Main))
+        .collect();
 
     let mut result = Vec::new();
     let mut remaining = total;
@@ -1097,12 +1200,16 @@ fn render_outpost_party_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRender
             ratatui::style::Style::default().fg(MUTED_COLOR),
         )]
     } else {
-        ctx.stats.party_names.iter().map(|name| {
-            ratatui::text::Line::styled(
-                format!(" {}", name),
-                ratatui::style::Style::default().fg(ratatui::style::Color::White),
-            )
-        }).collect()
+        ctx.stats
+            .party_names
+            .iter()
+            .map(|name| {
+                ratatui::text::Line::styled(
+                    format!(" {}", name),
+                    ratatui::style::Style::default().fg(ratatui::style::Color::White),
+                )
+            })
+            .collect()
     };
 
     let para = ratatui::widgets::Paragraph::new(lines);
@@ -1118,7 +1225,15 @@ fn render_outpost_travel_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRende
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let ow = &ctx.travel_ctx.overworld;
+    let Some(travel_ctx) = ctx.travel_ctx else {
+        let text = ratatui::text::Line::styled(
+            " Fixed dungeon: press t to enter ",
+            ratatui::style::Style::default().fg(MUTED_COLOR),
+        );
+        frame.render_widget(ratatui::widgets::Paragraph::new(text), inner);
+        return;
+    };
+    let ow = &travel_ctx.overworld;
     let is_traveling = ow.turns_remaining > 0;
 
     let text: Vec<ratatui::text::Line> = if is_traveling {
@@ -1150,7 +1265,7 @@ fn render_outpost_travel_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRende
                 ratatui::style::Style::default().fg(weather_color),
             ),
         ]
-    } else if ctx.travel_ctx.travel_map.nodes.is_empty() {
+    } else if travel_ctx.travel_map.nodes.is_empty() {
         vec![
             ratatui::text::Line::from(""),
             ratatui::text::Line::styled(
@@ -1171,21 +1286,17 @@ fn render_outpost_travel_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRende
             ),
             ratatui::text::Line::from(""),
         ];
-        for node in &ctx.travel_ctx.travel_map.nodes {
-            lines.push(
-                ratatui::text::Line::styled(
-                    format!("  {} ({} turns)", node.name, node.travel_time),
-                    ratatui::style::Style::default().fg(ratatui::style::Color::White),
-                ),
-            );
+        for node in &travel_ctx.travel_map.nodes {
+            lines.push(ratatui::text::Line::styled(
+                format!("  {} ({} turns)", node.name, node.travel_time),
+                ratatui::style::Style::default().fg(ratatui::style::Color::White),
+            ));
         }
         lines.push(ratatui::text::Line::from(""));
-        lines.push(
-            ratatui::text::Line::styled(
-                " Press 't' to travel | 'i' inventory",
-                ratatui::style::Style::default().fg(MUTED_COLOR),
-            ),
-        );
+        lines.push(ratatui::text::Line::styled(
+            " Press 't' to travel | 'i' inventory",
+            ratatui::style::Style::default().fg(MUTED_COLOR),
+        ));
         lines
     };
 
@@ -1209,7 +1320,9 @@ fn render_help_keys_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderCont
         ratatui::text::Line::from(""),
         ratatui::text::Line::styled(
             " Keybindings:",
-            ratatui::style::Style::default().fg(ACCENT_COLOR).add_modifier(ratatui::style::Modifier::BOLD),
+            ratatui::style::Style::default()
+                .fg(ACCENT_COLOR)
+                .add_modifier(ratatui::style::Modifier::BOLD),
         ),
         ratatui::text::Line::from(""),
     ];
@@ -1274,12 +1387,19 @@ fn render_event_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext)
     if !ctx.event.active {
         return;
     }
-    let text = format!("[{}]
+    let text = format!(
+        "[{}]
 {}
-", ctx.event.speaker, ctx.event.text);
+",
+        ctx.event.speaker, ctx.event.text
+    );
     let para = ratatui::widgets::Paragraph::new(text)
         .style(ratatui::style::Style::default().fg(ratatui::style::Color::White))
-        .block(ratatui::widgets::Block::default().title(" Event ").borders(ratatui::widgets::Borders::ALL));
+        .block(
+            ratatui::widgets::Block::default()
+                .title(" Event ")
+                .borders(ratatui::widgets::Borders::ALL),
+        );
     frame.render_widget(para, area);
 }
 
@@ -1290,12 +1410,20 @@ fn render_event_choices_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRender
     }
     let mut text = "Your choice:".to_string();
     for (i, choice) in ctx.event.choices.iter().enumerate() {
-        text.push_str(&format!("
-{}. {}", i + 1, choice));
+        text.push_str(&format!(
+            "
+{}. {}",
+            i + 1,
+            choice
+        ));
     }
     let para = ratatui::widgets::Paragraph::new(text)
         .style(ratatui::style::Style::default().fg(ratatui::style::Color::Yellow))
-        .block(ratatui::widgets::Block::default().title(" Choices ").borders(ratatui::widgets::Borders::ALL));
+        .block(
+            ratatui::widgets::Block::default()
+                .title(" Choices ")
+                .borders(ratatui::widgets::Borders::ALL),
+        );
     frame.render_widget(para, area);
 }
 
@@ -1307,9 +1435,17 @@ mod tests {
     fn travel_panel_shows_hint_when_empty() {
         // Verify the travel panel uses TravelMap nodes, not hardcoded locations
         let registry = default_screen_registry();
-        let has_panel = registry.get("outpost").unwrap().panels.iter().any(|p| p.id == "outpost_travel");
+        let has_panel = registry
+            .get("outpost")
+            .unwrap()
+            .panels
+            .iter()
+            .any(|p| p.id == "outpost_travel");
         // The panel exists; rendering logic is verified in render tests
-        assert!(has_panel, "Travel panel should be registered in combat screen");
+        assert!(
+            has_panel,
+            "Travel panel should be registered in combat screen"
+        );
     }
 
     #[test]
@@ -1321,7 +1457,10 @@ mod tests {
         assert_eq!(def.id, "help");
         // Should contain keybindings
         let panel_ids: Vec<&str> = def.panels.iter().map(|p| p.id.as_str()).collect();
-        assert!(panel_ids.contains(&"help_keys"), "Help screen should have help_keys panel");
+        assert!(
+            panel_ids.contains(&"help_keys"),
+            "Help screen should have help_keys panel"
+        );
     }
 
     #[test]
@@ -1385,16 +1524,29 @@ mod tests {
         let empty_widgets = WidgetRegistry::new();
         let result = validate_screens(&screens, &empty_widgets);
         assert!(!result.valid);
-        assert!(result.errors.iter().any(|e| e.contains("no widget registered")));
+        assert!(
+            result
+                .errors
+                .iter()
+                .any(|e| e.contains("no widget registered"))
+        );
     }
 
     #[test]
     fn hp_color_changes_with_threshold() {
         // Verify color constants are reasonable
-        assert!(HP_GREEN_THRESHOLD_PCT > 0, "HP_GREEN_THRESHOLD_PCT should be positive");
-        assert!(HP_YELLOW_THRESHOLD_PCT > 0, "HP_YELLOW_THRESHOLD_PCT should be positive");
-        assert!(HP_GREEN_THRESHOLD_PCT > HP_YELLOW_THRESHOLD_PCT,
-            "HP_GREEN_THRESHOLD_PCT should be above HP_YELLOW_THRESHOLD_PCT");
+        assert!(
+            HP_GREEN_THRESHOLD_PCT > 0,
+            "HP_GREEN_THRESHOLD_PCT should be positive"
+        );
+        assert!(
+            HP_YELLOW_THRESHOLD_PCT > 0,
+            "HP_YELLOW_THRESHOLD_PCT should be positive"
+        );
+        assert!(
+            HP_GREEN_THRESHOLD_PCT > HP_YELLOW_THRESHOLD_PCT,
+            "HP_GREEN_THRESHOLD_PCT should be above HP_YELLOW_THRESHOLD_PCT"
+        );
     }
 
     #[test]

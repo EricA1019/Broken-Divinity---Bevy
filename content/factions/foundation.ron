@@ -1,0 +1,4 @@
+[
+    FactionDefinition(id: "faction.placeholder_a", label: "The Ashbound", identity_key: "ashbound", hostility: "neutral"),
+    FactionDefinition(id: "faction.placeholder_b", label: "The Wayfarers", identity_key: "wayfarers", hostility: "neutral"),
+]

@@ -71,7 +71,10 @@ pub struct BuildMenuState {
 
 impl Default for BuildMenuState {
     fn default() -> Self {
-        Self { active: false, selected: 0 }
+        Self {
+            active: false,
+            selected: 0,
+        }
     }
 }
 
@@ -157,7 +160,10 @@ pub fn register_station_actions() -> ActionDefinition {
         }],
         effects: vec![
             Effect::SpawnEntity("blueprint.station".into()),
-            Effect::Log("You build a station.".into(), crate::gamelog::LogLevel::Info),
+            Effect::Log(
+                "You build a station.".into(),
+                crate::gamelog::LogLevel::Info,
+            ),
         ],
     }
 }
@@ -192,7 +198,13 @@ mod tests {
             .id()
     }
 
-    fn send_action(app: &mut App, actor: Entity, action_id: &str, direction: Option<crate::direction::Direction>, target: Option<Entity>) {
+    fn send_action(
+        app: &mut App,
+        actor: Entity,
+        action_id: &str,
+        direction: Option<crate::direction::Direction>,
+        target: Option<Entity>,
+    ) {
         app.world_mut()
             .resource_mut::<bevy_ecs::message::Messages<ActionIntent>>()
             .write(ActionIntent {
@@ -208,14 +220,21 @@ mod tests {
         let blueprints = default_station_blueprints();
         assert_eq!(blueprints.len(), 5);
         assert_eq!(blueprints[0].station_type, StationType::Stove);
-        assert_eq!(blueprints[0].build_cost_supplies, STATION_BUILD_COST_SUPPLIES);
+        assert_eq!(
+            blueprints[0].build_cost_supplies,
+            STATION_BUILD_COST_SUPPLIES
+        );
     }
 
     #[test]
     fn build_action_has_correct_requirements() {
         let def = register_station_actions();
         assert_eq!(def.id, "ability.build");
-        assert!(def.requirements.iter().any(|r| matches!(r, Requirement::ResourcePoolAbove(PoolKind::Supplies, _))));
+        assert!(
+            def.requirements
+                .iter()
+                .any(|r| matches!(r, Requirement::ResourcePoolAbove(PoolKind::Supplies, _)))
+        );
     }
 
     #[test]
@@ -224,10 +243,22 @@ mod tests {
         app.world_mut()
             .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
         let p = spawn_player_with_supplies(&mut app, 0); // no supplies
-        send_action(&mut app, p, "ability.build", Some(crate::direction::Direction::East), None);
+        send_action(
+            &mut app,
+            p,
+            "ability.build",
+            Some(crate::direction::Direction::East),
+            None,
+        );
         app.update();
         // Supplies should remain 0 (build was denied)
-        let supplies = app.world().get::<Pools>(p).unwrap().get(PoolKind::Supplies).unwrap().current;
+        let supplies = app
+            .world()
+            .get::<Pools>(p)
+            .unwrap()
+            .get(PoolKind::Supplies)
+            .unwrap()
+            .current;
         assert_eq!(supplies, 0);
     }
 
@@ -237,9 +268,21 @@ mod tests {
         app.world_mut()
             .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
         let p = spawn_player_with_supplies(&mut app, 10);
-        send_action(&mut app, p, "ability.build", Some(crate::direction::Direction::East), None);
+        send_action(
+            &mut app,
+            p,
+            "ability.build",
+            Some(crate::direction::Direction::East),
+            None,
+        );
         app.update();
-        let supplies = app.world().get::<Pools>(p).unwrap().get(PoolKind::Supplies).unwrap().current;
+        let supplies = app
+            .world()
+            .get::<Pools>(p)
+            .unwrap()
+            .get(PoolKind::Supplies)
+            .unwrap()
+            .current;
         // Cost should be deducted
         assert_eq!(supplies, 10 - STATION_BUILD_COST_SUPPLIES);
     }
@@ -250,7 +293,10 @@ mod tests {
     fn build_ghost_state_default_is_inactive() {
         let state = BuildGhostState::default();
         assert!(!state.active, "Build ghost should start inactive");
-        assert!(state.station_type.is_none(), "No station type selected by default");
+        assert!(
+            state.station_type.is_none(),
+            "No station type selected by default"
+        );
     }
 
     #[test]

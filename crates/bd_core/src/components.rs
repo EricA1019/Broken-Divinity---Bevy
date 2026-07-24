@@ -22,6 +22,10 @@ pub struct BlocksMovement;
 #[derive(Component, Debug, Clone, Serialize, Deserialize)]
 pub struct Name(pub String);
 
+/// Stable content identity for data-driven entities such as dungeon loot.
+#[derive(Component, Debug, Clone, Serialize, Deserialize)]
+pub struct ContentIdentity(pub String);
+
 /// Marks a tile as the exit point of a location.
 #[derive(Component, Debug, Default, Serialize, Deserialize)]
 pub struct ExitTile;

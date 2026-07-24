@@ -66,7 +66,10 @@ pub fn process_sanity_thresholds(
     if sanity.current < SANITY_BREAKDOWN_THRESHOLD {
         let mut needs_breakdown = true;
         if let Ok(statuses) = status_query.get(entity) {
-            needs_breakdown = !statuses.instances.iter().any(|s| s.status_id == "status.breakdown");
+            needs_breakdown = !statuses
+                .instances
+                .iter()
+                .any(|s| s.status_id == "status.breakdown");
         }
         if needs_breakdown {
             let defs = crate::statuses::default_status_definitions();
@@ -78,10 +81,16 @@ pub fn process_sanity_thresholds(
                 &mut commands,
                 &defs,
             );
-            game_log.push("Your mind fractures — Breakdown sets in.".to_string(), LogLevel::Warn);
+            game_log.push(
+                "Your mind fractures — Breakdown sets in.".to_string(),
+                LogLevel::Warn,
+            );
         }
     } else if sanity.current < SANITY_HALLUCINATION_THRESHOLD {
-        game_log.push("Shadows flicker at the edge of your vision...".to_string(), LogLevel::Warn);
+        game_log.push(
+            "Shadows flicker at the edge of your vision...".to_string(),
+            LogLevel::Warn,
+        );
     }
 }
 
@@ -93,7 +102,9 @@ pub fn process_sanity_recovery(
     mut delta_writer: bevy_ecs::message::MessageWriter<PoolDeltaRequested>,
     mut last_day: Local<u64>,
 ) {
-    let Some(mode) = mode else { return; };
+    let Some(mode) = mode else {
+        return;
+    };
     if *mode != GameMode::Outpost {
         *last_day = time.day;
         return;
@@ -173,62 +184,106 @@ mod tests {
     #[test]
     fn sanity_drains_near_pressure_source() {
         let mut app = test_app();
-        app.world_mut().insert_resource(SmokeMap::new(10, 10, Tile::Floor));
-        let player = app.world_mut().spawn((
-            Player,
-            Position { x: 5, y: 5 },
-            Pools::new(vec![Pool::new(PoolKind::Sanity, SANITY_MAX, 0, SANITY_MAX)]),
-        )).id();
+        app.world_mut()
+            .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
+        let player = app
+            .world_mut()
+            .spawn((
+                Player,
+                Position { x: 5, y: 5 },
+                Pools::new(vec![Pool::new(PoolKind::Sanity, SANITY_MAX, 0, SANITY_MAX)]),
+            ))
+            .id();
         // Write drain message directly to verify pool pipeline works for Sanity
         send_sanity_delta(&mut app, player, -5);
         app.update();
         let pools = app.world().get::<Pools>(player).unwrap();
         let sanity = pools.get(PoolKind::Sanity).unwrap();
-        assert!(sanity.current < SANITY_MAX, "Direct sanity delta should work (current={})", sanity.current);
+        assert!(
+            sanity.current < SANITY_MAX,
+            "Direct sanity delta should work (current={})",
+            sanity.current
+        );
 
         // Now test the pressure source system integration
-        let current_before = app.world().get::<Pools>(player).unwrap().get(PoolKind::Sanity).unwrap().current;
+        let current_before = app
+            .world()
+            .get::<Pools>(player)
+            .unwrap()
+            .get(PoolKind::Sanity)
+            .unwrap()
+            .current;
         app.world_mut().spawn((
             Position { x: 5, y: 6 },
-            SanityPressure { radius: 2, drain_per_turn: 5 },
+            SanityPressure {
+                radius: 2,
+                drain_per_turn: 5,
+            },
         ));
         // process_sanity_drain runs in Mutation set, writes message
         // resolve_pool_deltas runs in same set but before drain (insertion order)
         // So drain message is processed NEXT frame
         app.update();
         app.update();
-        let sanity_after = app.world().get::<Pools>(player).unwrap().get(PoolKind::Sanity).unwrap().current;
-        assert!(sanity_after < current_before, "Sanity should decrease from pressure source (was={}, now={})", current_before, sanity_after);
+        let sanity_after = app
+            .world()
+            .get::<Pools>(player)
+            .unwrap()
+            .get(PoolKind::Sanity)
+            .unwrap()
+            .current;
+        assert!(
+            sanity_after < current_before,
+            "Sanity should decrease from pressure source (was={}, now={})",
+            current_before,
+            sanity_after
+        );
     }
 
     #[test]
     fn sanity_below_threshold_triggers_hallucination() {
         let mut app = test_app();
-        app.world_mut().insert_resource(SmokeMap::new(10, 10, Tile::Floor));
-        let player = app.world_mut().spawn((
-            Player,
-            Position { x: 5, y: 5 },
-            Pools::new(vec![Pool::new(PoolKind::Sanity, SANITY_HALLUCINATION_THRESHOLD - 1, 0, SANITY_MAX)]),
-        )).id();
+        app.world_mut()
+            .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
+        let player = app
+            .world_mut()
+            .spawn((
+                Player,
+                Position { x: 5, y: 5 },
+                Pools::new(vec![Pool::new(
+                    PoolKind::Sanity,
+                    SANITY_HALLUCINATION_THRESHOLD - 1,
+                    0,
+                    SANITY_MAX,
+                )]),
+            ))
+            .id();
         // Directly set sanity below threshold and let process_sanity_thresholds fire
         send_sanity_delta(&mut app, player, 0); // triggers resolve_pool_deltas which updates pools
         app.update();
         // After update, sanity is below threshold and process_sanity_thresholds ran
         let log = app.world().resource::<GameLog>();
         let has_hallucination = log.iter().any(|e| e.message.contains("Shadows"));
-        assert!(has_hallucination, "Hallucination log should appear below threshold");
+        assert!(
+            has_hallucination,
+            "Hallucination log should appear below threshold"
+        );
     }
 
     #[test]
     fn sanity_recovers_at_shelter() {
         let mut app = test_app();
-        app.world_mut().insert_resource(SmokeMap::new(10, 10, Tile::Floor));
+        app.world_mut()
+            .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
         app.world_mut().insert_resource(GameMode::Outpost);
-        let player = app.world_mut().spawn((
-            Player,
-            Position { x: 5, y: 5 },
-            Pools::new(vec![Pool::new(PoolKind::Sanity, 50, 0, SANITY_MAX)]),
-        )).id();
+        let player = app
+            .world_mut()
+            .spawn((
+                Player,
+                Position { x: 5, y: 5 },
+                Pools::new(vec![Pool::new(PoolKind::Sanity, 50, 0, SANITY_MAX)]),
+            ))
+            .id();
         // Set day to 1 (day change triggers recovery on next frame)
         app.world_mut().resource_mut::<GameTime>().day = 1;
         app.update();
@@ -237,6 +292,10 @@ mod tests {
         app.update();
         let pools = app.world().get::<Pools>(player).unwrap();
         let sanity = pools.get(PoolKind::Sanity).unwrap();
-        assert!(sanity.current > 50, "Sanity should recover at shelter on day change (current={})", sanity.current);
+        assert!(
+            sanity.current > 50,
+            "Sanity should recover at shelter on day change (current={})",
+            sanity.current
+        );
     }
 }

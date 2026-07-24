@@ -1,0 +1,3 @@
+[
+    ItemDefinition(id: "item.healing_potion", label: "Healing Potion", blueprint_id: "blueprint.healing_potion", usable: true, healing_amount: Some(8)),
+]

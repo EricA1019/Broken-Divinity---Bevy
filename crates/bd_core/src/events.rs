@@ -9,13 +9,13 @@ use bevy_ecs::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::{
+    BdSet,
     actions::Effect,
-    dialogue::{Choice, Condition},
     components::Player,
+    dialogue::{Choice, Condition},
     gamelog::GameLog,
     pools::Pools,
-    signals::{EventTrigger, EventSelected, PoolDeltaRequested, PoolKind},
-    BdSet,
+    signals::{EventSelected, EventTrigger, PoolDeltaRequested, PoolKind},
 };
 
 // ── Event definition types (data-driven, mirrors ActionRegistry) ──
@@ -206,7 +206,7 @@ fn evaluate_condition(condition: &Condition, _player_pools: Option<&Pools>) -> b
             }
             false
         }
-        Condition::VirtueAbove(_, _) => true,  // TODO: virtue check
+        Condition::VirtueAbove(_, _) => true, // TODO: virtue check
         Condition::FactionReputationAbove(_, _) => true, // deferred
     }
 }
@@ -244,7 +244,11 @@ pub fn process_event_triggers(
         let available_choices = start_node
             .choices
             .iter()
-            .filter(|c| c.conditions.iter().all(|cond| evaluate_condition(cond, player_pools.as_deref())))
+            .filter(|c| {
+                c.conditions
+                    .iter()
+                    .all(|cond| evaluate_condition(cond, player_pools.as_deref()))
+            })
             .count();
 
         if available_choices == 0 {
@@ -296,7 +300,11 @@ pub fn process_event_choices(
         let available: Vec<&crate::dialogue::Choice> = node
             .choices
             .iter()
-            .filter(|c| c.conditions.iter().all(|cond| evaluate_condition(cond, None)))
+            .filter(|c| {
+                c.conditions
+                    .iter()
+                    .all(|cond| evaluate_condition(cond, None))
+            })
             .collect();
 
         if selection.choice_index >= available.len() {
@@ -308,7 +316,12 @@ pub fn process_event_choices(
         // Apply the choice's effects
         for effect in &choice.effects {
             match effect {
-                Effect::PoolDelta { kind, amount, tags: _, reason: _ } => {
+                Effect::PoolDelta {
+                    kind,
+                    amount,
+                    tags: _,
+                    reason: _,
+                } => {
                     delta_writer.write(PoolDeltaRequested {
                         source: None,
                         target: player_entity,
@@ -398,8 +411,11 @@ pub fn trigger_gabriel_encounter(
         }
         crate::spatial::GameMode::Outpost => {
             // Trigger only when an Altar station exists (not any station)
-            stations.iter().any(|e| station_types.get(e)
-                .is_ok_and(|t| matches!(t, crate::colony::stations::StationType::Altar)))
+            stations.iter().any(|e| {
+                station_types
+                    .get(e)
+                    .is_ok_and(|t| matches!(t, crate::colony::stations::StationType::Altar))
+            })
         }
         _ => false,
     };
@@ -468,7 +484,10 @@ mod tests {
             speaker: "Test".into(),
             text: "Text".into(),
             choices: vec![],
-            on_enter_effects: vec![Effect::Log("entered".into(), crate::gamelog::LogLevel::Info)],
+            on_enter_effects: vec![Effect::Log(
+                "entered".into(),
+                crate::gamelog::LogLevel::Info,
+            )],
         };
         assert_eq!(node.on_enter_effects.len(), 1);
     }
@@ -501,14 +520,12 @@ mod tests {
                     EventNode {
                         speaker: "Test".into(),
                         text: "Hello world.".into(),
-                        choices: vec![
-                            Choice {
-                                label: "Option A".into(),
-                                conditions: vec![Condition::Always],
-                                effects: vec![],
-                                next_node: None,
-                            },
-                        ],
+                        choices: vec![Choice {
+                            label: "Option A".into(),
+                            conditions: vec![Condition::Always],
+                            effects: vec![],
+                            next_node: None,
+                        }],
                         on_enter_effects: vec![],
                     },
                 )]),
@@ -518,15 +535,20 @@ mod tests {
     #[test]
     fn trigger_starts_event() {
         let mut app = test_app();
-        app.world_mut().insert_resource(SmokeMap::new(10, 10, Tile::Floor));
-        let player = app.world_mut().spawn((
-            Player, Position { x: 5, y: 5 }, Pools::new(vec![])
-        )).id();
+        app.world_mut()
+            .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
+        let player = app
+            .world_mut()
+            .spawn((Player, Position { x: 5, y: 5 }, Pools::new(vec![])))
+            .id();
         register_test_event(&mut app);
 
         app.world_mut()
             .resource_mut::<bevy_ecs::message::Messages<EventTrigger>>()
-            .write(EventTrigger { actor: player, event_id: "test.event".into() });
+            .write(EventTrigger {
+                actor: player,
+                event_id: "test.event".into(),
+            });
 
         app.update();
         let ev = app.world().resource::<CurrentEvent>();
@@ -537,14 +559,19 @@ mod tests {
     #[test]
     fn trigger_with_unknown_id_ignored() {
         let mut app = test_app();
-        app.world_mut().insert_resource(SmokeMap::new(10, 10, Tile::Floor));
-        let player = app.world_mut().spawn((
-            Player, Position { x: 5, y: 5 }, Pools::new(vec![])
-        )).id();
+        app.world_mut()
+            .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
+        let player = app
+            .world_mut()
+            .spawn((Player, Position { x: 5, y: 5 }, Pools::new(vec![])))
+            .id();
 
         app.world_mut()
             .resource_mut::<bevy_ecs::message::Messages<EventTrigger>>()
-            .write(EventTrigger { actor: player, event_id: "bogus.nope".into() });
+            .write(EventTrigger {
+                actor: player,
+                event_id: "bogus.nope".into(),
+            });
 
         app.update();
         let ev = app.world().resource::<CurrentEvent>();
@@ -560,23 +587,31 @@ mod tests {
     #[test]
     fn choice_ends_event() {
         let mut app = test_app();
-        app.world_mut().insert_resource(SmokeMap::new(10, 10, Tile::Floor));
-        let player = app.world_mut().spawn((
-            Player, Position { x: 5, y: 5 }, Pools::new(vec![])
-        )).id();
+        app.world_mut()
+            .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
+        let player = app
+            .world_mut()
+            .spawn((Player, Position { x: 5, y: 5 }, Pools::new(vec![])))
+            .id();
         register_test_event(&mut app);
 
         // Trigger the event
         app.world_mut()
             .resource_mut::<bevy_ecs::message::Messages<EventTrigger>>()
-            .write(EventTrigger { actor: player, event_id: "test.event".into() });
+            .write(EventTrigger {
+                actor: player,
+                event_id: "test.event".into(),
+            });
         app.update();
         assert!(app.world().resource::<CurrentEvent>().is_active());
 
         // Select the only choice (which has next_node=None → event ends)
         app.world_mut()
             .resource_mut::<bevy_ecs::message::Messages<EventSelected>>()
-            .write(EventSelected { actor: player, choice_index: 0 });
+            .write(EventSelected {
+                actor: player,
+                choice_index: 0,
+            });
         app.update();
 
         let ev = app.world().resource::<CurrentEvent>();
@@ -586,22 +621,30 @@ mod tests {
     #[test]
     fn invalid_choice_index_ignored() {
         let mut app = test_app();
-        app.world_mut().insert_resource(SmokeMap::new(10, 10, Tile::Floor));
-        let player = app.world_mut().spawn((
-            Player, Position { x: 5, y: 5 }, Pools::new(vec![])
-        )).id();
+        app.world_mut()
+            .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
+        let player = app
+            .world_mut()
+            .spawn((Player, Position { x: 5, y: 5 }, Pools::new(vec![])))
+            .id();
         register_test_event(&mut app);
 
         // Trigger the event
         app.world_mut()
             .resource_mut::<bevy_ecs::message::Messages<EventTrigger>>()
-            .write(EventTrigger { actor: player, event_id: "test.event".into() });
+            .write(EventTrigger {
+                actor: player,
+                event_id: "test.event".into(),
+            });
         app.update();
 
         // Select an out-of-range index
         app.world_mut()
             .resource_mut::<bevy_ecs::message::Messages<EventSelected>>()
-            .write(EventSelected { actor: player, choice_index: 99 });
+            .write(EventSelected {
+                actor: player,
+                choice_index: 99,
+            });
         app.update();
 
         // Event should still be active (invalid index was silently ignored)
@@ -620,18 +663,26 @@ mod tests {
     #[test]
     fn gabriel_triggers_on_tactical_entry() {
         let mut app = test_app();
-        app.world_mut().insert_resource(SmokeMap::new(10, 10, Tile::Floor));
-        app.world_mut().spawn((Player, Position { x: 5, y: 5 }, Pools::new(vec![])));
+        app.world_mut()
+            .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
+        app.world_mut()
+            .spawn((Player, Position { x: 5, y: 5 }, Pools::new(vec![])));
         // Modify existing GameMode resource rather than re-inserting
         *app.world_mut().resource_mut::<GameMode>() = GameMode::Tactical;
 
         // Verify state before update
-        assert!(!app.world().resource::<GabrielState>().appeared, "Gabriel should not have appeared yet");
+        assert!(
+            !app.world().resource::<GabrielState>().appeared,
+            "Gabriel should not have appeared yet"
+        );
         assert_eq!(*app.world().resource::<GameMode>(), GameMode::Tactical);
 
         app.update();
         // After first update, trigger_gabriel_encounter should have fired
-        assert!(app.world().resource::<GabrielState>().appeared, "Gabriel should have appeared after first update");
+        assert!(
+            app.world().resource::<GabrielState>().appeared,
+            "Gabriel should have appeared after first update"
+        );
 
         app.update(); // second frame: process_event_triggers reads the message
 
@@ -644,8 +695,10 @@ mod tests {
     #[test]
     fn gabriel_does_not_trigger_twice() {
         let mut app = test_app();
-        app.world_mut().insert_resource(SmokeMap::new(10, 10, Tile::Floor));
-        app.world_mut().spawn((Player, Position { x: 5, y: 5 }, Pools::new(vec![])));
+        app.world_mut()
+            .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
+        app.world_mut()
+            .spawn((Player, Position { x: 5, y: 5 }, Pools::new(vec![])));
         *app.world_mut().resource_mut::<GameMode>() = GameMode::Tactical;
         app.world_mut().resource_mut::<GabrielState>().appeared = true; // already seen
 

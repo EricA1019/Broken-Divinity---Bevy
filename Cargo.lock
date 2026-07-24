@@ -235,6 +235,7 @@ name = "bd_test_support"
 version = "0.1.0"
 dependencies = [
  "bd_core",
+ "bd_data",
  "bevy",
  "bevy_app",
  "bevy_ecs",

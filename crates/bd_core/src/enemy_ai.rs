@@ -36,6 +36,10 @@ pub(crate) fn register_enemy_ai(app: &mut App) {
         bevy_app::Update,
         process_enemy_turns.in_set(crate::BdSet::Input),
     );
+    app.add_systems(
+        bevy_app::Update,
+        release_enemy_phase_lock.in_set(crate::BdSet::ResultEmission),
+    );
 }
 
 /// Enemy melee attack action definition — no `TargetHostile` so enemies can target the player.
@@ -73,10 +77,17 @@ fn process_enemy_turns(
     enemies: Query<(Entity, &Position), (With<BlocksMovement>, Without<Player>)>,
     player: Query<(Entity, &Position), With<Player>>,
     map: Res<SmokeMap>,
+    mode: Res<crate::spatial::GameMode>,
+    mut turn: ResMut<crate::time::ShouldAdvanceTime>,
     blockers: Query<&Position, (With<BlocksMovement>, Without<Player>)>,
     mut action_writer: bevy_ecs::message::MessageWriter<ActionIntent>,
 ) {
+    if !turn.1 || *mode != crate::spatial::GameMode::Tactical {
+        return;
+    }
+
     let Ok((player_entity, player_pos)) = player.single() else {
+        turn.1 = false;
         return; // No player alive — enemies idle
     };
 
@@ -124,6 +135,27 @@ fn process_enemy_turns(
                 target: None,
             });
         }
+    }
+
+    // Consume the request before validation/effect resolution. Any player
+    // input observed in this same frame is rejected by AwaitingEnemyPhase.
+    turn.1 = false;
+}
+
+/// Release the player lock only after validation, enemy effects, and results
+/// for the enemy phase have completed.
+fn release_enemy_phase_lock(
+    mut commands: Commands,
+    turn: Res<crate::time::ShouldAdvanceTime>,
+    player: Query<Entity, (With<Player>, With<crate::time::AwaitingEnemyPhase>)>,
+) {
+    if turn.1 {
+        return;
+    }
+    for entity in &player {
+        commands
+            .entity(entity)
+            .remove::<crate::time::AwaitingEnemyPhase>();
     }
 }
 
@@ -176,11 +208,20 @@ mod tests {
         let _player = spawn_player(&mut app, 10, 10);
         let enemy = spawn_enemy(&mut app, 10, 7); // 3 tiles north
 
+        app.world_mut()
+            .insert_resource(crate::spatial::GameMode::Tactical);
+        app.world_mut()
+            .resource_mut::<crate::time::ShouldAdvanceTime>()
+            .1 = true;
         app.update();
 
         // Enemy should move 1 tile south toward player
         let pos = app.world().get::<Position>(enemy).unwrap();
-        assert_eq!(*pos, Position { x: 10, y: 8 }, "enemy should move south toward player");
+        assert_eq!(
+            *pos,
+            Position { x: 10, y: 8 },
+            "enemy should move south toward player"
+        );
     }
 
     #[test]
@@ -191,6 +232,11 @@ mod tests {
         let player = spawn_player(&mut app, 10, 10);
         let _enemy = spawn_enemy(&mut app, 10, 9); // 1 tile north — adjacent
 
+        app.world_mut()
+            .insert_resource(crate::spatial::GameMode::Tactical);
+        app.world_mut()
+            .resource_mut::<crate::time::ShouldAdvanceTime>()
+            .1 = true;
         app.update();
         app.update(); // second frame to process pool deltas
 
@@ -205,9 +251,12 @@ mod tests {
         // P13: d100 variance means damage is 0.5x/1.0x/1.5x of base 5
         // Expected: 3, 5, or 8 damage. Accept any valid variance.
         let damage_taken = 20 - hp;
-        assert!(damage_taken >= 2 && damage_taken <= 8,
+        assert!(
+            damage_taken >= 2 && damage_taken <= 8,
             "player should take 2-8 damage from base 5 with d100 variance, took {} (HP: 20 -> {})",
-            damage_taken, hp);
+            damage_taken,
+            hp
+        );
         assert!(hp < 20, "player should take some damage, HP still 20");
     }
 
@@ -223,6 +272,10 @@ mod tests {
 
         // Enemy should not have moved
         let pos = app.world().get::<Position>(enemy).unwrap();
-        assert_eq!(*pos, Position { x: 10, y: 1 }, "enemy should stay in place when out of range");
+        assert_eq!(
+            *pos,
+            Position { x: 10, y: 1 },
+            "enemy should stay in place when out of range"
+        );
     }
 }

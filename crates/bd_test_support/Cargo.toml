@@ -8,6 +8,7 @@ repository.workspace = true
 
 [dependencies]
 bd_core = { path = "../bd_core" }
+bd_data = { path = "../bd_data" }
 
 bevy.workspace = true
 bevy_app.workspace = true

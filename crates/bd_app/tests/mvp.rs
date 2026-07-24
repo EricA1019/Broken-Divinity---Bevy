@@ -200,7 +200,11 @@ fn validator_catches_missing_reference() {
     let registry = bd_core::factory::BlueprintRegistry::phase18_defaults();
     for bp in &registry.blueprints {
         assert!(!bp.id.is_empty(), "Blueprint ID must not be empty");
-        assert!(!bp.label.is_empty(), "Blueprint '{}' label must not be empty", bp.id);
+        assert!(
+            !bp.label.is_empty(),
+            "Blueprint '{}' label must not be empty",
+            bp.id
+        );
     }
 }
 
@@ -212,7 +216,10 @@ fn procgen_preview_uses_seed() {
     let b = bd_core::procgen::generate_location(&template, 42);
     let c = bd_core::procgen::generate_location(&template, 99);
     assert_eq!(a.tiles, b.tiles, "Same seed should produce same tiles");
-    assert_ne!(a.tiles, c.tiles, "Different seed should produce different tiles");
+    assert_ne!(
+        a.tiles, c.tiles,
+        "Different seed should produce different tiles"
+    );
 }
 
 #[test]
@@ -267,19 +274,21 @@ fn mvp_save_load_roundtrip() {
 }
 
 #[test]
+#[ignore = "requires a real terminal device; use manual Ratatui smoke test"]
 fn first_keypress_in_outpost_is_move_not_build() {
     use bevy_app::App;
     use bevy_ecs::message::Messages;
-    use bevy_ratatui::event::KeyMessage;
     use bevy_ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+    use bevy_ratatui::event::KeyMessage;
 
     let mut app = App::new();
     app.add_plugins(bevy_ratatui::RatatuiPlugins::default());
-    app.add_plugins(bd_core::BdCorePlugin);
+    app.add_plugins(bd_core::BdFoundationPlugin);
     app.add_plugins(bd_tui::BdTuiPlugin);
 
     // Set Outpost mode to bypass title screen
-    app.world_mut().insert_resource(bd_core::spatial::GameMode::Outpost);
+    app.world_mut()
+        .insert_resource(bd_core::spatial::GameMode::Outpost);
 
     // Run once to spawn player + initialize systems
     app.update();
@@ -297,10 +306,58 @@ fn first_keypress_in_outpost_is_move_not_build() {
     let messages: Vec<_> = log.iter().map(|e| e.message.clone()).collect();
     assert!(
         messages.iter().any(|m| m.contains("You move")),
-        "First keypress should produce move. Log: {:?}", messages
+        "First keypress should produce move. Log: {:?}",
+        messages
     );
     assert!(
         !messages.iter().any(|m| m.contains("build a station")),
-        "Should NOT build without 'b' key. Log: {:?}", messages
+        "Should NOT build without 'b' key. Log: {:?}",
+        messages
+    );
+}
+
+#[test]
+fn first_foundation_action_in_outpost_is_move_not_build() {
+    use bevy_app::App;
+    use bevy_ecs::message::Messages;
+
+    let mut app = App::new();
+    app.add_plugins(bd_core::BdFoundationPlugin);
+    app.world_mut()
+        .insert_resource(bd_core::spatial::GameMode::Outpost);
+
+    let player = app
+        .world_mut()
+        .spawn((
+            Player,
+            Position { x: 10, y: 6 },
+            Pools::new(vec![
+                Pool::new(PoolKind::Health, 20, 0, 20),
+                Pool::new(PoolKind::ActionPoints, 3, 0, 3),
+            ]),
+            bd_core::spatial::PersistentEntity,
+        ))
+        .id();
+
+    app.update();
+    app.world_mut()
+        .resource_mut::<Messages<bd_core::signals::ActionIntent>>()
+        .write(bd_core::signals::ActionIntent {
+            actor: player,
+            action_id: "ability.move".into(),
+            direction: Some(bd_core::direction::Direction::East),
+            target: None,
+        });
+    app.update();
+
+    let position = app.world().get::<Position>(player).unwrap();
+    assert_eq!((position.x, position.y), (11, 6));
+    let log = app.world().resource::<GameLog>();
+    let messages: Vec<_> = log.iter().map(|entry| entry.message.clone()).collect();
+    assert!(messages.iter().any(|message| message.contains("You move")));
+    assert!(
+        !messages
+            .iter()
+            .any(|message| message.contains("build a station"))
     );
 }

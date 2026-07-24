@@ -119,27 +119,57 @@ fn process_pickup(
     mut commands: Commands,
     mut messages: bevy_ecs::message::MessageReader<PickupIntent>,
     mut game_log: ResMut<GameLog>,
-    _actors: Query<&Name>,
+    mut should_advance: ResMut<crate::time::ShouldAdvanceTime>,
+    actors: Query<(
+        &Position,
+        Option<&crate::components::Player>,
+        Option<&crate::time::AwaitingEnemyPhase>,
+    )>,
     containers: Query<&Container>,
     #[allow(clippy::type_complexity)] items: Query<
-        (Entity, &Name),
+        (Entity, &Name, &Position),
         (With<Item>, Without<Container>),
     >,
 ) {
     for intent in messages.read() {
-        if !containers.contains(intent.actor) {
+        let Ok((actor_position, player, awaiting_enemy_phase)) = actors.get(intent.actor) else {
+            game_log.push(
+                "You cannot pick up an item without a position.",
+                LogLevel::Warn,
+            );
+            continue;
+        };
+        if player.is_some() && awaiting_enemy_phase.is_some() {
+            game_log.push(
+                "Enemy phase is resolving; wait for the next turn.",
+                LogLevel::Warn,
+            );
             continue;
         }
-        if !items.contains(intent.item) {
+        if !containers.contains(intent.actor) {
+            game_log.push("You have nowhere to store that item.", LogLevel::Warn);
+            continue;
+        }
+        let Ok((_, item_name, item_position)) = items.get(intent.item) else {
+            game_log.push("That item is no longer available.", LogLevel::Warn);
+            continue;
+        };
+        if actor_position != item_position {
+            game_log.push("You must stand on the item to pick it up.", LogLevel::Warn);
             continue;
         }
         commands.entity(intent.item).remove::<Position>();
         commands
             .entity(intent.item)
             .insert(ContainedIn(intent.actor));
-        if let Ok(name) = items.get(intent.item).map(|(_, n)| n) {
-            game_log.push(format!("Picked up {}.", name.0), LogLevel::Info);
+        if player.is_some() {
+            should_advance.0 = true;
+            should_advance.1 = true;
+            commands
+                .entity(intent.actor)
+                .insert(crate::time::AwaitingEnemyPhase);
         }
+        game_log.push(format!("Picked up {}.", item_name.0), LogLevel::Info);
     }
 }
 
@@ -256,7 +286,7 @@ fn process_use_item(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::components::Tile;
+    use crate::components::{Player, Tile};
     use crate::map::SmokeMap;
     use crate::pools::{Pool, Pools};
     use bevy_app::App;
@@ -281,7 +311,12 @@ mod tests {
         let mut app = test_app();
         let player = app
             .world_mut()
-            .spawn((Container::default(), Name("Player".into())))
+            .spawn((
+                Player,
+                Container::default(),
+                Name("Player".into()),
+                Position { x: 5, y: 5 },
+            ))
             .id();
         let potion = app
             .world_mut()
@@ -291,6 +326,31 @@ mod tests {
         app.update();
         assert!(app.world().get::<ContainedIn>(potion).is_some());
         assert!(app.world().get::<Position>(potion).is_none());
+        assert_eq!(app.world().resource::<crate::time::GameTime>().turn, 1);
+    }
+
+    #[test]
+    fn pickup_rejects_item_at_a_different_position() {
+        let mut app = test_app();
+        let player = app
+            .world_mut()
+            .spawn((
+                Container::default(),
+                Name("Player".into()),
+                Position { x: 1, y: 1 },
+            ))
+            .id();
+        let potion = app
+            .world_mut()
+            .spawn((Item, Name("Potion".into()), Position { x: 2, y: 2 }))
+            .id();
+        send_pickup(&mut app, player, potion);
+        app.update();
+        assert!(app.world().get::<ContainedIn>(potion).is_none());
+        assert_eq!(
+            app.world().get::<Position>(potion).copied(),
+            Some(Position { x: 2, y: 2 })
+        );
     }
 
     #[test]

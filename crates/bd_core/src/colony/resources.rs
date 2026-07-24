@@ -5,7 +5,7 @@
 
 use bevy_ecs::prelude::*;
 
-use crate::components::{ResourceNode, ResourceNodeType, Position, Name};
+use crate::components::{Name, Position, ResourceNode, ResourceNodeType};
 use crate::map::SmokeMap;
 use crate::signals::PoolKind;
 
@@ -29,9 +29,11 @@ pub const GATHERING_YIELD_PER_DAY: i32 = 1;
 /// Returns the number of nodes spawned.
 pub fn spawn_resource_nodes(commands: &mut Commands, map: &SmokeMap) -> u32 {
     // Use a simple deterministic seed derived from map dimensions
-    let seed = (map.width as u64).wrapping_mul(2654435761)
+    let seed = (map.width as u64)
+        .wrapping_mul(2654435761)
         .wrapping_add(map.height as u64);
-    let count = RESOURCE_NODE_COUNT_MIN + (seed % (RESOURCE_NODE_COUNT_MAX - RESOURCE_NODE_COUNT_MIN + 1) as u64) as u32;
+    let count = RESOURCE_NODE_COUNT_MIN
+        + (seed % (RESOURCE_NODE_COUNT_MAX - RESOURCE_NODE_COUNT_MIN + 1) as u64) as u32;
 
     let node_types = [
         ResourceNodeType::Trees,
@@ -43,8 +45,10 @@ pub fn spawn_resource_nodes(commands: &mut Commands, map: &SmokeMap) -> u32 {
     let mut attempt = 0u64;
 
     while spawned < count && attempt < 200 {
-        let x = 1 + ((seed.wrapping_add(attempt.wrapping_mul(127))) % (map.width as u64 - 2)) as i32;
-        let y = 1 + ((seed.wrapping_add(attempt.wrapping_mul(313))) % (map.height as u64 - 2)) as i32;
+        let x =
+            1 + ((seed.wrapping_add(attempt.wrapping_mul(127))) % (map.width as u64 - 2)) as i32;
+        let y =
+            1 + ((seed.wrapping_add(attempt.wrapping_mul(313))) % (map.height as u64 - 2)) as i32;
 
         if map.is_walkable(x, y) {
             let kind = node_types[(attempt % 3) as usize];
@@ -54,7 +58,10 @@ pub fn spawn_resource_nodes(commands: &mut Commands, map: &SmokeMap) -> u32 {
                 ResourceNodeType::WildPlants => "Wild Plants",
             };
             commands.spawn((
-                ResourceNode { kind, depleted: false },
+                ResourceNode {
+                    kind,
+                    depleted: false,
+                },
                 Position { x, y },
                 Name(name.into()),
             ));
@@ -71,8 +78,14 @@ pub fn spawn_resource_nodes(commands: &mut Commands, map: &SmokeMap) -> u32 {
 /// Process gathering at day change: survivors with Gathering task near resource
 /// nodes produce resources into ColonyResources.
 pub fn process_survivor_gathering(
-    survivors: Query<(&Position, &crate::colony::survivors::SurvivorTask, Option<&Name>),
-        With<crate::colony::survivors::Survivor>>,
+    survivors: Query<
+        (
+            &Position,
+            &crate::colony::survivors::SurvivorTask,
+            Option<&Name>,
+        ),
+        With<crate::colony::survivors::Survivor>,
+    >,
     nodes: Query<(&Position, &ResourceNode)>,
     mut colony_res: ResMut<crate::colony::production::ColonyResources>,
     game_time: Res<crate::time::GameTime>,
@@ -112,7 +125,10 @@ pub fn process_survivor_gathering(
             }
             let survivor_name = name.map_or("A survivor", |n| n.0.as_str());
             game_log.push(
-                format!("{} gathered 1 {:?} from {:?}.", survivor_name, pool_kind, node.kind),
+                format!(
+                    "{} gathered 1 {:?} from {:?}.",
+                    survivor_name, pool_kind, node.kind
+                ),
                 crate::gamelog::LogLevel::Info,
             );
         }
@@ -122,8 +138,8 @@ pub fn process_survivor_gathering(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::map::SmokeMap;
     use crate::components::Tile;
+    use crate::map::SmokeMap;
     use bevy_app::App;
 
     #[test]
@@ -131,7 +147,17 @@ mod tests {
         let mut app = App::new();
         let map = SmokeMap::new(40, 30, Tile::Floor);
         let count = spawn_resource_nodes(&mut app.world_mut().commands(), &map);
-        assert!(count >= RESOURCE_NODE_COUNT_MIN, "Should spawn at least {} nodes, got {}", RESOURCE_NODE_COUNT_MIN, count);
-        assert!(count <= RESOURCE_NODE_COUNT_MAX, "Should spawn at most {} nodes, got {}", RESOURCE_NODE_COUNT_MAX, count);
+        assert!(
+            count >= RESOURCE_NODE_COUNT_MIN,
+            "Should spawn at least {} nodes, got {}",
+            RESOURCE_NODE_COUNT_MIN,
+            count
+        );
+        assert!(
+            count <= RESOURCE_NODE_COUNT_MAX,
+            "Should spawn at most {} nodes, got {}",
+            RESOURCE_NODE_COUNT_MAX,
+            count
+        );
     }
 }

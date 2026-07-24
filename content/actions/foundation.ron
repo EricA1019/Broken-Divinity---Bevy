@@ -1,0 +1,6 @@
+[
+    ActionReference(id: "ability.quick_attack", label: "Quick Attack", skill_id: Some("skill.melee"), skill_gain: 1, virtue_expression: Some("virtue.thumos"), virtue_gain: 1),
+    ActionReference(id: "ability.aimed_attack", label: "Aimed Attack", skill_id: Some("skill.ranged"), skill_gain: 1, virtue_expression: Some("virtue.prudence"), virtue_gain: 1),
+    ActionReference(id: "ability.repair", label: "Repair", skill_id: Some("skill.repair"), skill_gain: 1, virtue_expression: Some("virtue.metis"), virtue_gain: 1),
+    ActionReference(id: "ability.use_item", label: "Use Item", skill_id: Some("skill.medicine"), skill_gain: 1, virtue_expression: Some("virtue.temperance"), virtue_gain: 1),
+]

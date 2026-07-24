@@ -15,7 +15,6 @@ pub struct PartyState {
     pub members: Vec<Entity>,
 }
 
-
 pub fn register_add_to_party_action() -> ActionDefinition {
     ActionDefinition {
         id: "ability.add_to_party".into(),
@@ -25,9 +24,10 @@ pub fn register_add_to_party_action() -> ActionDefinition {
             Requirement::PlayerHasEntityInRange(2),
         ],
         cost_effects: vec![],
-        effects: vec![
-            Effect::Log("Added to party.".into(), crate::gamelog::LogLevel::Info),
-        ],
+        effects: vec![Effect::Log(
+            "Added to party.".into(),
+            crate::gamelog::LogLevel::Info,
+        )],
     }
 }
 
@@ -40,9 +40,10 @@ pub fn register_remove_from_party_action() -> ActionDefinition {
             Requirement::PlayerHasEntityInRange(2),
         ],
         cost_effects: vec![],
-        effects: vec![
-            Effect::Log("Removed from party.".into(), crate::gamelog::LogLevel::Info),
-        ],
+        effects: vec![Effect::Log(
+            "Removed from party.".into(),
+            crate::gamelog::LogLevel::Info,
+        )],
     }
 }
 

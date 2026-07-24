@@ -70,22 +70,19 @@ pub fn register_begin_travel_action() -> ActionDefinition {
     ActionDefinition {
         id: "ability.begin_travel".into(),
         label: "Begin Travel".into(),
-        requirements: vec![
-            Requirement::PlayerHasEntityInRange(1),
-        ],
+        requirements: vec![Requirement::PlayerHasEntityInRange(1)],
         cost_effects: vec![Effect::PoolDelta {
             kind: PoolKind::Supplies,
             amount: -TRAVEL_FOOD_COST_PER_TURN,
             tags: vec![],
             reason: "travel cost".into(),
         }],
-        effects: vec![
-            Effect::Log("You begin traveling.".into(), crate::gamelog::LogLevel::Info),
-        ],
+        effects: vec![Effect::Log(
+            "You begin traveling.".into(),
+            crate::gamelog::LogLevel::Info,
+        )],
     }
 }
-
-
 
 // ── Travel system ──
 
@@ -133,12 +130,13 @@ pub fn process_travel_day(
     );
 
     // P14-A: Roll for random encounters during travel
-    let encounter_seed = time.turn.wrapping_mul(3141592653).wrapping_add(
-        match &state.current_node {
-            Some(n) => n.len() as u64 * 2718281828,
-            None => 0,
-        },
-    );
+    let encounter_seed =
+        time.turn
+            .wrapping_mul(3141592653)
+            .wrapping_add(match &state.current_node {
+                Some(n) => n.len() as u64 * 2718281828,
+                None => 0,
+            });
     if let Some(encounter) = roll_encounter(encounter_seed, &faction_rep) {
         game_log.push(
             format!("Encounter: {:?}!", encounter),
@@ -149,7 +147,10 @@ pub fn process_travel_day(
 
     if state.turns_remaining == 0 {
         // Arrived! Transition to tactical mode
-        game_log.push("You have arrived at your destination.".to_string(), crate::gamelog::LogLevel::Info);
+        game_log.push(
+            "You have arrived at your destination.".to_string(),
+            crate::gamelog::LogLevel::Info,
+        );
         transition_writer.write(crate::spatial::TransitionIntent {
             target: crate::spatial::GameMode::Tactical,
             node_id: state.current_node.clone(),
@@ -181,7 +182,10 @@ pub fn roll_weather(seed: u64) -> Weather {
 /// Roll a random encounter based on a deterministic seed and faction standings.
 /// Factions skew the odds: hostile → more bandits/demons, allied → more angels/camps.
 /// Returns None if no encounter occurs (~30% base chance per turn).
-pub fn roll_encounter(seed: u64, rep: &crate::factions::FactionReputation) -> Option<EncounterType> {
+pub fn roll_encounter(
+    seed: u64,
+    rep: &crate::factions::FactionReputation,
+) -> Option<EncounterType> {
     let roll = seed % 100;
     if roll >= ENCOUNTER_CHANCE_PCT as u64 {
         return None;
@@ -234,31 +238,46 @@ pub fn resolve_encounter(
 ) {
     match encounter {
         EncounterType::BanditAmbush => {
-            game_log.push("Bandits ambush you! You fight them off but take losses.".to_string(), crate::gamelog::LogLevel::Combat);
+            game_log.push(
+                "Bandits ambush you! You fight them off but take losses.".to_string(),
+                crate::gamelog::LogLevel::Combat,
+            );
             if let Some(supplies) = colony_res.pools.get_mut(PoolKind::Supplies) {
                 supplies.current = (supplies.current - 3).max(0);
             }
         }
         EncounterType::DemonSighting => {
-            game_log.push("A demonic presence streaks across the sky. Your mind reels.".to_string(), crate::gamelog::LogLevel::Combat);
+            game_log.push(
+                "A demonic presence streaks across the sky. Your mind reels.".to_string(),
+                crate::gamelog::LogLevel::Combat,
+            );
             if let Some(sanity) = colony_res.pools.get_mut(PoolKind::Sanity) {
                 sanity.current = (sanity.current - 10).max(0);
             }
         }
         EncounterType::AngelPatrol => {
-            game_log.push("An angelic patrol passes overhead. You feel a flicker of hope.".to_string(), crate::gamelog::LogLevel::Info);
+            game_log.push(
+                "An angelic patrol passes overhead. You feel a flicker of hope.".to_string(),
+                crate::gamelog::LogLevel::Info,
+            );
             if let Some(faith) = colony_res.pools.get_mut(PoolKind::Faith) {
                 faith.current = (faith.current + 5).min(faith.max);
             }
         }
         EncounterType::SurvivorCamp => {
-            game_log.push("You stumble upon a survivor camp. They share supplies.".to_string(), crate::gamelog::LogLevel::Info);
+            game_log.push(
+                "You stumble upon a survivor camp. They share supplies.".to_string(),
+                crate::gamelog::LogLevel::Info,
+            );
             if let Some(supplies) = colony_res.pools.get_mut(PoolKind::Supplies) {
                 supplies.current = (supplies.current + 5).min(supplies.max);
             }
         }
         EncounterType::WeatherHazard => {
-            game_log.push("Harsh weather damages your supplies and frays your nerves.".to_string(), crate::gamelog::LogLevel::Warn);
+            game_log.push(
+                "Harsh weather damages your supplies and frays your nerves.".to_string(),
+                crate::gamelog::LogLevel::Warn,
+            );
             if let Some(supplies) = colony_res.pools.get_mut(PoolKind::Supplies) {
                 supplies.current = (supplies.current - 2).max(0);
             }
@@ -285,10 +304,13 @@ pub fn process_travel_weather(
     }
 
     // Roll weather from a deterministic seed (turn + node hash)
-    let seed = time.turn.wrapping_mul(2654435761).wrapping_add(match &state.current_node {
-        Some(n) => n.len() as u64 * 2654435761,
-        None => 0,
-    });
+    let seed = time
+        .turn
+        .wrapping_mul(2654435761)
+        .wrapping_add(match &state.current_node {
+            Some(n) => n.len() as u64 * 2654435761,
+            None => 0,
+        });
     let new_weather = roll_weather(seed);
 
     if new_weather != state.weather {
@@ -310,7 +332,10 @@ pub fn process_travel_weather(
             supplies.current = (supplies.current - extra_cost).max(0);
         }
         game_log.push(
-            format!("{:?} weather increases supply consumption by {}.", state.weather, extra_cost),
+            format!(
+                "{:?} weather increases supply consumption by {}.",
+                state.weather, extra_cost
+            ),
             crate::gamelog::LogLevel::Info,
         );
     }
@@ -337,20 +362,17 @@ impl Default for TravelContext {
 pub fn register_travel(app: &mut bevy_app::App) {
     app.add_systems(
         bevy_app::Update,
-        (
-            process_travel_day,
-            process_travel_weather,
-        ).in_set(crate::BdSet::Mutation),
+        (process_travel_day, process_travel_weather).in_set(crate::BdSet::Mutation),
     );
 }
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::{
-        gamelog::GameLog,
-        spatial::{GameMode, TransitionIntent},
         colony::production::ColonyResources,
+        gamelog::GameLog,
         map::SmokeMap,
+        spatial::{GameMode, TransitionIntent},
     };
     use bevy_app::App;
 
@@ -390,39 +412,75 @@ mod tests {
     #[test]
     fn travel_progress_decrements_turns() {
         let mut app = test_app();
-        app.world_mut().insert_resource(SmokeMap::new(10, 10, crate::components::Tile::Floor));
+        app.world_mut()
+            .insert_resource(SmokeMap::new(10, 10, crate::components::Tile::Floor));
         app.world_mut().insert_resource(GameMode::Travel);
-        app.world_mut().resource_mut::<OverworldState>().turns_remaining = 3;
+        app.world_mut()
+            .resource_mut::<OverworldState>()
+            .turns_remaining = 3;
         app.update();
         let state = app.world().resource::<OverworldState>();
-        assert_eq!(state.turns_remaining, 2, "Travel should decrement turns each frame");
+        assert_eq!(
+            state.turns_remaining, 2,
+            "Travel should decrement turns each frame"
+        );
     }
 
     #[test]
     fn travel_arrives_at_tactical() {
         let mut app = test_app();
-        app.world_mut().insert_resource(SmokeMap::new(10, 10, crate::components::Tile::Floor));
+        app.world_mut()
+            .insert_resource(SmokeMap::new(10, 10, crate::components::Tile::Floor));
         app.world_mut().insert_resource(GameMode::Travel);
-        app.world_mut().resource_mut::<OverworldState>().turns_remaining = 1;
+        app.world_mut()
+            .resource_mut::<OverworldState>()
+            .turns_remaining = 1;
         // First update: process_travel_day writes TransitionIntent
         app.update();
         let state = app.world().resource::<OverworldState>();
-        assert_eq!(state.turns_remaining, 0, "Travel should reach 0 on first update");
+        assert_eq!(
+            state.turns_remaining, 0,
+            "Travel should reach 0 on first update"
+        );
         // Second update: process_transitions processes the intent and changes mode
         app.update();
         let mode = app.world().resource::<GameMode>();
-        assert_eq!(*mode, GameMode::Tactical, "Mode should become Tactical when travel arrives");
+        assert_eq!(
+            *mode,
+            GameMode::Tactical,
+            "Mode should become Tactical when travel arrives"
+        );
     }
 
     #[test]
     fn travel_deducts_food() {
         let mut app = test_app();
-        app.world_mut().insert_resource(SmokeMap::new(10, 10, crate::components::Tile::Floor));
+        app.world_mut()
+            .insert_resource(SmokeMap::new(10, 10, crate::components::Tile::Floor));
         app.world_mut().insert_resource(GameMode::Travel);
-        app.world_mut().resource_mut::<OverworldState>().turns_remaining = 3;
-        let supplies_before = app.world().resource::<ColonyResources>().pools.get(PoolKind::Supplies).unwrap().current;
+        app.world_mut()
+            .resource_mut::<OverworldState>()
+            .turns_remaining = 3;
+        let supplies_before = app
+            .world()
+            .resource::<ColonyResources>()
+            .pools
+            .get(PoolKind::Supplies)
+            .unwrap()
+            .current;
         app.update();
-        let supplies_after = app.world().resource::<ColonyResources>().pools.get(PoolKind::Supplies).unwrap().current;
-        assert!(supplies_after < supplies_before, "Travel should deduct supplies (was={}, now={})", supplies_before, supplies_after);
+        let supplies_after = app
+            .world()
+            .resource::<ColonyResources>()
+            .pools
+            .get(PoolKind::Supplies)
+            .unwrap()
+            .current;
+        assert!(
+            supplies_after < supplies_before,
+            "Travel should deduct supplies (was={}, now={})",
+            supplies_before,
+            supplies_after
+        );
     }
 }

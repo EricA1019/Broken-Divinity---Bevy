@@ -52,7 +52,10 @@ pub fn data_dir() -> PathBuf {
         .map(|d| d.data_dir().to_path_buf())
         .unwrap_or_else(|| {
             let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".into());
-            Path::new(&home).join(".local").join("share").join(app_name())
+            Path::new(&home)
+                .join(".local")
+                .join("share")
+                .join(app_name())
         })
 }
 
@@ -104,6 +107,14 @@ impl Default for AppConfig {
 // Key bindings
 // ---------------------------------------------------------------------------
 
+fn default_pickup_key() -> String {
+    "p".into()
+}
+
+fn default_extract_key() -> String {
+    "r".into()
+}
+
 /// User-configurable key bindings for game actions.
 ///
 /// Each field is a single-key string (e.g. `"w"`, `"i"`).
@@ -117,6 +128,10 @@ pub struct KeyBindingConfig {
     pub attack: String,
     pub guard: String,
     pub inventory: String,
+    #[serde(default = "default_pickup_key")]
+    pub pickup: String,
+    #[serde(default = "default_extract_key")]
+    pub extract: String,
     pub combat_screen: String,
     pub quit: String,
 }
@@ -132,6 +147,8 @@ impl Default for KeyBindingConfig {
             attack: "f".into(),
             guard: "g".into(),
             inventory: "i".into(),
+            pickup: default_pickup_key(),
+            extract: default_extract_key(),
             combat_screen: "z".into(),
             quit: "q".into(),
         }
@@ -142,11 +159,19 @@ impl KeyBindingConfig {
     /// Return a list of (action_label, key_string) pairs for the help line.
     pub fn help_entries(&self) -> Vec<(String, String)> {
         vec![
-            ("Move".into(), format!("{}↑{}↓{}←{}→", self.move_north, self.move_south, self.move_west, self.move_east)),
+            (
+                "Move".into(),
+                format!(
+                    "{}↑{}↓{}←{}→",
+                    self.move_north, self.move_south, self.move_west, self.move_east
+                ),
+            ),
             ("Wait".into(), self.wait.clone()),
             ("Attack".into(), self.attack.clone()),
             ("Guard".into(), self.guard.clone()),
             ("Inventory".into(), self.inventory.clone()),
+            ("Pickup".into(), self.pickup.clone()),
+            ("Extract".into(), self.extract.clone()),
             ("Combat".into(), self.combat_screen.clone()),
             ("Quit".into(), self.quit.clone()),
         ]
@@ -299,6 +324,12 @@ fn merge_configs(base: &mut AppConfig, user: AppConfig, _warnings: &mut Vec<Stri
     if user_kb.inventory != default_kb.inventory {
         base.keybindings.inventory = user_kb.inventory.clone();
     }
+    if user_kb.pickup != default_kb.pickup {
+        base.keybindings.pickup = user_kb.pickup.clone();
+    }
+    if user_kb.extract != default_kb.extract {
+        base.keybindings.extract = user_kb.extract.clone();
+    }
     if user_kb.combat_screen != default_kb.combat_screen {
         base.keybindings.combat_screen = user_kb.combat_screen.clone();
     }
@@ -335,9 +366,8 @@ pub fn save_config(config: &AppConfig) -> Result<PathBuf, ConfigError> {
     fs::create_dir_all(&dir).map_err(ConfigError::Io)?;
 
     let path = dir.join("config.toml");
-    let content = toml::to_string_pretty(config).map_err(|e| {
-        ConfigError::Parse(format!("Failed to serialize config: {e}"))
-    })?;
+    let content = toml::to_string_pretty(config)
+        .map_err(|e| ConfigError::Parse(format!("Failed to serialize config: {e}")))?;
     fs::write(&path, content).map_err(ConfigError::Io)?;
     Ok(path)
 }
@@ -409,6 +439,8 @@ mod tests {
         assert!(line.contains("Quit:q"));
         assert!(line.contains("Move:w"));
         assert!(line.contains("Attack:f"));
+        assert!(line.contains("Pickup:p"));
+        assert!(line.contains("Extract:r"));
         // Should be a non-empty string with pipe separators
         assert!(line.contains('|'));
         assert!(line.len() > 10);

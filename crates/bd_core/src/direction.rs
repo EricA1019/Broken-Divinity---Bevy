@@ -30,7 +30,11 @@ impl Direction {
         let dx = to.x - from.x;
         let dy = to.y - from.y;
         if dx.abs() >= dy.abs() {
-            if dx > 0 { Direction::East } else { Direction::West }
+            if dx > 0 {
+                Direction::East
+            } else {
+                Direction::West
+            }
         } else if dy > 0 {
             Direction::South
         } else {

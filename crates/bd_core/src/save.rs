@@ -15,15 +15,13 @@ use bevy_ecs::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    components::{BlocksMovement, Name, Player, Position, Tile},
+    components::{BlocksMovement, ContentIdentity, Name, Player, Position, Tile},
     factory::EntityBlueprint,
     gamelog::GameLog,
     inventory::{Container, EquipmentSlot, Item, SlotKind, Usable, UseEffect},
     map::SmokeMap,
     pools::{Pool, Pools},
-    relationships::{
-        ContainedIn, EquippedBy, FactionMember, LocationOwned, OwnedBy, SummonedBy,
-    },
+    relationships::{ContainedIn, EquippedBy, FactionMember, LocationOwned, OwnedBy, SummonedBy},
     signals::PoolKind,
     statuses::{StatusInstance, Statuses},
 };
@@ -33,10 +31,10 @@ use crate::{
 // ---------------------------------------------------------------------------
 
 /// Current save format version. Bump on breaking changes.
-pub const SAVE_VERSION: u32 = 1;
+pub const SAVE_VERSION: u32 = 3;
 
 /// Content version — corresponds to the content pack hash/date.
-pub const CONTENT_VERSION: &str = "kernel-2026-07-09";
+pub const CONTENT_VERSION: &str = "foundation-2026-07-24";
 
 // ---------------------------------------------------------------------------
 // Save ID — serializable surrogate for `Entity`
@@ -68,7 +66,9 @@ pub struct EntityData {
     pub is_player: bool,
     pub blocks_movement: bool,
     pub name: Option<String>,
+    pub content_id: Option<String>,
     pub position: Option<Position>,
+    pub skill_progression: Option<crate::progression::SkillProgression>,
     pub pools: Vec<PoolSnapshot>,
     pub statuses: Vec<StatusSnapshot>,
     pub contains: Vec<SaveId>,
@@ -114,11 +114,16 @@ pub struct RunSnapshot {
     pub content_version: String,
     pub seed: u64,
     pub turn: u64,
+    pub session: crate::session::RunSession,
     pub map_width: i32,
     pub map_height: i32,
     pub map_tiles: Vec<Tile>,
     pub entities: Vec<EntityData>,
     pub log_entries: Vec<String>,
+    #[serde(default)]
+    pub colony_storage: crate::colony::production::ColonyStorage,
+    #[serde(default)]
+    pub colony_resources: Vec<PoolSnapshot>,
 }
 
 // ---------------------------------------------------------------------------
@@ -160,10 +165,16 @@ impl std::fmt::Display for SaveError {
             SaveError::Io(e) => write!(f, "I/O error: {e}"),
             SaveError::Corrupt(msg) => write!(f, "Corrupt save: {msg}"),
             SaveError::VersionMismatch { expected, found } => {
-                write!(f, "Save version mismatch: expected {expected}, found {found}")
+                write!(
+                    f,
+                    "Save version mismatch: expected {expected}, found {found}"
+                )
             }
             SaveError::ContentMismatch { expected, found } => {
-                write!(f, "Content version mismatch: expected {expected}, found {found}")
+                write!(
+                    f,
+                    "Content version mismatch: expected {expected}, found {found}"
+                )
             }
             SaveError::MissingBlueprint(id) => {
                 write!(f, "Missing blueprint: {id}")
@@ -189,21 +200,20 @@ pub fn save_world(
         .map_err(|e| SaveError::Corrupt(format!("Serialization: {e}")))?;
     fs::write(&path, content).map_err(SaveError::Io)?;
 
-    tracing::info!("Saved {} entities to {}", snapshot.entities.len(), path.display());
+    tracing::info!(
+        "Saved {} entities to {}",
+        snapshot.entities.len(),
+        path.display()
+    );
     Ok(path)
 }
 
-/// Deserialize a save file and restore the world.
-/// Returns the restored World and the seed.
-pub fn load_world(
-    path: &PathBuf,
-    _blueprints: &HashMap<String, EntityBlueprint>,
-) -> Result<(World, u64), SaveError> {
+/// Deserialize a save file into a validated snapshot.
+pub fn load_snapshot(path: &PathBuf) -> Result<RunSnapshot, SaveError> {
     let content = fs::read_to_string(path).map_err(SaveError::Io)?;
     let snapshot: RunSnapshot = ron::de::from_str(&content)
         .map_err(|e| SaveError::Corrupt(format!("Deserialization: {e}")))?;
 
-    // Validate versions
     if snapshot.save_version != SAVE_VERSION {
         return Err(SaveError::VersionMismatch {
             expected: SAVE_VERSION,
@@ -216,6 +226,24 @@ pub fn load_world(
             found: snapshot.content_version,
         });
     }
+    if snapshot.map_width <= 0
+        || snapshot.map_height <= 0
+        || snapshot.map_tiles.len() != (snapshot.map_width * snapshot.map_height) as usize
+    {
+        return Err(SaveError::Corrupt(
+            "invalid map dimensions or tile count".into(),
+        ));
+    }
+    Ok(snapshot)
+}
+
+/// Deserialize a save file and restore the world.
+/// Returns the restored World and the seed.
+pub fn load_world(
+    path: &PathBuf,
+    _blueprints: &HashMap<String, EntityBlueprint>,
+) -> Result<(World, u64), SaveError> {
+    let snapshot = load_snapshot(path)?;
 
     let (world, _) = restore_world(&snapshot, _blueprints)?;
     Ok((world, snapshot.seed))
@@ -259,7 +287,15 @@ fn build_snapshot(world: &mut World, seed: u64, turn: u64) -> RunSnapshot {
             is_player: world.entity(entity).contains::<Player>(),
             blocks_movement: world.entity(entity).contains::<BlocksMovement>(),
             name: world.entity(entity).get::<Name>().map(|n| n.0.clone()),
+            content_id: world
+                .entity(entity)
+                .get::<ContentIdentity>()
+                .map(|id| id.0.clone()),
             position: world.entity(entity).get::<Position>().copied(),
+            skill_progression: world
+                .entity(entity)
+                .get::<crate::progression::SkillProgression>()
+                .cloned(),
             pools: Vec::new(),
             statuses: Vec::new(),
             contains: Vec::new(),
@@ -269,11 +305,22 @@ fn build_snapshot(world: &mut World, seed: u64, turn: u64) -> RunSnapshot {
             location_owned: None,
             faction: None,
             item: world.entity(entity).contains::<Item>(),
-            container_capacity: world.entity(entity).get::<Container>().map(|c| c.capacity.unwrap_or(-1)),
+            container_capacity: world
+                .entity(entity)
+                .get::<Container>()
+                .map(|c| c.capacity.unwrap_or(-1)),
             equipment_slot: world.entity(entity).get::<EquipmentSlot>().map(|s| s.kind),
             usable: world.entity(entity).contains::<Usable>(),
-            usable_consume: world.entity(entity).get::<Usable>().map(|u| u.consume_on_use).unwrap_or(false),
-            usable_effects: world.entity(entity).get::<Usable>().map(|u| u.effects.clone()).unwrap_or_default(),
+            usable_consume: world
+                .entity(entity)
+                .get::<Usable>()
+                .map(|u| u.consume_on_use)
+                .unwrap_or(false),
+            usable_effects: world
+                .entity(entity)
+                .get::<Usable>()
+                .map(|u| u.effects.clone())
+                .unwrap_or_default(),
         };
 
         // Pools
@@ -331,18 +378,52 @@ fn build_snapshot(world: &mut World, seed: u64, turn: u64) -> RunSnapshot {
 
     // Log
     let log = world.resource::<GameLog>();
-    let log_entries: Vec<String> = log.iter().map(|e| format!("{:?}: {}", e.level, e.message)).collect();
+    let log_entries: Vec<String> = log
+        .iter()
+        .map(|e| format!("{:?}: {}", e.level, e.message))
+        .collect();
+    let colony_storage = world
+        .get_resource::<crate::colony::production::ColonyStorage>()
+        .cloned()
+        .unwrap_or_default();
+    let colony_resources = world
+        .get_resource::<crate::colony::production::ColonyResources>()
+        .map(|resources| {
+            resources
+                .pools
+                .iter()
+                .map(|pool| PoolSnapshot {
+                    kind: pool.kind,
+                    current: pool.current,
+                    min: pool.min,
+                    max: pool.max,
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let mut session = world
+        .get_resource::<crate::session::RunSession>()
+        .cloned()
+        .unwrap_or_else(|| crate::session::RunSession::new(seed));
+    // Keep the legacy save API compatible while making the session the
+    // serialized authority whenever the runtime provides one.
+    session.seed = seed;
+    session.turn = turn;
 
     RunSnapshot {
         save_version: SAVE_VERSION,
         content_version: CONTENT_VERSION.into(),
         seed,
         turn,
+        session,
         map_width: map.width,
         map_height: map.height,
         map_tiles: tiles_from_map(map),
         entities: entities_data,
         log_entries,
+        colony_storage,
+        colony_resources,
     }
 }
 
@@ -352,6 +433,18 @@ fn restore_world(
     _blueprints: &HashMap<String, EntityBlueprint>,
 ) -> Result<(World, HashMap<SaveId, Entity>), SaveError> {
     let mut world = World::new();
+    let mapping = restore_snapshot_into(&mut world, snapshot, _blueprints)?;
+    Ok((world, mapping))
+}
+
+/// Restore a validated snapshot into an existing application world.
+/// Existing entities are cleared while plugin resources and schedules remain.
+pub fn restore_snapshot_into(
+    world: &mut World,
+    snapshot: &RunSnapshot,
+    _blueprints: &HashMap<String, EntityBlueprint>,
+) -> Result<HashMap<SaveId, Entity>, SaveError> {
+    world.clear_entities();
 
     // Restore map
     let map = SmokeMap::from_tiles(snapshot.map_width, snapshot.map_height, &snapshot.map_tiles);
@@ -363,10 +456,37 @@ fn restore_world(
         log.push(entry.clone(), crate::gamelog::LogLevel::Info);
     }
     world.insert_resource(log);
+    world.insert_resource(snapshot.session.clone());
+    world.insert_resource(snapshot.session.phase);
+    world.insert_resource(crate::time::GameTime {
+        day: snapshot.session.day,
+        turn: snapshot.session.turn,
+    });
+    let colony_pools = if snapshot.colony_resources.is_empty() {
+        crate::colony::production::ColonyResources::default().pools
+    } else {
+        Pools::new(
+            snapshot
+                .colony_resources
+                .iter()
+                .map(|pool| Pool::new(pool.kind, pool.current, pool.min, pool.max))
+                .collect(),
+        )
+    };
+    world.insert_resource(crate::colony::production::ColonyResources {
+        pools: colony_pools,
+    });
+    world.insert_resource(snapshot.colony_storage.clone());
 
     // First pass: spawn all entities (empty)
     let mut save_id_to_entity: HashMap<SaveId, Entity> = HashMap::new();
     for ed in &snapshot.entities {
+        if save_id_to_entity.contains_key(&ed.save_id) {
+            return Err(SaveError::Corrupt(format!(
+                "duplicate entity save ID {:?}",
+                ed.save_id
+            )));
+        }
         let entity = world.spawn_empty();
         let id = entity.id();
         save_id_to_entity.insert(ed.save_id, id);
@@ -386,8 +506,16 @@ fn restore_world(
         if let Some(ref name) = ed.name {
             world.entity_mut(entity).insert(Name(name.clone()));
         }
+        if let Some(ref content_id) = ed.content_id {
+            world
+                .entity_mut(entity)
+                .insert(ContentIdentity(content_id.clone()));
+        }
         if let Some(pos) = ed.position {
             world.entity_mut(entity).insert(pos);
+        }
+        if let Some(progression) = ed.skill_progression.clone() {
+            world.entity_mut(entity).insert(progression);
         }
 
         // Pools
@@ -402,16 +530,26 @@ fn restore_world(
 
         // Statuses
         if !ed.statuses.is_empty() {
-            let instances: Vec<StatusInstance> = ed
-                .statuses
-                .iter()
-                .map(|ss| StatusInstance {
+            let mut instances = Vec::with_capacity(ed.statuses.len());
+            for ss in &ed.statuses {
+                let source = match ss.source_id {
+                    Some(source_id) => {
+                        Some(*save_id_to_entity.get(&source_id).ok_or_else(|| {
+                            SaveError::Corrupt(format!(
+                                "status '{}' on {:?} references missing source {:?}",
+                                ss.status_id, ed.save_id, source_id
+                            ))
+                        })?)
+                    }
+                    None => None,
+                };
+                instances.push(StatusInstance {
                     status_id: ss.status_id.clone(),
                     remaining_duration: ss.remaining_duration,
                     stacks: ss.stacks,
-                    source: ss.source_id.and_then(|sid| save_id_to_entity.get(&sid)).copied(),
-                })
-                .collect();
+                    source,
+                });
+            }
             world.entity_mut(entity).insert(Statuses { instances });
         }
 
@@ -446,34 +584,54 @@ fn restore_world(
 
         // Relationships
         for &container_sid in &ed.contains {
-            if let Some(&container_entity) = save_id_to_entity.get(&container_sid) {
-                world.entity_mut(entity).insert(ContainedIn(container_entity));
-            }
+            let container_entity = *save_id_to_entity.get(&container_sid).ok_or_else(|| {
+                SaveError::Corrupt(format!(
+                    "entity {:?} references missing container {:?}",
+                    ed.save_id, container_sid
+                ))
+            })?;
+            world
+                .entity_mut(entity)
+                .insert(ContainedIn(container_entity));
         }
         if let Some(sid) = ed.equipped_by {
-            if let Some(&e) = save_id_to_entity.get(&sid) {
-                world.entity_mut(entity).insert(EquippedBy(e));
-            }
+            let equipped_by = *save_id_to_entity.get(&sid).ok_or_else(|| {
+                SaveError::Corrupt(format!(
+                    "entity {:?} references missing equipment owner {:?}",
+                    ed.save_id, sid
+                ))
+            })?;
+            world.entity_mut(entity).insert(EquippedBy(equipped_by));
         }
         if let Some(sid) = ed.owned_by {
-            if let Some(&e) = save_id_to_entity.get(&sid) {
-                world.entity_mut(entity).insert(OwnedBy(e));
-            }
+            let owner = *save_id_to_entity.get(&sid).ok_or_else(|| {
+                SaveError::Corrupt(format!(
+                    "entity {:?} references missing owner {:?}",
+                    ed.save_id, sid
+                ))
+            })?;
+            world.entity_mut(entity).insert(OwnedBy(owner));
         }
         if let Some(sid) = ed.summoned_by {
-            if let Some(&e) = save_id_to_entity.get(&sid) {
-                world.entity_mut(entity).insert(SummonedBy(e));
-            }
+            let summoner = *save_id_to_entity.get(&sid).ok_or_else(|| {
+                SaveError::Corrupt(format!(
+                    "entity {:?} references missing summoner {:?}",
+                    ed.save_id, sid
+                ))
+            })?;
+            world.entity_mut(entity).insert(SummonedBy(summoner));
         }
         if let Some(ref loc) = ed.location_owned {
             world.entity_mut(entity).insert(LocationOwned(loc.clone()));
         }
         if let Some(ref faction) = ed.faction {
-            world.entity_mut(entity).insert(FactionMember(faction.clone()));
+            world
+                .entity_mut(entity)
+                .insert(FactionMember(faction.clone()));
         }
     }
 
-    Ok((world, save_id_to_entity))
+    Ok(save_id_to_entity)
 }
 
 // ---------------------------------------------------------------------------
@@ -509,18 +667,21 @@ mod tests {
     use super::*;
     use crate::components::Tile;
     use bevy_app::App;
-    
+
     fn test_snapshot() -> RunSnapshot {
         RunSnapshot {
             save_version: SAVE_VERSION,
             content_version: CONTENT_VERSION.into(),
             seed: 42,
             turn: 0,
+            session: crate::session::RunSession::new(42),
             map_width: 10,
             map_height: 10,
             map_tiles: vec![Tile::Floor; 100],
             entities: vec![],
             log_entries: vec![],
+            colony_storage: crate::colony::production::ColonyStorage::default(),
+            colony_resources: Vec::new(),
         }
     }
 
@@ -585,10 +746,80 @@ mod tests {
         world.entity_mut(item).insert(ContainedIn(player));
 
         let snap = build_snapshot(&mut world, 42, 0);
-        let item_data = snap.entities.iter().find(|e| e.name.as_deref() == Some("Sword")).unwrap();
+        let item_data = snap
+            .entities
+            .iter()
+            .find(|e| e.name.as_deref() == Some("Sword"))
+            .unwrap();
         assert!(item_data.item);
         // ContainedIn should reference player's SaveId
         assert!(!item_data.contains.is_empty());
+    }
+
+    #[test]
+    fn faction_identity_survives_save_load() {
+        let mut world = World::new();
+        world.insert_resource(SmokeMap::new(10, 10, Tile::Floor));
+        world.insert_resource(GameLog::default());
+        let _enemy = world
+            .spawn((
+                Name("Placeholder Enemy".into()),
+                FactionMember("faction.placeholder_a".into()),
+            ))
+            .id();
+
+        let snap = build_snapshot(&mut world, 42, 0);
+        let blueprints = HashMap::new();
+        let (restored, mapping) = restore_world(&snap, &blueprints).unwrap();
+        let saved_id = snap
+            .entities
+            .iter()
+            .find(|entity| entity.name.as_deref() == Some("Placeholder Enemy"))
+            .unwrap()
+            .save_id;
+        assert_eq!(
+            restored
+                .entity(mapping[&saved_id])
+                .get::<FactionMember>()
+                .unwrap()
+                .0,
+            "faction.placeholder_a"
+        );
+    }
+
+    #[test]
+    fn invalid_entity_reference_fails_safely() {
+        let mut world = World::new();
+        world.insert_resource(SmokeMap::new(5, 5, Tile::Floor));
+        world.insert_resource(GameLog::default());
+        world.spawn((Player, Name("Player".into())));
+        world.spawn((Item, Name("Broken Item".into())));
+
+        let mut snap = build_snapshot(&mut world, 42, 0);
+        snap.entities
+            .iter_mut()
+            .find(|entity| entity.name.as_deref() == Some("Broken Item"))
+            .unwrap()
+            .contains
+            .push(SaveId(999_999));
+
+        let error = match restore_world(&snap, &HashMap::new()) {
+            Ok(_) => panic!("invalid entity reference should fail safely"),
+            Err(error) => error,
+        };
+        assert!(error.to_string().contains("missing container"));
+    }
+
+    #[test]
+    fn invalid_map_fails_before_world_restore() {
+        let mut snap = test_snapshot();
+        snap.map_tiles.pop();
+        let ron = ron::ser::to_string(&snap).unwrap();
+        let path = std::env::temp_dir().join("test_invalid_map.ron");
+        std::fs::write(&path, ron).unwrap();
+        let error = load_world(&path, &HashMap::new()).unwrap_err();
+        assert!(error.to_string().contains("invalid map"));
+        let _ = std::fs::remove_file(path);
     }
 
     #[test]
@@ -611,7 +842,11 @@ mod tests {
         world.entity_mut(item).insert(EquippedBy(player));
 
         let snap = build_snapshot(&mut world, 42, 0);
-        let item_data = snap.entities.iter().find(|e| e.name.as_deref() == Some("Shield")).unwrap();
+        let item_data = snap
+            .entities
+            .iter()
+            .find(|e| e.name.as_deref() == Some("Shield"))
+            .unwrap();
         assert_eq!(item_data.equipment_slot, Some(SlotKind::Armor));
         assert!(item_data.equipped_by.is_some());
     }
@@ -625,13 +860,14 @@ mod tests {
         world.insert_resource(GameLog::default());
 
         let summoner = world.spawn(Player).id();
-        world.spawn((
-            Name("Temporary".into()),
-            SummonedBy(summoner),
-        ));
+        world.spawn((Name("Temporary".into()), SummonedBy(summoner)));
 
         let snap = build_snapshot(&mut world, 42, 0);
-        let summon = snap.entities.iter().find(|e| e.name.as_deref() == Some("Temporary")).unwrap();
+        let summon = snap
+            .entities
+            .iter()
+            .find(|e| e.name.as_deref() == Some("Temporary"))
+            .unwrap();
         assert!(summon.summoned_by.is_some());
     }
 
@@ -651,7 +887,11 @@ mod tests {
         let (restored, mapping) = restore_world(&snap, &blueprints).unwrap();
 
         // Find the restored item
-        let item_data = snap.entities.iter().find(|e| e.name.as_deref() == Some("Ring")).unwrap();
+        let item_data = snap
+            .entities
+            .iter()
+            .find(|e| e.name.as_deref() == Some("Ring"))
+            .unwrap();
         let restored_item = mapping[&item_data.save_id];
         let restored_entity = restored.entity(restored_item);
         assert!(restored_entity.contains::<EquippedBy>());
@@ -674,18 +914,34 @@ mod tests {
         let mut world = World::new();
         world.insert_resource(SmokeMap::new(5, 5, Tile::Floor));
         world.insert_resource(GameLog::default());
+        let mut storage = crate::colony::production::ColonyStorage::default();
+        storage.add_item("item.healing_potion");
+        world.insert_resource(storage);
+        world.insert_resource(crate::colony::production::ColonyResources {
+            pools: Pools::new(vec![Pool::new(PoolKind::Supplies, 7, 0, 100)]),
+        });
+        let mut session = crate::session::RunSession::new(99);
+        session.begin_dungeon("dungeon.foundation");
+        session.mark_extracted();
+        world.insert_resource(session);
 
-        let player = world.spawn((
-            Player,
-            Position { x: 2, y: 3 },
-            Pools::new(vec![Pool::new(PoolKind::Health, 10, 0, 20)]),
-        )).id();
+        let player = world
+            .spawn((
+                Player,
+                Position { x: 2, y: 3 },
+                crate::progression::SkillProgression {
+                    melee: 3,
+                    ranged: 1,
+                    repair: 0,
+                    medicine: 2,
+                },
+                Pools::new(vec![Pool::new(PoolKind::Health, 10, 0, 20)]),
+            ))
+            .id();
 
-        let _potion = world.spawn((
-            Item,
-            Name("Potion".into()),
-            ContainedIn(player),
-        )).id();
+        let _potion = world
+            .spawn((Item, Name("Potion".into()), ContainedIn(player)))
+            .id();
 
         let snap = build_snapshot(&mut world, 99, 0);
 
@@ -699,6 +955,10 @@ mod tests {
         let player_data = restored.entities.iter().find(|e| e.is_player).unwrap();
         assert_eq!(player_data.position, Some(Position { x: 2, y: 3 }));
         assert_eq!(player_data.pools[0].current, 10);
+        assert_eq!(player_data.skill_progression.as_ref().unwrap().melee, 3);
+        assert_eq!(restored.colony_storage.count("item.healing_potion"), 1);
+        assert_eq!(restored.colony_resources[0].current, 7);
+        assert!(restored.session.extraction_applied);
     }
 
     #[test]
@@ -722,9 +982,11 @@ mod tests {
     fn save_roundtrip_preserves_state() {
         let mut app = App::new();
         app.add_plugins(crate::BdCorePlugin);
-        app.world_mut().insert_resource(SmokeMap::new(10, 10, Tile::Floor));
+        app.world_mut()
+            .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
 
-        let player = app.world_mut()
+        let player = app
+            .world_mut()
             .spawn((
                 Player,
                 Position { x: 5, y: 5 },
@@ -737,7 +999,9 @@ mod tests {
         let saved_path = save_world(app.world_mut(), 42, 0, &save_dir).unwrap();
 
         // Modify world state
-        app.world_mut().entity_mut(player).insert(Position { x: 10, y: 10 });
+        app.world_mut()
+            .entity_mut(player)
+            .insert(Position { x: 10, y: 10 });
         let mut pools_borrow = app.world_mut().get_mut::<Pools>(player).unwrap();
         let hp = pools_borrow.get_mut(PoolKind::Health).unwrap();
         hp.current = 5;
@@ -748,23 +1012,63 @@ mod tests {
         let (mut loaded_world, _loaded_seed) = load_world(&saved_path, &blueprints).unwrap();
 
         // Verify restored position — the saved world has exactly one entity (player)
-        let all_entities: Vec<Entity> = loaded_world.query::<Entity>()
-            .iter(&loaded_world)
-            .collect();
-        assert!(!all_entities.is_empty(), "loaded world should have entities");
+        let all_entities: Vec<Entity> =
+            loaded_world.query::<Entity>().iter(&loaded_world).collect();
+        assert!(
+            !all_entities.is_empty(),
+            "loaded world should have entities"
+        );
         let loaded_player = all_entities[0];
         let loaded_pos = loaded_world.get::<Position>(loaded_player).unwrap();
-        assert_eq!(*loaded_pos, Position { x: 5, y: 5 },
-            "player position should be restored to saved state");
-        let loaded_hp = loaded_world.get::<Pools>(loaded_player)
+        assert_eq!(
+            *loaded_pos,
+            Position { x: 5, y: 5 },
+            "player position should be restored to saved state"
+        );
+        let loaded_hp = loaded_world
+            .get::<Pools>(loaded_player)
             .unwrap()
             .get(PoolKind::Health)
             .unwrap()
             .current;
-        assert_eq!(loaded_hp, 15,
-            "player health should be restored to saved state");
+        assert_eq!(
+            loaded_hp, 15,
+            "player health should be restored to saved state"
+        );
 
         // Cleanup
         let _ = std::fs::remove_dir_all(&save_dir);
+    }
+
+    #[test]
+    fn snapshot_restores_into_existing_plugin_world() {
+        let mut app = App::new();
+        app.add_plugins(crate::BdFoundationPlugin);
+        let player = app
+            .world_mut()
+            .spawn((
+                Player,
+                Position { x: 2, y: 2 },
+                Pools::new(vec![Pool::new(PoolKind::Health, 17, 0, 20)]),
+            ))
+            .id();
+        let snapshot = build_snapshot(app.world_mut(), 42, 3);
+
+        app.world_mut()
+            .entity_mut(player)
+            .insert(Position { x: 9, y: 9 });
+        restore_snapshot_into(app.world_mut(), &snapshot, &HashMap::new()).unwrap();
+
+        let restored_position = app
+            .world_mut()
+            .query::<&Position>()
+            .iter(app.world())
+            .next()
+            .copied();
+        assert_eq!(restored_position, Some(Position { x: 2, y: 2 }));
+        assert_eq!(
+            *app.world().resource::<crate::spatial::GameMode>(),
+            snapshot.session.phase
+        );
     }
 }

@@ -4,8 +4,8 @@
 //! border and a floor interior. This map persists across transitions and is
 //! never regenerated.
 
-use crate::map::SmokeMap;
 use crate::components::Tile;
+use crate::map::SmokeMap;
 
 // ── Constants ──
 

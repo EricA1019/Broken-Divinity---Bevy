@@ -5,15 +5,15 @@ use serde::{Deserialize, Serialize};
 
 use crate::actions::{ActionDefinition, Effect, Requirement};
 use crate::signals::{DeltaTag, PoolKind};
-use rand::rngs::StdRng;
 use rand::SeedableRng;
+use rand::rngs::StdRng;
 
 // ── Combat RNG ──
 
 /// Seeded RNG for d100 combat rolls. Deterministic fallback when absent (for tests).
 #[derive(Resource, Debug)]
 pub struct CombatRng {
-    pub rng: StdRng,
+    rng: StdRng,
 }
 
 impl Default for CombatRng {
@@ -196,12 +196,21 @@ mod tests {
     #[test]
     fn aimed_attack_costs_two_ap() {
         let def = register_aimed_attack_action();
-        assert!(def.cost_effects.iter().any(|e| matches!(e, Effect::PoolDelta { kind: PoolKind::ActionPoints, amount: -2, .. })));
+        assert!(def.cost_effects.iter().any(|e| matches!(
+            e,
+            Effect::PoolDelta {
+                kind: PoolKind::ActionPoints,
+                amount: -2,
+                ..
+            }
+        )));
     }
 
     #[test]
     fn d100_roll_in_range() {
-        let mut rng = CombatRng { rng: StdRng::seed_from_u64(42) };
+        let mut rng = CombatRng {
+            rng: StdRng::seed_from_u64(42),
+        };
         for _ in 0..100 {
             let roll = CombatRng::d100(Some(&mut rng));
             assert!(roll.is_some());
@@ -211,26 +220,53 @@ mod tests {
     }
 
     #[test]
+    fn seeded_combat_rolls_are_reproducible_and_seed_sensitive() {
+        let mut first = CombatRng::from_seed(7);
+        let mut second = CombatRng::from_seed(7);
+        let mut different = CombatRng::from_seed(8);
+
+        let first_rolls: Vec<_> = (0..8).map(|_| CombatRng::d100(Some(&mut first))).collect();
+        let second_rolls: Vec<_> = (0..8).map(|_| CombatRng::d100(Some(&mut second))).collect();
+        let different_rolls: Vec<_> = (0..8)
+            .map(|_| CombatRng::d100(Some(&mut different)))
+            .collect();
+
+        assert_eq!(first_rolls, second_rolls);
+        assert_ne!(first_rolls, different_rolls);
+    }
+
+    #[test]
     fn high_roll_increases_damage() {
         // Test with multiple seeds to find one where damage varies
         // apply_damage_variance should produce different results for some seeds
         let mut high_result = false;
         let mut low_result = false;
         for seed in 0..100 {
-            let mut rng = CombatRng { rng: StdRng::seed_from_u64(seed) };
+            let mut rng = CombatRng {
+                rng: StdRng::seed_from_u64(seed),
+            };
             let result = CombatRng::apply_damage_variance(-10, Some(&mut rng));
-            if result < -10 { high_result = true; }  // low roll (0.5x)
-            if result > -10 { low_result = true; }   // high roll (not possible for negative numbers)
+            if result < -10 {
+                high_result = true;
+            } // low roll (0.5x)
+            if result > -10 {
+                low_result = true;
+            } // high roll (not possible for negative numbers)
             // Actually for negative damage: roll < 25 → 0.5x (e.g., -5), roll > 75 → 1.5x (e.g., -15)
             // So result < -10 means high roll, result > -10 means low roll
             // But result == -10 means middle roll
         }
         // At least one seed should produce a non-middle roll
-        let mut rng = CombatRng { rng: StdRng::seed_from_u64(42) };
+        let mut rng = CombatRng {
+            rng: StdRng::seed_from_u64(42),
+        };
         let result = CombatRng::apply_damage_variance(-10, Some(&mut rng));
         // Just verify the result is a valid modified amount
-        assert!(result == -15 || result == -10 || result == -5, 
-            "d100 variance should produce -15, -10, or -5 for input -10, got {}", result);
+        assert!(
+            result == -15 || result == -10 || result == -5,
+            "d100 variance should produce -15, -10, or -5 for input -10, got {}",
+            result
+        );
     }
 
     #[test]
@@ -254,7 +290,11 @@ mod tests {
             "quick attack should have Ballistic tag");
 
         let aa = register_aimed_attack_action();
-        assert!(aa.effects.iter().any(|e| matches!(e, Effect::PoolDelta { tags, .. } if tags.contains(&DeltaTag::Slash))),
-            "aimed attack should have Slash tag");
+        assert!(
+            aa.effects.iter().any(
+                |e| matches!(e, Effect::PoolDelta { tags, .. } if tags.contains(&DeltaTag::Slash))
+            ),
+            "aimed attack should have Slash tag"
+        );
     }
 }

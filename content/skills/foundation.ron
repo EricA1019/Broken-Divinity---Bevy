@@ -1,0 +1,6 @@
+[
+    SkillDefinition(id: "skill.melee", label: "Melee", action_id: "ability.quick_attack", governing_virtue: "virtue.thumos", progression_rate: 1),
+    SkillDefinition(id: "skill.ranged", label: "Ranged", action_id: "ability.aimed_attack", governing_virtue: "virtue.prudence", progression_rate: 1),
+    SkillDefinition(id: "skill.repair", label: "Repair", action_id: "ability.repair", governing_virtue: "virtue.metis", progression_rate: 1),
+    SkillDefinition(id: "skill.medicine", label: "Medicine", action_id: "ability.use_item", governing_virtue: "virtue.temperance", progression_rate: 1),
+]

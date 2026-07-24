@@ -1,12 +1,12 @@
 //! View models — plain data structs between ECS and rendering.
 
 use bevy_app::App;
-use serde::{Deserialize, Serialize};
 use bevy_ecs::{
     prelude::*,
     query::With,
     system::{Query, Res, ResMut},
 };
+use serde::{Deserialize, Serialize};
 
 use bd_core::{
     BdSet,
@@ -29,6 +29,9 @@ pub struct StatsViewModel {
     pub faith: i32,
     pub materials: i32,
     pub wild_plants: i32,
+    pub stored_items: Vec<(String, u32)>,
+    pub run_outcome: bd_core::session::RunOutcome,
+    pub extracted_loot: u32,
     pub day: u64,
     pub party_names: Vec<String>,
     /// Compact faction standings: (label, value, status_text).
@@ -130,6 +133,8 @@ impl Default for HelpViewModel {
                 ("t".into(), "Travel to dungeon".into()),
                 ("r".into(), "Return to outpost".into()),
                 ("i".into(), "Toggle inventory".into()),
+                ("p".into(), "Pick up item".into()),
+                ("u".into(), "Use carried item".into()),
                 ("b".into(), "Build / cycle station".into()),
                 ("a".into(), "Assign survivor task".into()),
                 ("e".into(), "Assign survivor to station".into()),
@@ -176,8 +181,10 @@ fn build_stats_vm(
     player_pools: Query<&Pools, With<Player>>,
     mut vm: ResMut<StatsViewModel>,
     colony_res: Res<bd_core::colony::production::ColonyResources>,
+    colony_storage: Res<bd_core::colony::production::ColonyStorage>,
     game_time: Res<bd_core::time::GameTime>,
-    faction_rep: Res<bd_core::factions::FactionReputation>,
+    session: Res<bd_core::session::RunSession>,
+    faction_rep: Option<Res<bd_core::factions::FactionReputation>>,
 ) {
     if let Ok(pools) = player_pools.single() {
         vm.hp_current = pools.get(PoolKind::Health).map_or(0, |p| p.current);
@@ -185,14 +192,36 @@ fn build_stats_vm(
         vm.ap_current = pools.get(PoolKind::ActionPoints).map_or(0, |p| p.current);
         vm.ap_max = pools.get(PoolKind::ActionPoints).map_or(0, |p| p.max);
     }
-    vm.supplies = colony_res.pools.get(PoolKind::Supplies).map_or(0, |p| p.current);
-    vm.faith = colony_res.pools.get(PoolKind::Faith).map_or(0, |p| p.current);
-    vm.materials = colony_res.pools.get(PoolKind::Materials).map_or(0, |p| p.current);
-    vm.wild_plants = colony_res.pools.get(PoolKind::WildPlants).map_or(0, |p| p.current);
+    vm.supplies = colony_res
+        .pools
+        .get(PoolKind::Supplies)
+        .map_or(0, |p| p.current);
+    vm.faith = colony_res
+        .pools
+        .get(PoolKind::Faith)
+        .map_or(0, |p| p.current);
+    vm.materials = colony_res
+        .pools
+        .get(PoolKind::Materials)
+        .map_or(0, |p| p.current);
+    vm.wild_plants = colony_res
+        .pools
+        .get(PoolKind::WildPlants)
+        .map_or(0, |p| p.current);
+    vm.stored_items = colony_storage
+        .items
+        .iter()
+        .map(|(id, count)| (id.clone(), *count))
+        .collect();
     vm.day = game_time.day;
+    vm.run_outcome = session.outcome;
+    vm.extracted_loot = session.extracted_loot;
 
     // P17-D: Faction standings
     vm.faction_standings.clear();
+    let Some(faction_rep) = faction_rep else {
+        return;
+    };
     for faction in bd_core::factions::ALL_FACTIONS {
         let val = faction_rep.get(faction);
         let status = bd_core::factions::faction_status(val);
@@ -210,7 +239,8 @@ fn build_stats_vm(
             bd_core::factions::FactionStatus::Friendly => "F",
             bd_core::factions::FactionStatus::Allied => "A",
         };
-        vm.faction_standings.push((label.to_string(), val, status_text.to_string()));
+        vm.faction_standings
+            .push((label.to_string(), val, status_text.to_string()));
     }
 }
 
@@ -291,8 +321,18 @@ fn build_action_list_vm(
 fn build_map_vm(
     map: Res<SmokeMap>,
     player_pos: Query<&Position, With<Player>>,
-    enemies: Query<(&Position, Option<&bd_core::components::Name>), (With<BlocksMovement>, Without<Player>)>,
-    survivors: Query<(&Position, Option<&bd_core::components::Name>, &bd_core::colony::survivors::SurvivorTask), With<bd_core::colony::survivors::Survivor>>,
+    enemies: Query<
+        (&Position, Option<&bd_core::components::Name>),
+        (With<BlocksMovement>, Without<Player>),
+    >,
+    survivors: Query<
+        (
+            &Position,
+            Option<&bd_core::components::Name>,
+            &bd_core::colony::survivors::SurvivorTask,
+        ),
+        With<bd_core::colony::survivors::Survivor>,
+    >,
     stations: Query<(&Position, &bd_core::colony::stations::StationType)>,
     gabriel_q: Query<&Position, With<bd_core::components::Gabriel>>,
     resource_nodes: Query<(&Position, &bd_core::components::ResourceNode)>,
@@ -395,7 +435,8 @@ fn build_map_vm(
     // P2: Build menu popup
     vm.build_menu = if build_menu.active {
         let bps = bd_core::colony::stations::default_station_blueprints();
-        let options: Vec<(String, i32)> = bps.iter()
+        let options: Vec<(String, i32)> = bps
+            .iter()
             .map(|bp| (bp.label.to_string(), bp.build_cost_supplies))
             .collect();
         Some(BuildMenuVm {
@@ -435,7 +476,9 @@ fn build_container_vm(
 
         if is_contained || is_equipped {
             entries.push(ItemEntryVm {
-                name: name.map(|n| n.0.clone()).unwrap_or_else(|| "Unknown".into()),
+                name: name
+                    .map(|n| n.0.clone())
+                    .unwrap_or_else(|| "Unknown".into()),
                 equipped: is_equipped,
                 usable: is_contained, // contained items can be used
             });
@@ -447,10 +490,14 @@ fn build_container_vm(
 
 /// Build the event view model from the CurrentEvent resource.
 fn build_event_vm(
-    current: Res<bd_core::events::CurrentEvent>,
-    registry: Res<bd_core::events::EventRegistry>,
+    current: Option<Res<bd_core::events::CurrentEvent>>,
+    registry: Option<Res<bd_core::events::EventRegistry>>,
     mut vm: ResMut<EventViewModel>,
 ) {
+    let (Some(current), Some(registry)) = (current, registry) else {
+        vm.active = false;
+        return;
+    };
     if !current.is_active() {
         vm.active = false;
         return;
@@ -595,39 +642,66 @@ mod tests {
     fn enemy_glyph_maps_by_name() {
         let mut app = test_app();
         // Spawn a Rat enemy at (3,3)
-        let _rat = app.world_mut().spawn((
-            Position { x: 3, y: 3 },
-            bd_core::components::BlocksMovement,
-            bd_core::components::Name("Rat".into()),
-        )).id();
+        let _rat = app
+            .world_mut()
+            .spawn((
+                Position { x: 3, y: 3 },
+                bd_core::components::BlocksMovement,
+                bd_core::components::Name("Rat".into()),
+            ))
+            .id();
         // Spawn a Skeleton at (5,5)
-        let _skeleton = app.world_mut().spawn((
-            Position { x: 5, y: 5 },
-            bd_core::components::BlocksMovement,
-            bd_core::components::Name("Skeleton".into()),
-        )).id();
+        let _skeleton = app
+            .world_mut()
+            .spawn((
+                Position { x: 5, y: 5 },
+                bd_core::components::BlocksMovement,
+                bd_core::components::Name("Skeleton".into()),
+            ))
+            .id();
         // Spawn an unnamed enemy at (7,7)
-        let _unknown = app.world_mut().spawn((
-            Position { x: 7, y: 7 },
-            bd_core::components::BlocksMovement,
-        )).id();
+        let _unknown = app
+            .world_mut()
+            .spawn((Position { x: 7, y: 7 }, bd_core::components::BlocksMovement))
+            .id();
 
         // Ensure map resource is set (test_app may have left default)
-        app.world_mut().insert_resource(SmokeMap::new(10, 10, Tile::Floor));
+        app.world_mut()
+            .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
 
         app.update();
 
         let vm = app.world().resource::<MapViewModel>();
-        assert_eq!(vm.enemy_positions.len(), 3,
-            "Should find 3 enemy positions, got {:?}", vm.enemy_positions);
+        assert_eq!(
+            vm.enemy_positions.len(),
+            3,
+            "Should find 3 enemy positions, got {:?}",
+            vm.enemy_positions
+        );
         // Find the glyph for the Rat at (3,3)
-        let rat_glyph = vm.enemy_glyphs.iter().find(|(p, _)| p.x == 3 && p.y == 3).map(|(_, g)| *g);
+        let rat_glyph = vm
+            .enemy_glyphs
+            .iter()
+            .find(|(p, _)| p.x == 3 && p.y == 3)
+            .map(|(_, g)| *g);
         assert_eq!(rat_glyph, Some('r'), "Rat should map to glyph 'r'");
         // Find the glyph for the Skeleton at (5,5)
-        let skel_glyph = vm.enemy_glyphs.iter().find(|(p, _)| p.x == 5 && p.y == 5).map(|(_, g)| *g);
+        let skel_glyph = vm
+            .enemy_glyphs
+            .iter()
+            .find(|(p, _)| p.x == 5 && p.y == 5)
+            .map(|(_, g)| *g);
         assert_eq!(skel_glyph, Some('S'), "Skeleton should map to glyph 'S'");
         // Unknown enemy should be 'E'
-        let unknown_glyph = vm.enemy_glyphs.iter().find(|(p, _)| p.x == 7 && p.y == 7).map(|(_, g)| *g);
-        assert_eq!(unknown_glyph, Some('E'), "Unknown enemy should default to 'E'");
+        let unknown_glyph = vm
+            .enemy_glyphs
+            .iter()
+            .find(|(p, _)| p.x == 7 && p.y == 7)
+            .map(|(_, g)| *g);
+        assert_eq!(
+            unknown_glyph,
+            Some('E'),
+            "Unknown enemy should default to 'E'"
+        );
     }
 }

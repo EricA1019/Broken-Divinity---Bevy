@@ -8,6 +8,7 @@ use bevy_ecs::prelude::*;
 use bevy_ecs::schedule::{IntoScheduleConfigs, SystemSet};
 
 pub mod components;
+pub mod content;
 pub mod direction;
 pub mod gamelog;
 pub mod ids;
@@ -16,6 +17,7 @@ pub mod pathfinding;
 pub mod pools;
 pub mod procgen;
 pub mod save;
+pub mod session;
 pub mod spatial;
 use spatial::register_spatial;
 pub mod signals;
@@ -24,21 +26,22 @@ pub mod time;
 pub mod trace;
 
 mod actions;
-pub mod factory;
 pub mod colony;
 pub mod combat;
 pub mod dialogue;
 pub mod enemy_ai;
 pub mod events;
 pub mod factions;
+pub mod factory;
 use factions::register_factions;
 pub mod gabriel;
 pub mod inventory;
 pub mod overworld;
 pub mod party;
+pub mod progression;
+pub mod relationships;
 pub mod sanity;
 pub mod virtues;
-pub mod relationships;
 
 use crate::trace::{SignalTrace, TriggerExecutionGuard};
 use gamelog::GameLog;
@@ -79,191 +82,221 @@ pub enum BdSet {
     Render,
 }
 
-/// Core plugin — registers system sets, resources, and foundational systems.
+/// Full legacy plugin — registers the foundation plus deferred systems.
+///
+/// Existing module tests use this plugin because they exercise deferred
+/// systems in isolation. The application and foundation acceptance tests must
+/// use [`BdFoundationPlugin`] instead.
 pub struct BdCorePlugin;
 
 impl Plugin for BdCorePlugin {
     fn build(&self, app: &mut App) {
-        // Register system sets in dependency order
-        app.configure_sets(
-            bevy_app::Update,
-            (
-                BdSet::Input,
-                BdSet::IntentCollection,
-                BdSet::Validation,
-                BdSet::CostResolution,
-                BdSet::EffectEmission,
-                BdSet::ModifierApplication,
-                BdSet::Mutation,
-                BdSet::ResultEmission,
-                BdSet::ViewModelBuild,
-                BdSet::Render,
-            )
-                .chain(),
-        );
+        register_foundation(app, false);
+        register_deferred(app);
+        tracing::info!("BdCorePlugin initialized");
+    }
+}
 
-        // Register resources
-        app.insert_resource(SmokeMap::default_smoke_map());
-        app.insert_resource(GameLog::default());
-        app.insert_resource(SignalTrace::default());
-        app.insert_resource(TriggerExecutionGuard::default());
-        app.insert_resource(HelpLine::default());
+/// Foundation-only plugin used by the application and MVP tests.
+///
+/// This intentionally excludes sanity, raids, events, Gabriel, overworld
+/// travel, party expansion, and reputation systems. Those systems remain
+/// available through [`BdCorePlugin`] for legacy tests and later products.
+pub struct BdFoundationPlugin;
 
-        // Register CombatRng for d100 damage variance
-        app.init_resource::<crate::combat::CombatRng>();
+impl Plugin for BdFoundationPlugin {
+    fn build(&self, app: &mut App) {
+        register_foundation(app, true);
+        tracing::info!("BdFoundationPlugin initialized");
+    }
+}
 
-        // Register spatial systems (transitions, game mode)
-        register_spatial(app);
+/// Register the systems and resources required by the current MVP foundation.
+fn register_foundation(app: &mut App, foundation: bool) {
+    session::register_session(app, foundation);
 
-        // Register movement-related message types (used by actions)
-        app.add_message::<crate::signals::MoveIntent>();
-        app.add_message::<crate::signals::MoveBlocked>();
-        app.add_message::<crate::signals::EntityMoved>();
+    // Register system sets in dependency order
+    app.configure_sets(
+        bevy_app::Update,
+        (
+            BdSet::Input,
+            BdSet::IntentCollection,
+            BdSet::Validation,
+            BdSet::CostResolution,
+            BdSet::EffectEmission,
+            BdSet::ModifierApplication,
+            BdSet::Mutation,
+            BdSet::ResultEmission,
+            BdSet::ViewModelBuild,
+            BdSet::Render,
+        )
+            .chain(),
+    );
 
-        // Register colony assignment message
-        app.add_message::<crate::signals::AssignToStation>();
+    // Register resources
+    app.insert_resource(SmokeMap::default_smoke_map());
+    app.insert_resource(GameLog::default());
+    app.insert_resource(SignalTrace::default());
+    app.insert_resource(TriggerExecutionGuard::default());
+    app.insert_resource(HelpLine::default());
+    app.init_resource::<crate::save::SaveRequest>();
+    app.init_resource::<crate::save::LoadRequest>();
 
-        // Register event system resources and messages
-        app.insert_resource(crate::events::default_event_registry());
-        app.insert_resource(crate::events::CurrentEvent::default());
-        app.add_message::<crate::signals::EventTrigger>();
+    // Register CombatRng for d100 damage variance
+    app.init_resource::<crate::combat::CombatRng>();
+
+    // Register spatial systems (transitions, game mode)
+    register_spatial(app);
+
+    // Register movement-related message types (used by actions)
+    app.add_message::<crate::signals::MoveIntent>();
+    app.add_message::<crate::signals::MoveBlocked>();
+    app.add_message::<crate::signals::EntityMoved>();
+
+    // The TUI can be present in the foundation runtime even though event
+    // content is deferred. Keep its optional event-input channel safe.
+    if foundation {
         app.add_message::<crate::signals::EventSelected>();
-        crate::events::register_events(app);
+    }
 
-        // Register Gabriel encounter trigger
-        app.add_systems(
-            bevy_app::Update,
-            crate::events::trigger_gabriel_encounter.in_set(crate::BdSet::Mutation),
-        );
+    // Register colony assignment message
+    app.add_message::<crate::signals::AssignToStation>();
 
-        // Register time system (observes existing messages)
-        time::register_time(app);
+    // Register time system (observes existing messages)
+    time::register_time(app);
 
-        // Register pool delta pipeline
-        pools::register_pools(app);
+    // Register pool delta pipeline
+    pools::register_pools(app);
 
-        // Register entity cleanup on defeat
-        pools::register_cleanup(app);
+    // Register entity cleanup on defeat
+    pools::register_cleanup(app);
 
-        // Register movement feedback (blocked log)
-        pools::register_move_feedback(app);
+    // Register movement feedback (blocked log)
+    pools::register_move_feedback(app);
 
-        // Register colony resources (must exist before actions validate them)
-        app.init_resource::<crate::colony::stations::PendingStationBuild>();
-        app.init_resource::<crate::colony::stations::BuildGhostState>();
-        app.init_resource::<crate::colony::stations::BuildMenuState>();
-        app.insert_resource(crate::colony::production::ColonyResources::default());
-        app.insert_resource(crate::party::PartyState::default());
-        app.insert_resource(crate::overworld::OverworldState::default());
-        app.insert_resource(crate::overworld::TravelContext::default());
-        app.insert_resource(crate::dialogue::DialogueLog::default());
-        app.insert_resource(crate::gabriel::GabrielState::default());
+    // Register colony resources (must exist before actions validate them)
+    app.init_resource::<crate::colony::stations::PendingStationBuild>();
+    app.init_resource::<crate::colony::stations::BuildGhostState>();
+    app.init_resource::<crate::colony::stations::BuildMenuState>();
+    app.insert_resource(crate::colony::production::ColonyResources::default());
+    app.init_resource::<crate::colony::production::ColonyStorage>();
 
-        // Register action system (replaces direct movement systems)
-        actions::register_actions(app);
+    // Register action system (replaces direct movement systems)
+    actions::register_actions(app);
+    progression::register_progression(app);
 
-        // Register colony resources...<!--  DUPLICATE MARKER -->
+    // Register colony resources...<!--  DUPLICATE MARKER -->
 
-        // Register status/trigger/modifier system
-        statuses::register_statuses(app);
-        // Register sanity drain, threshold, and recovery systems
-        sanity::register_sanity(app);
-        // Register virtue gain systems
-        virtues::register_virtues(app);
-        inventory::register_inventory(app);
+    // Register status/trigger/modifier system
+    statuses::register_statuses(app);
+    // Register virtue gain systems
+    virtues::register_virtues(app);
+    inventory::register_inventory(app);
 
-        // Register station build action
-        app.world_mut()
-            .resource_mut::<crate::actions::ActionRegistry>()
-            .register(crate::colony::stations::register_station_actions());
+    // Register station build action
+    app.world_mut()
+        .resource_mut::<crate::actions::ActionRegistry>()
+        .register(crate::colony::stations::register_station_actions());
 
-        // Register survivor actions
-        app.world_mut()
-            .resource_mut::<crate::actions::ActionRegistry>()
-            .register(crate::colony::survivors::register_assign_gathering_action());
-        app.world_mut()
-            .resource_mut::<crate::actions::ActionRegistry>()
-            .register(crate::colony::survivors::register_unassign_task_action());
-        app.world_mut()
-            .resource_mut::<crate::actions::ActionRegistry>()
-            .register(crate::colony::survivors::register_assign_defending_action());
-        app.world_mut()
-            .resource_mut::<crate::actions::ActionRegistry>()
-            .register(crate::colony::survivors::register_assign_resting_action());
-        app.world_mut()
-            .resource_mut::<crate::actions::ActionRegistry>()
-            .register(crate::colony::survivors::register_assign_idle_action());
+    // Register survivor actions
+    app.world_mut()
+        .resource_mut::<crate::actions::ActionRegistry>()
+        .register(crate::colony::survivors::register_assign_gathering_action());
+    app.world_mut()
+        .resource_mut::<crate::actions::ActionRegistry>()
+        .register(crate::colony::survivors::register_unassign_task_action());
+    app.world_mut()
+        .resource_mut::<crate::actions::ActionRegistry>()
+        .register(crate::colony::survivors::register_assign_defending_action());
+    app.world_mut()
+        .resource_mut::<crate::actions::ActionRegistry>()
+        .register(crate::colony::survivors::register_assign_resting_action());
+    app.world_mut()
+        .resource_mut::<crate::actions::ActionRegistry>()
+        .register(crate::colony::survivors::register_assign_idle_action());
 
-        // Register consume_shelter_resources system
-        app.add_systems(
-            bevy_app::Update,
-            crate::colony::survivors::consume_shelter_resources.in_set(BdSet::Mutation),
-        );
+    // Register consume_shelter_resources system
+    app.add_systems(
+        bevy_app::Update,
+        crate::colony::survivors::consume_shelter_resources.in_set(BdSet::Mutation),
+    );
 
-        // Register station assignment system (reads AssignToStation messages)
-        app.add_systems(
-            bevy_app::Update,
-            crate::colony::survivors::process_station_assignments.in_set(BdSet::Mutation),
-        );
+    // Register station assignment system (reads AssignToStation messages)
+    app.add_systems(
+        bevy_app::Update,
+        crate::colony::survivors::process_station_assignments.in_set(BdSet::Mutation),
+    );
 
-        // Register combat actions
-        app.world_mut()
-            .resource_mut::<crate::actions::ActionRegistry>()
-            .register(crate::combat::register_aimed_attack_action());
-        app.world_mut()
-            .resource_mut::<crate::actions::ActionRegistry>()
-            .register(crate::combat::register_quick_attack_action());
-        app.world_mut()
-            .resource_mut::<crate::actions::ActionRegistry>()
-            .register(crate::combat::register_reload_action());
-        app.world_mut()
-            .resource_mut::<crate::actions::ActionRegistry>()
-            .register(crate::combat::register_take_cover_action());
-
-        // Register faction systems
-    register_factions(app);
+    // Register combat actions
+    app.world_mut()
+        .resource_mut::<crate::actions::ActionRegistry>()
+        .register(crate::combat::register_aimed_attack_action());
+    app.world_mut()
+        .resource_mut::<crate::actions::ActionRegistry>()
+        .register(crate::combat::register_quick_attack_action());
+    app.world_mut()
+        .resource_mut::<crate::actions::ActionRegistry>()
+        .register(crate::combat::register_reload_action());
+    app.world_mut()
+        .resource_mut::<crate::actions::ActionRegistry>()
+        .register(crate::combat::register_take_cover_action());
 
     // Register enemy AI (process_enemy_turns in BdSet::Input)
     enemy_ai::register_enemy_ai(app);
 
-    // Register party actions
-        app.world_mut()
-            .resource_mut::<crate::actions::ActionRegistry>()
-            .register(crate::party::register_add_to_party_action());
-        app.world_mut()
-            .resource_mut::<crate::actions::ActionRegistry>()
-            .register(crate::party::register_remove_from_party_action());
+    // Register production and raid systems
+    app.add_systems(
+        bevy_app::Update,
+        crate::colony::production::process_production.in_set(BdSet::Mutation),
+    );
 
-        // Register travel action
-        app.world_mut()
-            .resource_mut::<crate::actions::ActionRegistry>()
-            .register(crate::overworld::register_begin_travel_action());
+    // P22: Register survivor gathering system
+    app.add_systems(
+        bevy_app::Update,
+        crate::colony::resources::process_survivor_gathering.in_set(BdSet::Mutation),
+    );
 
-    // Register travel system
+    // P3: Register survivor movement system
+    app.add_systems(
+        bevy_app::Update,
+        crate::colony::survivors::process_survivor_movement.in_set(BdSet::Mutation),
+    );
+}
+
+/// Register systems intentionally excluded from the MVP foundation.
+fn register_deferred(app: &mut App) {
+    // Event and Gabriel systems
+    app.insert_resource(crate::events::default_event_registry());
+    app.insert_resource(crate::events::CurrentEvent::default());
+    app.add_message::<crate::signals::EventTrigger>();
+    app.add_message::<crate::signals::EventSelected>();
+    crate::events::register_events(app);
+    app.add_systems(
+        bevy_app::Update,
+        crate::events::trigger_gabriel_encounter.in_set(crate::BdSet::Mutation),
+    );
+
+    // Sanity systems
+    sanity::register_sanity(app);
+
+    // Party and overworld systems
+    app.insert_resource(crate::party::PartyState::default());
+    app.insert_resource(crate::overworld::OverworldState::default());
+    app.insert_resource(crate::overworld::TravelContext::default());
+    app.insert_resource(crate::dialogue::DialogueLog::default());
+    app.insert_resource(crate::gabriel::GabrielState::default());
+    app.world_mut()
+        .resource_mut::<crate::actions::ActionRegistry>()
+        .register(crate::party::register_add_to_party_action());
+    app.world_mut()
+        .resource_mut::<crate::actions::ActionRegistry>()
+        .register(crate::party::register_remove_from_party_action());
+    app.world_mut()
+        .resource_mut::<crate::actions::ActionRegistry>()
+        .register(crate::overworld::register_begin_travel_action());
     crate::overworld::register_travel(app);
 
-    // Register raid system
+    // Faction reputation and raid systems
+    register_factions(app);
     crate::colony::raids::register_raids(app);
-
-
-        // Register production and raid systems
-        app.add_systems(
-            bevy_app::Update,
-            crate::colony::production::process_production.in_set(BdSet::Mutation),
-        );
-
-        // P22: Register survivor gathering system
-        app.add_systems(
-            bevy_app::Update,
-            crate::colony::resources::process_survivor_gathering.in_set(BdSet::Mutation),
-        );
-
-        // P3: Register survivor movement system
-        app.add_systems(
-            bevy_app::Update,
-            crate::colony::survivors::process_survivor_movement.in_set(BdSet::Mutation),
-        );
-
-        tracing::info!("BdCorePlugin initialized");
-    }
 }

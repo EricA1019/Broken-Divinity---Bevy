@@ -277,9 +277,7 @@ pub fn apply_modifiers(
             {
                 &[Modifier::Invert]
             }
-            "status.wounded"
-                if kind == PoolKind::ActionPoints && amount > 0 =>
-            {
+            "status.wounded" if kind == PoolKind::ActionPoints && amount > 0 => {
                 &[Modifier::Add(-1)]
             }
             _ => continue,

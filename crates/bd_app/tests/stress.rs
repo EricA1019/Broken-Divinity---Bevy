@@ -30,12 +30,18 @@ fn prototype_fixed_seed_deterministic_run() {
     let template = LocationTemplate::ruin();
     let plan_a = generate_location(&template, 42);
     let plan_b = generate_location(&template, 42);
-    assert_eq!(plan_a.tiles, plan_b.tiles, "Ruin seed should be deterministic");
+    assert_eq!(
+        plan_a.tiles, plan_b.tiles,
+        "Ruin seed should be deterministic"
+    );
     assert_eq!(plan_a.rooms.len(), plan_b.rooms.len());
 
     // Verify blueprint registry has boss
     let registry = BlueprintRegistry::phase18_defaults();
-    assert!(registry.get("blueprint.crypt_lord").is_some(), "Crypt Lord boss must exist");
+    assert!(
+        registry.get("blueprint.crypt_lord").is_some(),
+        "Crypt Lord boss must exist"
+    );
 
     // Verify crypt template exists and works
     let crypt = LocationTemplate::crypt();
@@ -91,7 +97,12 @@ fn hundred_turn_simulation_does_not_leak_entities() {
     for turn in 0..100 {
         // Spawn some transient enemies each turn
         for _ in 0..3 {
-            let e = world.spawn(Position { x: turn % 10, y: (turn / 10) % 10 }).id();
+            let e = world
+                .spawn(Position {
+                    x: turn % 10,
+                    y: (turn / 10) % 10,
+                })
+                .id();
             spawned.push(e);
         }
 
@@ -190,10 +201,12 @@ fn event_queue_does_not_grow_unbounded() {
     app.add_message::<bd_core::spatial::TransitionIntent>();
 
     // Add a reader system
-    app.add_systems(bevy_app::Update, |mut messages: MessageReader<bd_core::spatial::TransitionIntent>| {
-        for _msg in messages.read() {
-        }
-    });
+    app.add_systems(
+        bevy_app::Update,
+        |mut messages: MessageReader<bd_core::spatial::TransitionIntent>| {
+            for _msg in messages.read() {}
+        },
+    );
 
     // Send a burst of messages
     for _ in 0..1000 {

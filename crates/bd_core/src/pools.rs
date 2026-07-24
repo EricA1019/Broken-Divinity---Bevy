@@ -3,6 +3,8 @@
 //! All pool mutation (HP, AP, stress, etc.) goes through `PoolDeltaRequested`
 //! → `resolve_pool_deltas` → `PoolDeltaApplied`. No system mutates pools directly.
 
+use std::collections::HashSet;
+
 use bevy_app::App;
 use bevy_ecs::prelude::*;
 use serde::{Deserialize, Serialize};
@@ -11,7 +13,9 @@ use crate::{
     BdSet,
     combat::CombatRng,
     gamelog::{GameLog, LogLevel},
-    signals::{DeltaTag, EntityDefeated, EntityMoved, PoolDeltaApplied, PoolDeltaRequested, PoolKind},
+    signals::{
+        DeltaTag, EntityDefeated, EntityMoved, PoolDeltaApplied, PoolDeltaRequested, PoolKind,
+    },
     statuses::Statuses,
     time::TurnJustAdvanced,
     trace::SignalTrace,
@@ -132,11 +136,19 @@ fn resolve_pool_deltas(
     mut requests: bevy_ecs::message::MessageReader<PoolDeltaRequested>,
     mut applied_writer: bevy_ecs::message::MessageWriter<PoolDeltaApplied>,
     mut defeated_writer: bevy_ecs::message::MessageWriter<EntityDefeated>,
-    mut game_log: ResMut<GameLog>,
     mut trace: ResMut<SignalTrace>,
-    mut query: Query<(Entity, &mut Pools, Option<&Statuses>, Option<&mut crate::combat::Armor>)>,
+    mut query: Query<(
+        Entity,
+        &mut Pools,
+        Option<&Statuses>,
+        Option<&mut crate::combat::Armor>,
+    )>,
 ) {
+    let mut defeated_this_resolution: HashSet<Entity> = HashSet::new();
     for req in requests.read() {
+        if defeated_this_resolution.contains(&req.target) {
+            continue;
+        }
         trace.push(
             "Mutation",
             "PoolDelta",
@@ -161,20 +173,24 @@ fn resolve_pool_deltas(
         if req.kind == PoolKind::Health
             && modified_amount < 0
             && req.tags.iter().any(|t| {
-                matches!(t, DeltaTag::Physical | DeltaTag::Ballistic | DeltaTag::Slash)
+                matches!(
+                    t,
+                    DeltaTag::Physical | DeltaTag::Ballistic | DeltaTag::Slash
+                )
             })
         {
-            modified_amount = CombatRng::apply_damage_variance(
-                modified_amount,
-                combat_rng.as_deref_mut(),
-            );
+            modified_amount =
+                CombatRng::apply_damage_variance(modified_amount, combat_rng.as_deref_mut());
         }
 
         // P13-C: Armor reduces physical/ballistic/slash damage
         if modified_amount < 0
             && req.kind == PoolKind::Health
             && req.tags.iter().any(|t| {
-                matches!(t, DeltaTag::Physical | DeltaTag::Ballistic | DeltaTag::Slash)
+                matches!(
+                    t,
+                    DeltaTag::Physical | DeltaTag::Ballistic | DeltaTag::Slash
+                )
             })
         {
             if let Some(mut armor) = armor {
@@ -184,13 +200,12 @@ fn resolve_pool_deltas(
                     armor.durability -= 1;
                     tracing::debug!(
                         "Armor absorbed {} damage (durability: {})",
-                        absorbed, armor.durability
+                        absorbed,
+                        armor.durability
                     );
                 }
             }
         }
-
-
 
         let before = pool.current;
         let amount_applied = pool.apply_delta(modified_amount);
@@ -210,14 +225,11 @@ fn resolve_pool_deltas(
 
         // Check threshold: entity defeated (health at min)
         if req.kind == PoolKind::Health && after <= pool.min {
+            defeated_this_resolution.insert(req.target);
             defeated_writer.write(EntityDefeated {
                 entity: req.target,
                 kind: PoolKind::Health,
             });
-            game_log.push(
-                format!("Entity {entity:?} has been defeated!"),
-                LogLevel::Combat,
-            );
         }
 
         // P13-E: Apply Wounded status when HP drops below threshold
@@ -226,14 +238,7 @@ fn resolve_pool_deltas(
             && after <= pool.max * crate::combat::WOUND_THRESHOLD_PCT / 100
         {
             let defs = crate::statuses::default_status_definitions();
-            crate::statuses::apply_status(
-                entity,
-                "status.wounded",
-                0,
-                None,
-                &mut commands,
-                &defs,
-            );
+            crate::statuses::apply_status(entity, "status.wounded", 0, None, &mut commands, &defs);
         }
 
         tracing::debug!(
@@ -248,8 +253,6 @@ fn resolve_pool_deltas(
     }
 }
 
-
-
 // ── Entity cleanup ──
 
 /// Observes EntityDefeated messages and despawns the defeated entities.
@@ -262,13 +265,11 @@ fn cleanup_defeated_entities(
 ) {
     for msg in defeated.read() {
         // Log defeat with entity name
-        let entity_name = names.get(msg.entity)
+        let entity_name = names
+            .get(msg.entity)
             .map(|n| n.0.as_str())
             .unwrap_or("An enemy");
-        game_log.push(
-            format!("{entity_name} is defeated!"),
-            LogLevel::Combat,
-        );
+        game_log.push(format!("{entity_name} is defeated!"), LogLevel::Combat);
         commands.entity(msg.entity).despawn();
     }
 }
@@ -288,7 +289,8 @@ fn log_combat_damage(
         if amount >= 0 {
             continue; // healing, not damage
         }
-        let target_name = names.get(msg.target)
+        let target_name = names
+            .get(msg.target)
             .map(|n| n.0.as_str())
             .unwrap_or("target");
         game_log.push(
@@ -302,10 +304,7 @@ fn log_combat_damage(
 pub fn register_cleanup(app: &mut bevy_app::App) {
     app.add_systems(
         bevy_app::Update,
-        (
-            observe_player_defeat,
-            cleanup_defeated_entities,
-        )
+        (observe_player_defeat, cleanup_defeated_entities)
             .chain()
             .in_set(crate::BdSet::ResultEmission),
     );
@@ -318,10 +317,12 @@ fn observe_player_defeat(
     mut defeated: bevy_ecs::message::MessageReader<EntityDefeated>,
     player: Query<(), With<crate::components::Player>>,
     mut mode: ResMut<crate::spatial::GameMode>,
+    mut session: ResMut<crate::session::RunSession>,
 ) {
     for msg in defeated.read() {
         if player.get(msg.entity).is_ok() {
             *mode = crate::spatial::GameMode::GameOver;
+            session.mark_defeated();
         }
     }
 }
@@ -334,10 +335,7 @@ fn log_move_blocked(
     mut game_log: ResMut<GameLog>,
 ) {
     for msg in blocked.read() {
-        game_log.push(
-            format!("Blocked: {:?}", msg.reason),
-            LogLevel::Warn,
-        );
+        game_log.push(format!("Blocked: {:?}", msg.reason), LogLevel::Warn);
     }
 }
 
@@ -347,7 +345,10 @@ fn log_item_pickup(
     mut moved: bevy_ecs::message::MessageReader<EntityMoved>,
     mut game_log: ResMut<GameLog>,
     player: Query<(), With<crate::components::Player>>,
-    items_at_pos: Query<(&crate::components::Name, &crate::components::Position), With<crate::inventory::Item>>,
+    items_at_pos: Query<
+        (&crate::components::Name, &crate::components::Position),
+        With<crate::inventory::Item>,
+    >,
 ) {
     for msg in moved.read() {
         // Only log pickups for player movement
@@ -357,10 +358,7 @@ fn log_item_pickup(
         // Check if any item is at the destination position
         for (item_name, _pos) in items_at_pos.iter() {
             if *_pos == msg.to {
-                game_log.push(
-                    format!("You found a {}!", item_name.0),
-                    LogLevel::Info,
-                );
+                game_log.push(format!("You found a {}!", item_name.0), LogLevel::Info);
             }
         }
     }
@@ -370,10 +368,7 @@ fn log_item_pickup(
 pub fn register_move_feedback(app: &mut bevy_app::App) {
     app.add_systems(
         bevy_app::Update,
-        (
-            log_move_blocked,
-            log_item_pickup,
-        ).in_set(crate::BdSet::ResultEmission),
+        (log_move_blocked, log_item_pickup).in_set(crate::BdSet::ResultEmission),
     );
 }
 #[cfg(test)]
@@ -467,8 +462,10 @@ mod tests {
         send_delta(&mut app, e, PoolKind::Health, -10);
         app.update();
         // Health hit min which triggers EntityDefeated, entity cleaned up
-        assert!(!app.world().entities().contains(e),
-            "Entity should be despawned after hitting 0 health");
+        assert!(
+            !app.world().entities().contains(e),
+            "Entity should be despawned after hitting 0 health"
+        );
     }
 
     #[test]
@@ -499,7 +496,8 @@ mod tests {
         let mut app = test_app();
         let player = spawn_with_pools(&mut app, 2, 3); // HP=2
         // Set a gameplay mode so the test isn't starting from Title
-        app.world_mut().insert_resource(crate::spatial::GameMode::Tactical);
+        app.world_mut()
+            .insert_resource(crate::spatial::GameMode::Tactical);
 
         // Deal fatal damage
         send_delta(&mut app, player, PoolKind::Health, -10);
@@ -507,11 +505,16 @@ mod tests {
         app.update();
 
         // Player should be despawned and mode should be GameOver
-        assert!(!app.world().entities().contains(player),
-            "player should be despawned on defeat");
+        assert!(
+            !app.world().entities().contains(player),
+            "player should be despawned on defeat"
+        );
         let mode = *app.world().resource::<crate::spatial::GameMode>();
-        assert_eq!(mode, crate::spatial::GameMode::GameOver,
-            "defeating the player should switch mode to GameOver");
+        assert_eq!(
+            mode,
+            crate::spatial::GameMode::GameOver,
+            "defeating the player should switch mode to GameOver"
+        );
     }
 
     #[test]
@@ -527,8 +530,10 @@ mod tests {
             .len();
         assert!(defeated_count > 0, "Expected EntityDefeated message");
         // Entity should have been cleaned up
-        assert!(!app.world().entities().contains(e),
-            "Entity should be despawned after fatal damage");
+        assert!(
+            !app.world().entities().contains(e),
+            "Entity should be despawned after fatal damage"
+        );
     }
 
     #[test]
@@ -536,15 +541,20 @@ mod tests {
         let mut app = test_app();
         use crate::components::{Player, Position, Tile};
         use crate::map::SmokeMap;
-        app.world_mut().insert_resource(SmokeMap::new(10, 10, Tile::Floor));
-        app.world_mut().resource_scope(|world, mut map: Mut<SmokeMap>| {
-            map.set(6, 5, Tile::Wall);
-        });
-        let p = app.world_mut().spawn((
-            Player,
-            Position { x: 5, y: 5 },
-            Pools::new(vec![Pool::new(PoolKind::ActionPoints, 3, 0, 3)]),
-        )).id();
+        app.world_mut()
+            .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
+        app.world_mut()
+            .resource_scope(|world, mut map: Mut<SmokeMap>| {
+                map.set(6, 5, Tile::Wall);
+            });
+        let p = app
+            .world_mut()
+            .spawn((
+                Player,
+                Position { x: 5, y: 5 },
+                Pools::new(vec![Pool::new(PoolKind::ActionPoints, 3, 0, 3)]),
+            ))
+            .id();
         app.world_mut()
             .resource_mut::<bevy_ecs::message::Messages<crate::signals::ActionIntent>>()
             .write(crate::signals::ActionIntent {
@@ -564,18 +574,26 @@ mod tests {
         let mut app = test_app();
         use crate::components::Name;
         // Spawn a target that will take damage
-        let target = app.world_mut().spawn((
-            Name("Rat".into()),
-            Pools::new(vec![Pool::new(PoolKind::Health, 10, 0, 10)]),
-        )).id();
+        let target = app
+            .world_mut()
+            .spawn((
+                Name("Rat".into()),
+                Pools::new(vec![Pool::new(PoolKind::Health, 10, 0, 10)]),
+            ))
+            .id();
         // Deal 5 damage
         send_delta(&mut app, target, PoolKind::Health, -5);
         app.update();
 
         let log = app.world().resource::<GameLog>();
-        let has_damage = log.iter().any(|e| e.message.contains("5") && e.message.contains("Rat"));
-        assert!(has_damage, "Damage log should contain amount and target name, got: {:?}",
-            log.iter().map(|e| &e.message).collect::<Vec<_>>());
+        let has_damage = log
+            .iter()
+            .any(|e| e.message.contains("5") && e.message.contains("Rat"));
+        assert!(
+            has_damage,
+            "Damage log should contain amount and target name, got: {:?}",
+            log.iter().map(|e| &e.message).collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -583,18 +601,66 @@ mod tests {
         let mut app = test_app();
         use crate::components::Name;
         // Spawn enemy with Name and minimal Health
-        let e = app.world_mut().spawn((
-            Name("Rat".into()),
-            Pools::new(vec![Pool::new(PoolKind::Health, 1, 0, 5)]),
-        )).id();
+        let e = app
+            .world_mut()
+            .spawn((
+                Name("Rat".into()),
+                Pools::new(vec![Pool::new(PoolKind::Health, 1, 0, 5)]),
+            ))
+            .id();
         // Deal lethal damage
         send_delta(&mut app, e, PoolKind::Health, -5);
         app.update();
         let log = app.world().resource::<GameLog>();
-        let has_defeat = log.iter().any(|e| e.message.contains("Rat") && e.message.contains("defeated"));
-        assert!(has_defeat, "Defeat log should mention 'Rat' and 'defeated', got: {:?}",
-            log.iter().map(|e| &e.message).collect::<Vec<_>>());
+        let has_defeat = log
+            .iter()
+            .any(|e| e.message.contains("Rat") && e.message.contains("defeated"));
+        assert!(
+            has_defeat,
+            "Defeat log should mention 'Rat' and 'defeated', got: {:?}",
+            log.iter().map(|e| &e.message).collect::<Vec<_>>()
+        );
         // Entity should be despawned
-        assert!(!app.world().entities().contains(e), "Entity should be despawned after defeat");
+        assert!(
+            !app.world().entities().contains(e),
+            "Entity should be despawned after defeat"
+        );
+    }
+
+    #[test]
+    fn lethal_damage_blocks_later_queued_damage_and_defeat_results() {
+        let mut app = test_app();
+        use crate::components::Name;
+        let e = app
+            .world_mut()
+            .spawn((
+                Name("Rat".into()),
+                Pools::new(vec![Pool::new(PoolKind::Health, 5, 0, 5)]),
+            ))
+            .id();
+
+        send_delta(&mut app, e, PoolKind::Health, -5);
+        send_delta(&mut app, e, PoolKind::Health, -5);
+        app.update();
+
+        let defeat_count = app
+            .world()
+            .resource::<bevy_ecs::message::Messages<EntityDefeated>>()
+            .len();
+        assert_eq!(
+            defeat_count, 1,
+            "lethal damage should emit one defeat result"
+        );
+        let defeat_logs = app
+            .world()
+            .resource::<GameLog>()
+            .iter()
+            .filter(|entry| entry.message.contains("defeated"))
+            .count();
+        assert_eq!(
+            defeat_logs, 1,
+            "lethal damage should produce one defeat log"
+        );
+        assert!(!app.world().entities().contains(e));
     }
 }

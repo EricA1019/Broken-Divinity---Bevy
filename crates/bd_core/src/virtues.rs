@@ -3,9 +3,9 @@
 use bevy_ecs::prelude::*;
 
 use crate::{
+    BdSet,
     components::Player,
     signals::{EntityDefeated, PoolDeltaRequested, PoolKind},
-    BdSet,
 };
 
 pub const VIRTUE_MAX: i32 = 100;
@@ -78,10 +78,7 @@ pub fn process_kleos_gains(
 pub fn register_virtues(app: &mut bevy_app::App) {
     app.add_systems(
         bevy_app::Update,
-        (
-            process_virtue_gains,
-            process_kleos_gains,
-        ).in_set(BdSet::ResultEmission),
+        (process_virtue_gains, process_kleos_gains).in_set(BdSet::ResultEmission),
     );
 }
 
@@ -104,39 +101,59 @@ mod tests {
     #[test]
     fn kleos_increases_on_boss_kill() {
         let mut app = test_app();
-        let player = app.world_mut().spawn((
-            Player,
-            crate::pools::Pools::new(vec![crate::pools::Pool::new(PoolKind::Kleos, 0, 0, 100)]),
-        )).id();
+        let player = app
+            .world_mut()
+            .spawn((
+                Player,
+                crate::pools::Pools::new(vec![crate::pools::Pool::new(PoolKind::Kleos, 0, 0, 100)]),
+            ))
+            .id();
 
-        let enemy = app.world_mut().spawn((
-            crate::components::Name("Boss".into()),
-        )).id();
+        let enemy = app
+            .world_mut()
+            .spawn((crate::components::Name("Boss".into()),))
+            .id();
 
         app.world_mut()
             .resource_mut::<bevy_ecs::message::Messages<EntityDefeated>>()
-            .write(EntityDefeated { entity: enemy, kind: PoolKind::Health });
+            .write(EntityDefeated {
+                entity: enemy,
+                kind: PoolKind::Health,
+            });
 
         app.update();
         app.update();
 
         let pools = app.world().get::<crate::pools::Pools>(player).unwrap();
         let kleos = pools.get(PoolKind::Kleos).unwrap();
-        assert!(kleos.current > 0, "Kleos should increase on boss kill (current={})", kleos.current);
+        assert!(
+            kleos.current > 0,
+            "Kleos should increase on boss kill (current={})",
+            kleos.current
+        );
     }
 
     #[test]
     fn fortitude_increases_on_combat_survival() {
         let mut app = test_app();
-        let player = app.world_mut().spawn((
-            Player,
-            crate::pools::Pools::new(vec![crate::pools::Pool::new(PoolKind::Fortitude, 0, 0, 100)]),
-        )).id();
+        let player = app
+            .world_mut()
+            .spawn((
+                Player,
+                crate::pools::Pools::new(vec![crate::pools::Pool::new(
+                    PoolKind::Fortitude,
+                    0,
+                    0,
+                    100,
+                )]),
+            ))
+            .id();
 
         // Spawn a separate enemy entity to be defeated
-        let enemy = app.world_mut().spawn((
-            crate::components::Name("Enemy".into()),
-        )).id();
+        let enemy = app
+            .world_mut()
+            .spawn((crate::components::Name("Enemy".into()),))
+            .id();
 
         // Fire an EntityDefeated message for the enemy (not the player)
         app.world_mut()
@@ -151,6 +168,10 @@ mod tests {
 
         let pools = app.world().get::<crate::pools::Pools>(player).unwrap();
         let fortitude = pools.get(PoolKind::Fortitude).unwrap();
-        assert!(fortitude.current > 0, "Fortitude should increase on combat survival (current={})", fortitude.current);
+        assert!(
+            fortitude.current > 0,
+            "Fortitude should increase on combat survival (current={})",
+            fortitude.current
+        );
     }
 }

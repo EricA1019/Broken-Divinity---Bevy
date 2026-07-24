@@ -7,8 +7,6 @@ use bevy_app::App;
 use bevy_ecs::prelude::*;
 use serde::{Deserialize, Serialize};
 
-
-
 use crate::BdSet;
 
 // ── Constants ──
@@ -18,9 +16,16 @@ pub const TURNS_PER_DAY: u64 = 24;
 
 // ── Resource ──
 
-/// Flag set when an action was processed this frame, cleared after time advance.
+/// Turn boundary flags shared by the action, enemy, and time systems.
+///
+/// `.0` requests game-time advancement for the accepted player action.
+/// `.1` requests exactly one enemy phase after that player action.
 #[derive(Resource, Debug, Default, Serialize, Deserialize)]
-pub struct ShouldAdvanceTime(pub bool);
+pub struct ShouldAdvanceTime(pub bool, pub bool);
+
+/// Prevents a second player action while the enemy phase is resolving.
+#[derive(Component, Debug, Default)]
+pub struct AwaitingEnemyPhase;
 
 /// Tracks the current game day and turn.
 #[derive(Resource, Debug, Clone, Serialize, Deserialize)]
@@ -45,10 +50,7 @@ impl Default for GameTime {
 pub(crate) fn register_time(app: &mut App) {
     app.insert_resource(GameTime::default());
     app.init_resource::<ShouldAdvanceTime>();
-    app.add_systems(
-        bevy_app::Update,
-        advance_time.in_set(BdSet::ResultEmission),
-    );
+    app.add_systems(bevy_app::Update, advance_time.in_set(BdSet::ResultEmission));
 }
 
 // ── System ──
@@ -58,6 +60,7 @@ pub(crate) fn register_time(app: &mut App) {
 fn advance_time(
     mut commands: Commands,
     mut game_time: ResMut<GameTime>,
+    mut session: ResMut<crate::session::RunSession>,
     mut should_advance: ResMut<ShouldAdvanceTime>,
 ) {
     if !should_advance.0 {
@@ -69,6 +72,8 @@ fn advance_time(
         game_time.day += 1;
         game_time.turn = 0;
     }
+    session.day = game_time.day;
+    session.turn = game_time.turn;
     // Signal that a turn just advanced — AP regen consumes this next frame
     commands.insert_resource(TurnJustAdvanced);
 }

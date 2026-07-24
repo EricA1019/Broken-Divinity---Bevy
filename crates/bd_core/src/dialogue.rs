@@ -1,8 +1,8 @@
 //! Dialogue engine — branching NPC conversations with conditions and effects.
 
+use crate::actions::Effect;
 use bevy_ecs::prelude::*;
 use serde::{Deserialize, Serialize};
-use crate::actions::Effect;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DialogueNode {
@@ -36,7 +36,9 @@ pub struct DialogueLog {
 
 impl Default for DialogueLog {
     fn default() -> Self {
-        Self { seen_nodes: Vec::new() }
+        Self {
+            seen_nodes: Vec::new(),
+        }
     }
 }
 

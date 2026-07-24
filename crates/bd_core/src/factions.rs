@@ -5,8 +5,8 @@ use std::collections::HashMap;
 use bevy_ecs::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::signals::{PoolDeltaApplied, PoolKind};
 use crate::BdSet;
+use crate::signals::{PoolDeltaApplied, PoolKind};
 
 pub const REPUTATION_MAX: i32 = 100;
 pub const REPUTATION_HOSTILE_THRESHOLD: i32 = 25;
@@ -24,10 +24,10 @@ pub const ALL_FACTIONS: &[PoolKind] = &[
 /// Relationship standing with a faction.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FactionStatus {
-    Hostile,   // ≤ -REPUTATION_HOSTILE_THRESHOLD
-    Neutral,   // between thresholds
-    Friendly,  // ≥ REPUTATION_HOSTILE_THRESHOLD, < REPUTATION_ALLIED_THRESHOLD
-    Allied,    // ≥ REPUTATION_ALLIED_THRESHOLD
+    Hostile,  // ≤ -REPUTATION_HOSTILE_THRESHOLD
+    Neutral,  // between thresholds
+    Friendly, // ≥ REPUTATION_HOSTILE_THRESHOLD, < REPUTATION_ALLIED_THRESHOLD
+    Allied,   // ≥ REPUTATION_ALLIED_THRESHOLD
 }
 
 /// Determine faction status from a reputation value.
@@ -98,7 +98,9 @@ pub fn process_faction_events(
             game_log.push(
                 format!(
                     "{:?} reputation: {} ({:?})",
-                    msg.kind, rep.get(&msg.kind), status
+                    msg.kind,
+                    rep.get(&msg.kind),
+                    status
                 ),
                 crate::gamelog::LogLevel::Info,
             );

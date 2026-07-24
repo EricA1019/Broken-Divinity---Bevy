@@ -1,0 +1,12 @@
+[
+    DungeonDefinition(
+        id: "dungeon.foundation",
+        width: 8,
+        height: 6,
+        tiles: [Wall, Wall, Wall, Wall, Wall, Wall, Wall, Wall, Wall, Floor, Floor, Floor, Floor, Floor, Floor, Wall, Wall, Floor, Floor, Floor, Floor, Floor, Floor, Wall, Wall, Floor, Floor, Floor, Floor, Floor, Floor, Wall, Wall, Floor, Floor, Floor, Floor, Floor, Floor, Wall, Wall, Wall, Wall, Wall, Wall, Wall, Wall, Wall],
+        entrance: Position(x: 1, y: 1),
+        extraction: Position(x: 6, y: 4),
+        enemy_placements: [Placement(content_id: "blueprint.rat", position: Position(x: 4, y: 2), faction_id: Some("faction.placeholder_a"))],
+        item_placements: [Placement(content_id: "item.healing_potion", position: Position(x: 2, y: 4), faction_id: None)],
+    ),
+]

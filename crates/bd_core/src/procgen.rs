@@ -162,7 +162,6 @@ impl LocationPlan {
     pub fn to_smoke_map(&self) -> SmokeMap {
         SmokeMap::from_tiles(self.width, self.height, &self.tiles)
     }
-
 }
 
 // ---------------------------------------------------------------------------

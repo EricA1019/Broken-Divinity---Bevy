@@ -82,7 +82,10 @@ pub fn register_assign_gathering_action() -> ActionDefinition {
         cost_effects: vec![],
         effects: vec![
             Effect::SetSurvivorTask("Gathering".into()),
-            Effect::Log("Survivor assigned to gathering.".into(), crate::gamelog::LogLevel::Info),
+            Effect::Log(
+                "Survivor assigned to gathering.".into(),
+                crate::gamelog::LogLevel::Info,
+            ),
         ],
     }
 }
@@ -98,7 +101,10 @@ pub fn register_assign_defending_action() -> ActionDefinition {
         cost_effects: vec![],
         effects: vec![
             Effect::SetSurvivorTask("Defending".into()),
-            Effect::Log("Survivor assigned to defending.".into(), crate::gamelog::LogLevel::Info),
+            Effect::Log(
+                "Survivor assigned to defending.".into(),
+                crate::gamelog::LogLevel::Info,
+            ),
         ],
     }
 }
@@ -114,7 +120,10 @@ pub fn register_assign_resting_action() -> ActionDefinition {
         cost_effects: vec![],
         effects: vec![
             Effect::SetSurvivorTask("Resting".into()),
-            Effect::Log("Survivor assigned to resting.".into(), crate::gamelog::LogLevel::Info),
+            Effect::Log(
+                "Survivor assigned to resting.".into(),
+                crate::gamelog::LogLevel::Info,
+            ),
         ],
     }
 }
@@ -130,7 +139,10 @@ pub fn register_assign_idle_action() -> ActionDefinition {
         cost_effects: vec![],
         effects: vec![
             Effect::SetSurvivorTask("Idle".into()),
-            Effect::Log("Survivor assigned to idle.".into(), crate::gamelog::LogLevel::Info),
+            Effect::Log(
+                "Survivor assigned to idle.".into(),
+                crate::gamelog::LogLevel::Info,
+            ),
         ],
     }
 }
@@ -181,8 +193,11 @@ pub fn process_station_assignments(
             continue;
         }
         let station_index = msg.station.to_bits();
-        commands.entity(msg.survivor).insert(SurvivorTask::AssignedTo(station_index));
-        let survivor_name = names.get(msg.survivor)
+        commands
+            .entity(msg.survivor)
+            .insert(SurvivorTask::AssignedTo(station_index));
+        let survivor_name = names
+            .get(msg.survivor)
             .map(|n| n.0.as_str())
             .unwrap_or("Survivor");
         game_log.push(
@@ -208,7 +223,9 @@ pub fn consume_shelter_resources(
 
     // Check colony-level supplies once (not per-survivor entity-level,
     // since survivors don't have a Supplies pool).
-    let colony_has_supplies = colony_res.pools.get(PoolKind::Supplies)
+    let colony_has_supplies = colony_res
+        .pools
+        .get(PoolKind::Supplies)
         .map_or(false, |p| p.current >= FOOD_PER_SURVIVOR_PER_DAY);
 
     for (entity, pools, task) in query.iter() {
@@ -251,8 +268,17 @@ pub fn consume_shelter_resources(
 /// Idle/Defending/Resting survivors stay still for now (wander added later).
 pub fn process_survivor_movement(
     mut survivors: Query<(&mut crate::components::Position, &SurvivorTask), With<Survivor>>,
-    nodes: Query<(&crate::components::Position, &crate::components::ResourceNode), Without<Survivor>>,
-    stations: Query<(&crate::components::Position, Entity), (With<crate::colony::stations::Station>, Without<Survivor>)>,
+    nodes: Query<
+        (
+            &crate::components::Position,
+            &crate::components::ResourceNode,
+        ),
+        Without<Survivor>,
+    >,
+    stations: Query<
+        (&crate::components::Position, Entity),
+        (With<crate::colony::stations::Station>, Without<Survivor>),
+    >,
     map: Res<crate::map::SmokeMap>,
     should_advance: Res<crate::time::ShouldAdvanceTime>,
 ) {
@@ -263,20 +289,20 @@ pub fn process_survivor_movement(
         let target = match task {
             SurvivorTask::Gathering => {
                 // Move toward nearest non-depleted resource node
-                nodes.iter()
+                nodes
+                    .iter()
                     .filter(|(_, n)| !n.depleted)
                     .min_by_key(|(np, _)| (pos.x - np.x).abs() + (pos.y - np.y).abs())
                     .map(|(np, _)| (np.x, np.y))
             }
             SurvivorTask::AssignedTo(station_bits) => {
                 // Move toward the assigned station
-                stations.iter()
+                stations
+                    .iter()
                     .find(|(_, e)| e.to_bits() == *station_bits)
                     .map(|(sp, _)| (sp.x, sp.y))
             }
-            SurvivorTask::Idle
-            | SurvivorTask::Defending
-            | SurvivorTask::Resting => None,
+            SurvivorTask::Idle | SurvivorTask::Defending | SurvivorTask::Resting => None,
         };
         if let Some((tx, ty)) = target {
             let dx = (tx - pos.x).signum();
@@ -294,9 +320,7 @@ pub fn process_survivor_movement(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        components::Position,
-    };
+    use crate::components::Position;
     use bevy_app::App;
 
     fn test_app() -> App {
@@ -357,7 +381,9 @@ mod tests {
         app.world_mut().resource_mut::<crate::time::GameTime>().day = 1;
         app.world_mut().resource_mut::<crate::time::GameTime>().turn = 0;
         // Set ShouldAdvanceTime so turn advances past 0 after first frame
-        app.world_mut().resource_mut::<crate::time::ShouldAdvanceTime>().0 = true;
+        app.world_mut()
+            .resource_mut::<crate::time::ShouldAdvanceTime>()
+            .0 = true;
         // Frame 1: consume_shelter_resources sees supplies>0 → no starvation
         app.update();
         // Frame 2: PoolDeltaRequested messages from frame 1 processed by resolve_pool_deltas
@@ -366,9 +392,11 @@ mod tests {
         let mut query = app.world_mut().query::<&crate::pools::Pools>();
         for pools in query.iter(app.world()) {
             if let Some(mood) = pools.get(PoolKind::Mood) {
-                assert_eq!(mood.current, MOOD_MAX,
+                assert_eq!(
+                    mood.current, MOOD_MAX,
                     "Survivor mood should stay at {} when colony has food, got {}",
-                    MOOD_MAX, mood.current);
+                    MOOD_MAX, mood.current
+                );
                 break;
             }
         }
@@ -392,7 +420,9 @@ mod tests {
         app.world_mut().resource_mut::<crate::time::GameTime>().day = 1;
         app.world_mut().resource_mut::<crate::time::GameTime>().turn = 0;
         // Set ShouldAdvanceTime so turn advances past 0 after first frame
-        app.world_mut().resource_mut::<crate::time::ShouldAdvanceTime>().0 = true;
+        app.world_mut()
+            .resource_mut::<crate::time::ShouldAdvanceTime>()
+            .0 = true;
         // Frame 1: consume_shelter_resources sees supplies=0 → writes PoolDeltaRequested(Mood, -10)
         app.update();
         // Frame 2: resolve_pool_deltas reads and applies those messages
@@ -401,9 +431,11 @@ mod tests {
         let mut query = app.world_mut().query::<&crate::pools::Pools>();
         for pools in query.iter(app.world()) {
             if let Some(mood) = pools.get(PoolKind::Mood) {
-                assert!(mood.current < MOOD_MAX,
+                assert!(
+                    mood.current < MOOD_MAX,
                     "Survivor mood should drop when colony has no food, got {}",
-                    mood.current);
+                    mood.current
+                );
                 break;
             }
         }

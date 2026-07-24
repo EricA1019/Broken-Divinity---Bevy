@@ -6,7 +6,6 @@
 use bevy_app::App;
 use bevy_ecs::prelude::*;
 
-use serde::{Deserialize, Serialize};
 use crate::{
     BdSet,
     colony::production::ColonyResources,
@@ -22,6 +21,7 @@ use crate::{
     },
     trace::SignalTrace,
 };
+use serde::{Deserialize, Serialize};
 
 // ── Constants ──
 
@@ -56,12 +56,16 @@ pub enum Requirement {
     ResourcePoolAbove(PoolKind, i32),
     /// Target must have a specific component.
     TargetHasComponent(&'static str),
+    /// Target item must be contained by the acting entity.
+    TargetContainedByActor,
     /// Target must be idle (has idle task).
     TargetTaskIsIdle,
     /// Player must be within range of the target entity.
     PlayerHasEntityInRange(u32),
     /// Target tile must be vacant (no blocking entities) — for build actions.
     TileVacant,
+    /// Actor must be standing on an extraction/exit tile.
+    AtExit,
 }
 
 /// An effect produced by a successful action.
@@ -86,6 +90,10 @@ pub enum Effect {
     SetSurvivorTask(String),
     /// Set a named flag (event state, global markers).
     Flag(String, bool),
+    /// Request a mode transition after the action resolves.
+    RequestTransition(crate::spatial::GameMode),
+    /// Request the inventory pipeline to use the pending target item.
+    RequestUseItem,
 }
 
 /// Definition of an action: what it costs, requires, and produces.
@@ -142,9 +150,7 @@ impl ActionRegistry {
                     label: "Wait".into(),
                     requirements: vec![Requirement::EntityAlive],
                     cost_effects: vec![],
-                    effects: vec![
-                        Effect::Log("You wait.".into(), LogLevel::Info),
-                    ],
+                    effects: vec![Effect::Log("You wait.".into(), LogLevel::Info)],
                 },
                 ActionDefinition {
                     id: "ability.attack".into(),
@@ -185,6 +191,52 @@ impl ActionRegistry {
                         Effect::ApplyStatus("status.guarded".into()),
                         Effect::Log("You brace for impact.".into(), LogLevel::Info),
                     ],
+                },
+                ActionDefinition {
+                    id: "ability.extract".into(),
+                    label: "Extract".into(),
+                    requirements: vec![Requirement::EntityAlive, Requirement::AtExit],
+                    cost_effects: vec![],
+                    effects: vec![
+                        Effect::RequestTransition(crate::spatial::GameMode::Outpost),
+                        Effect::Log("You extract from the dungeon.".into(), LogLevel::Info),
+                    ],
+                },
+                ActionDefinition {
+                    id: "ability.repair".into(),
+                    label: "Repair".into(),
+                    requirements: vec![
+                        Requirement::HasPoolAtLeast(PoolKind::ActionPoints, 1),
+                        Requirement::EntityAlive,
+                    ],
+                    cost_effects: vec![Effect::PoolDelta {
+                        kind: PoolKind::ActionPoints,
+                        amount: -1,
+                        tags: vec![DeltaTag::Action],
+                        reason: "repair cost".into(),
+                    }],
+                    effects: vec![Effect::Log(
+                        "You repair your equipment.".into(),
+                        LogLevel::Info,
+                    )],
+                },
+                ActionDefinition {
+                    id: "ability.use_item".into(),
+                    label: "Use Item".into(),
+                    requirements: vec![
+                        Requirement::HasPoolAtLeast(PoolKind::ActionPoints, 1),
+                        Requirement::EntityAlive,
+                        Requirement::TargetExists,
+                        Requirement::TargetHasComponent("bd_core::inventory::Usable"),
+                        Requirement::TargetContainedByActor,
+                    ],
+                    cost_effects: vec![Effect::PoolDelta {
+                        kind: PoolKind::ActionPoints,
+                        amount: -1,
+                        tags: vec![DeltaTag::Action],
+                        reason: "use item cost".into(),
+                    }],
+                    effects: vec![Effect::RequestUseItem],
                 },
             ],
         }
@@ -231,10 +283,19 @@ fn validate_action_intents(
     mut game_log: ResMut<GameLog>,
     mut trace: ResMut<SignalTrace>,
     colony_res: Res<ColonyResources>,
-    actors: Query<(Entity, &Position, Option<&Pools>, Option<&Player>)>,
+    actors: Query<(
+        Entity,
+        &Position,
+        Option<&Pools>,
+        Option<&Player>,
+        Option<&crate::time::AwaitingEnemyPhase>,
+    )>,
     targets: Query<(Entity, &Position, Option<&Player>)>,
+    all_entities: Query<Entity>,
+    contained_items: Query<(Entity, &crate::relationships::ContainedIn)>,
     survivors: Query<(Entity, &SurvivorTask), With<Survivor>>,
     blocked_positions: Query<&Position, With<BlocksMovement>>,
+    exit_positions: Query<&Position, With<crate::components::ExitTile>>,
 ) {
     let target_positions: Vec<(Entity, &Position, Option<&Player>)> = targets.iter().collect();
 
@@ -244,7 +305,8 @@ fn validate_action_intents(
             "ActionIntent",
             format!("actor={:?} action={}", intent.actor, intent.action_id),
         );
-        let Ok((_, actor_pos, pools, player_flag)) = actors.get(intent.actor) else {
+        let Ok((_, actor_pos, pools, player_flag, awaiting_enemy_phase)) = actors.get(intent.actor)
+        else {
             continue;
         };
 
@@ -260,7 +322,16 @@ fn validate_action_intents(
         // Check each requirement
         let mut denied = None;
 
+        if player_flag.is_some() && awaiting_enemy_phase.is_some() {
+            denied = Some(DenialReason::Other(
+                "Enemy phase is resolving; wait for the next turn.".into(),
+            ));
+        }
+
         for req in &def.requirements {
+            if denied.is_some() {
+                break;
+            }
             match req {
                 Requirement::HasPoolAtLeast(kind, min) => {
                     // P21: Free movement in colony/outpost mode
@@ -345,20 +416,30 @@ fn validate_action_intents(
                     }
                 }
                 Requirement::TargetHasComponent(component_name) => {
-                    let has_component = intent.target.map_or(false, |t| {
-                        match *component_name {
-                            "Survivor" => survivors.iter().any(|(e, _)| e == t),
-                            _ => target_positions.iter().any(|(e, _, _)| *e == t),
-                        }
+                    let has_component = intent.target.map_or(false, |t| match *component_name {
+                        "Survivor" => survivors.iter().any(|(e, _)| e == t),
+                        _ => all_entities.iter().any(|e| e == t),
                     });
                     if !has_component {
                         denied = Some(DenialReason::InvalidTarget);
                         break;
                     }
                 }
+                Requirement::TargetContainedByActor => {
+                    let contained = intent.target.is_some_and(|target| {
+                        contained_items
+                            .iter()
+                            .any(|(item, container)| item == target && container.0 == intent.actor)
+                    });
+                    if !contained {
+                        denied = Some(DenialReason::InvalidTarget);
+                        break;
+                    }
+                }
                 Requirement::TargetTaskIsIdle => {
                     let is_idle = intent.target.map_or(false, |t| {
-                        survivors.iter()
+                        survivors
+                            .iter()
                             .find(|(e, _)| *e == t)
                             .map_or(false, |(_, task)| matches!(task, SurvivorTask::Idle))
                     });
@@ -368,11 +449,15 @@ fn validate_action_intents(
                     }
                 }
                 Requirement::PlayerHasEntityInRange(range) => {
-                    let player_pos = actors.iter()
-                        .find(|(_, _, _, player)| player.is_some())
-                        .map(|(_, p, _, _)| *p);
+                    let player_pos = actors
+                        .iter()
+                        .find(|(_, _, _, player, _)| player.is_some())
+                        .map(|(_, p, _, _, _)| *p);
                     let target_pos = intent.target.and_then(|t| {
-                        target_positions.iter().find(|(e, _, _)| *e == t).map(|(_, p, _)| *p)
+                        target_positions
+                            .iter()
+                            .find(|(e, _, _)| *e == t)
+                            .map(|(_, p, _)| *p)
                     });
                     match (player_pos, target_pos) {
                         (Some(pp), Some(tp)) => {
@@ -390,19 +475,32 @@ fn validate_action_intents(
                 }
                 Requirement::TileVacant => {
                     // Compute target tile position from actor position + direction
-                    let actor_pos = actors.iter()
-                        .find(|(e, _, _, _)| *e == intent.actor)
-                        .map(|(_, p, _, _)| *p);
+                    let actor_pos = actors
+                        .iter()
+                        .find(|(e, _, _, _, _)| *e == intent.actor)
+                        .map(|(_, p, _, _, _)| *p);
                     if let (Some(pos), Some(dir)) = (actor_pos, intent.direction) {
                         let (dx, dy) = dir.delta();
-                        let target_pos = crate::components::Position { x: pos.x + dx, y: pos.y + dy };
+                        let target_pos = crate::components::Position {
+                            x: pos.x + dx,
+                            y: pos.y + dy,
+                        };
                         // Check if any blocking entity occupies that tile
-                        let occupied = blocked_positions.iter()
+                        let occupied = blocked_positions
+                            .iter()
                             .any(|bp| bp.x == target_pos.x && bp.y == target_pos.y);
                         if occupied {
                             denied = Some(DenialReason::Other("tile occupied".into()));
                             break;
                         }
+                    }
+                }
+                Requirement::AtExit => {
+                    if !exit_positions.iter().any(|exit| *exit == *actor_pos) {
+                        denied = Some(DenialReason::Other(
+                            "You must stand at the exit to extract.".into(),
+                        ));
+                        break;
                     }
                 }
             }
@@ -497,8 +595,12 @@ fn resolve_action_effects(
     mut delta_writer: bevy_ecs::message::MessageWriter<PoolDeltaRequested>,
     mut moved_writer: bevy_ecs::message::MessageWriter<EntityMoved>,
     mut blocked_writer: bevy_ecs::message::MessageWriter<MoveBlocked>,
+    mut transition_writer: bevy_ecs::message::MessageWriter<crate::spatial::TransitionIntent>,
+    mut action_result_writer: bevy_ecs::message::MessageWriter<crate::progression::ActionResolved>,
+    mut use_item_writer: bevy_ecs::message::MessageWriter<crate::inventory::UseItemIntent>,
     mut pending_station: ResMut<crate::colony::stations::PendingStationBuild>,
     mut should_advance: ResMut<crate::time::ShouldAdvanceTime>,
+    mut session: ResMut<crate::session::RunSession>,
     actors: Query<(Entity, &Position, &PendingAction, Option<&Player>)>,
     blockers: Query<&Position, With<BlocksMovement>>,
 ) {
@@ -510,9 +612,15 @@ fn resolve_action_effects(
             "EffectResolve",
             format!("entity={:?} action={}", entity, pending.action_id),
         );
-        // Only advance time on wait action (not move/attack/guard)
-        if player_flag.is_some() && pending.action_id == "ability.wait" {
+        // Accepted gameplay actions resolve one player turn. UI-only actions
+        // never enter this system, and extraction is a mode transition rather
+        // than a combat turn.
+        if player_flag.is_some() && is_turn_action(&pending.action_id) {
             should_advance.0 = true;
+            should_advance.1 = true;
+            commands
+                .entity(entity)
+                .insert(crate::time::AwaitingEnemyPhase);
         }
         let Some(def) = registry.get(&pending.action_id) else {
             commands.entity(entity).remove::<PendingAction>();
@@ -610,10 +718,16 @@ fn resolve_action_effects(
                         }
                     };
                     // Build at tile in direction offset, not on player
-                    let build_pos = pending.direction.map(|dir| {
-                        let (dx, dy) = dir.delta();
-                        crate::components::Position { x: pos.x + dx, y: pos.y + dy }
-                    }).unwrap_or(*pos);
+                    let build_pos = pending
+                        .direction
+                        .map(|dir| {
+                            let (dx, dy) = dir.delta();
+                            crate::components::Position {
+                                x: pos.x + dx,
+                                y: pos.y + dy,
+                            }
+                        })
+                        .unwrap_or(*pos);
                     commands.spawn((
                         Station,
                         station_type,
@@ -622,10 +736,7 @@ fn resolve_action_effects(
                         crate::components::Name(format!("{:?}", station_type)),
                     ));
                     if player_flag.is_some() {
-                        game_log.push(
-                            format!("You build a {:?}.", station_type),
-                            LogLevel::Info,
-                        );
+                        game_log.push(format!("You build a {:?}.", station_type), LogLevel::Info);
                     }
                 }
                 Effect::SetSurvivorTask(task) => {
@@ -641,20 +752,61 @@ fn resolve_action_effects(
                         };
                         commands.entity(target).insert(new_task);
                         if player_flag.is_some() {
-                            game_log.push(format!("Task set to {} for survivor.", task), LogLevel::Info);
+                            game_log.push(
+                                format!("Task set to {} for survivor.", task),
+                                LogLevel::Info,
+                            );
                         }
                     }
                 }
                 Effect::Flag(flag_name, value) => {
                     if player_flag.is_some() {
-                        game_log.push(format!("Flag '{}' set to {}", flag_name, value), LogLevel::Info);
+                        game_log.push(
+                            format!("Flag '{}' set to {}", flag_name, value),
+                            LogLevel::Info,
+                        );
+                    }
+                }
+                Effect::RequestTransition(target) => {
+                    transition_writer.write(crate::spatial::TransitionIntent {
+                        target: *target,
+                        node_id: None,
+                    });
+                }
+                Effect::RequestUseItem => {
+                    if let Some(item) = pending.target {
+                        use_item_writer.write(crate::inventory::UseItemIntent {
+                            actor: entity,
+                            item,
+                        });
                     }
                 }
             }
         }
 
+        // Record only actions that reached effect resolution. Denied intents
+        // never enter the run replay, keeping the replay stream meaningful.
+        session.record_intent(pending.action_id.as_str());
+        action_result_writer.write(crate::progression::ActionResolved {
+            actor: entity,
+            action_id: pending.action_id.clone(),
+        });
         commands.entity(entity).remove::<PendingAction>();
     }
+}
+
+fn is_turn_action(action_id: &str) -> bool {
+    matches!(
+        action_id,
+        "ability.move"
+            | "ability.wait"
+            | "ability.attack"
+            | "ability.quick_attack"
+            | "ability.aimed_attack"
+            | "ability.guard"
+            | "ability.repair"
+            | "ability.use_item"
+    )
 }
 
 #[cfg(test)]
@@ -811,8 +963,11 @@ mod tests {
         // Game log should contain the denial hint
         let log = app.world().resource::<GameLog>();
         let has_denial = log.iter().any(|e| e.message.contains("No target"));
-        assert!(has_denial, "denial should log 'No target' hint, got: {:?}",
-            log.iter().map(|e| &e.message).collect::<Vec<_>>());
+        assert!(
+            has_denial,
+            "denial should log 'No target' hint, got: {:?}",
+            log.iter().map(|e| &e.message).collect::<Vec<_>>()
+        );
     }
 
     #[test]
@@ -836,6 +991,27 @@ mod tests {
     }
 
     #[test]
+    fn extract_action_requests_outpost_transition() {
+        let mut app = test_app();
+        app.world_mut()
+            .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
+        app.world_mut()
+            .insert_resource(crate::spatial::GameMode::Tactical);
+        let player = spawn_player(&mut app, 5, 5);
+        app.world_mut()
+            .spawn((crate::components::ExitTile, Position { x: 5, y: 5 }));
+
+        send_action(&mut app, player, "ability.extract", None, None);
+        app.update();
+        app.update();
+
+        assert_eq!(
+            *app.world().resource::<crate::spatial::GameMode>(),
+            crate::spatial::GameMode::Outpost
+        );
+    }
+
+    #[test]
     fn attack_emits_health_pool_delta() {
         let mut app = test_app();
         app.world_mut()
@@ -856,9 +1032,13 @@ mod tests {
         // P13: d100 variance means damage is 0.5x/1.0x/1.5x of base 5
         // Expected: 3, 5, or 8 damage. Accept any valid variance.
         let damage_dealt = 10 - dummy_hp;
-        assert!(damage_dealt >= 2 && damage_dealt <= 8,
+        assert!(
+            damage_dealt >= 2 && damage_dealt <= 8,
             "dummy should take 2-8 damage from base 5 with d100 variance, took {} (HP: {} -> {})",
-            damage_dealt, 10, dummy_hp);
+            damage_dealt,
+            10,
+            dummy_hp
+        );
         assert!(dummy_hp < 10, "dummy should take some damage, HP still 10");
         let player_hp = app
             .world()
@@ -910,12 +1090,16 @@ mod tests {
     fn ap_denial_includes_wait_hint() {
         let mut app = test_app();
         use crate::pools::Pools;
-        app.world_mut().insert_resource(SmokeMap::new(10, 10, Tile::Floor));
-        let p = app.world_mut().spawn((
-            Player,
-            Position { x: 5, y: 5 },
-            Pools::new(vec![Pool::new(PoolKind::ActionPoints, 0, 0, 3)]),
-        )).id();
+        app.world_mut()
+            .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
+        let p = app
+            .world_mut()
+            .spawn((
+                Player,
+                Position { x: 5, y: 5 },
+                Pools::new(vec![Pool::new(PoolKind::ActionPoints, 0, 0, 3)]),
+            ))
+            .id();
         app.world_mut()
             .resource_mut::<Messages<crate::signals::ActionIntent>>()
             .write(ActionIntent {
@@ -927,66 +1111,93 @@ mod tests {
         app.update();
         let log = app.world().resource::<GameLog>();
         let has_hint = log.iter().any(|e| e.message.contains("Wait (.)"));
-        assert!(has_hint, "AP denial should include wait hint, got: {:?}",
-            log.iter().map(|e| &e.message).collect::<Vec<_>>());
+        assert!(
+            has_hint,
+            "AP denial should include wait hint, got: {:?}",
+            log.iter().map(|e| &e.message).collect::<Vec<_>>()
+        );
     }
 
     #[test]
     fn item_pickup_logs_item_name() {
         let mut app = test_app();
-        app.world_mut().insert_resource(SmokeMap::new(10, 10, Tile::Floor));
+        app.world_mut()
+            .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
         use crate::inventory::Item;
         // Player at (5,5) with 1 AP (enough for one move)
-        let p = app.world_mut().spawn((
-            Player,
-            Position { x: 5, y: 5 },
-            Pools::new(vec![
-                Pool::new(PoolKind::ActionPoints, 1, 0, 3),
-                Pool::new(PoolKind::Health, 10, 0, 10),
-            ]),
-        )).id();
+        let p = app
+            .world_mut()
+            .spawn((
+                Player,
+                Position { x: 5, y: 5 },
+                Pools::new(vec![
+                    Pool::new(PoolKind::ActionPoints, 1, 0, 3),
+                    Pool::new(PoolKind::Health, 10, 0, 10),
+                ]),
+            ))
+            .id();
         // Item at (6,5) — NOT BlocksMovement so player can walk on it
-        let _item = app.world_mut().spawn((
-            crate::components::Name("Healing Potion".into()),
-            Item,
-            Position { x: 6, y: 5 },
-        )).id();
+        let _item = app
+            .world_mut()
+            .spawn((
+                crate::components::Name("Healing Potion".into()),
+                Item,
+                Position { x: 6, y: 5 },
+            ))
+            .id();
         // Move east onto the item
         send_action(&mut app, p, "ability.move", Some(Direction::East), None);
         app.update();
 
         let log = app.world().resource::<GameLog>();
         let has_pickup = log.iter().any(|e| e.message.contains("Healing Potion"));
-        assert!(has_pickup, "Item pickup log should mention item name, got: {:?}",
-            log.iter().map(|e| &e.message).collect::<Vec<_>>());
+        assert!(
+            has_pickup,
+            "Item pickup log should mention item name, got: {:?}",
+            log.iter().map(|e| &e.message).collect::<Vec<_>>()
+        );
     }
 
     // ── P21: Turn model tests ──
 
     #[test]
-    fn only_wait_advances_time_move_does_not() {
+    fn every_accepted_player_action_advances_time_once() {
         use crate::time::GameTime;
         let mut app = test_app();
         app.world_mut()
             .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
+        app.world_mut()
+            .insert_resource(crate::spatial::GameMode::Tactical);
         let p = spawn_player(&mut app, 5, 5);
 
         let turn_before = app.world().resource::<GameTime>().turn;
 
-        // Move — should NOT advance time
+        // Move — accepted gameplay action advances one turn.
         send_action(&mut app, p, "ability.move", Some(Direction::East), None);
         app.update();
         let turn_after_move = app.world().resource::<GameTime>().turn;
-        assert_eq!(turn_after_move, turn_before,
-            "Move should NOT advance time. Turn was {} before, {} after.",
-            turn_before, turn_after_move);
+        assert_eq!(
+            turn_after_move,
+            turn_before + 1,
+            "Move should advance time once. Turn was {} before, {} after.",
+            turn_before,
+            turn_after_move
+        );
 
-        // Wait — SHOULD advance time
+        // Let the one-shot enemy phase boundary release the player lock before
+        // issuing the next player action in this unit-level sequence.
+        app.update();
+
+        // Wait — also advances exactly one turn.
         send_action(&mut app, p, "ability.wait", None, None);
         app.update();
         let turn_after_wait = app.world().resource::<GameTime>().turn;
-        assert_eq!(turn_after_wait, turn_before + 1,
-            "Wait SHOULD advance time. Turn was {} before, {} after.",
-            turn_before, turn_after_wait);
+        assert_eq!(
+            turn_after_wait,
+            turn_before + 2,
+            "Wait should advance time once. Turn was {} before, {} after.",
+            turn_before,
+            turn_after_wait
+        );
     }
 }

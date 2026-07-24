@@ -358,9 +358,14 @@ mod tests {
         app.update();
         let pools = app.world().get::<Pools>(e).unwrap();
         let ap = pools.get(PoolKind::ActionPoints).unwrap();
-        assert_eq!(ap.current, ap.max,
-            "Player should start with full ActionPoints (max = {})", ap.max);
-        assert!(ap.current > 0,
-            "Player ActionPoints should be greater than 0 at start");
+        assert_eq!(
+            ap.current, ap.max,
+            "Player should start with full ActionPoints (max = {})",
+            ap.max
+        );
+        assert!(
+            ap.current > 0,
+            "Player ActionPoints should be greater than 0 at start"
+        );
     }
 }

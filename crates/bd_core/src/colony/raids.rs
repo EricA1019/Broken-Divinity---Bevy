@@ -3,10 +3,7 @@
 use bevy_ecs::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    signals::PoolKind,
-    BdSet,
-};
+use crate::{BdSet, signals::PoolKind};
 
 pub const RAID_CHANCE_PER_DAY: f32 = 0.15;
 pub const RAID_MIN_DAY: u64 = 3;
@@ -50,7 +47,10 @@ pub fn process_raids(
     if matches!(*raid_state, RaidState::Active { .. }) {
         if raid_enemies.iter().next().is_none() {
             *raid_state = RaidState::Inactive;
-            game_log.push("The raid has been repelled!".to_string(), crate::gamelog::LogLevel::Info);
+            game_log.push(
+                "The raid has been repelled!".to_string(),
+                crate::gamelog::LogLevel::Info,
+            );
         }
         return;
     }
@@ -93,12 +93,20 @@ pub fn process_raids(
     }
 
     game_log.push(
-        format!("Raiders attack the shelter! {} enemies sighted.", enemy_count),
+        format!(
+            "Raiders attack the shelter! {} enemies sighted.",
+            enemy_count
+        ),
         crate::gamelog::LogLevel::Combat,
     );
 
     // If player has no defenders, immediate supply loss
-    if colony_res.pools.get(PoolKind::Supplies).map_or(0, |p| p.current) > 0 {
+    if colony_res
+        .pools
+        .get(PoolKind::Supplies)
+        .map_or(0, |p| p.current)
+        > 0
+    {
         if let Some(supplies) = colony_res.pools.get_mut(PoolKind::Supplies) {
             let loss = RAID_SUPPLIES_LOST_IF_UNDEFENDED.min(supplies.current);
             supplies.current -= loss;
@@ -112,8 +120,5 @@ pub fn process_raids(
 
 pub fn register_raids(app: &mut bevy_app::App) {
     app.init_resource::<RaidState>();
-    app.add_systems(
-        bevy_app::Update,
-        process_raids.in_set(BdSet::Mutation),
-    );
+    app.add_systems(bevy_app::Update, process_raids.in_set(BdSet::Mutation));
 }
