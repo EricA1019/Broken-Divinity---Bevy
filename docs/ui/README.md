@@ -1,5 +1,10 @@
 # UI Design Specification
 
+> **RECONCILE — NOT IMPLEMENTATION AUTHORITY**
+> Current runtime direction comes from [Kernel.md](../../../Kernel.md) and the
+> [Foundation Recovery Plan](../../../docs/FOUNDATION-RECOVERY-PLAN.md). This
+> document may describe superseded egui or graphical assumptions.
+
 This directory defines every user-facing screen, panel, HUD element, and interaction for Broken Divinity. Each file covers one major game state. This README defines shared foundations that apply everywhere.
 
 **Phase tags**: Every element is tagged `[MVP]`, `[Phase 2]`, or `[Phase 3]`. MVP ships first. Phase 2/3 elements are designed now to avoid layout rework later, but are not implemented until their phase.

@@ -2,6 +2,19 @@
 
 A reusable terminal-based roguelike/tactics game kernel built with Rust, Bevy ECS, and Ratatui.
 
+## Current Status
+
+The Broken Divinity Foundation MVP is in recovery. Build and unit-test gates
+pass, but the project has not yet passed the canonical colony, dungeon,
+persistence, progression, and manual acceptance scenario.
+
+Project authority:
+
+1. [Product GDD](../GDD.md)
+2. [Locked decisions](../docs/DECISIONS-TO-LOCK.md)
+3. [Foundation MVP scenario](../docs/MVP-SCENARIO.md)
+4. [Foundation Recovery Plan](../docs/FOUNDATION-RECOVERY-PLAN.md)
+
 ## Quick Start
 
 ```bash
@@ -15,13 +28,24 @@ Controls:
 | `.` | Wait (restore AP) |
 | `F` | Attack nearest enemy |
 | `G` | Guard (defensive stance) |
-| `B` | Cycle station type (Stove→Altar→Workshop→Bed→Storage) |
+| `P` | Pick up item |
+| `U` | Use carried item |
+| `B` | Open station build menu / cancel build mode |
+| `A` | Cycle/assign the nearest survivor task |
+| `E` | Assign survivor to station |
 | `I` | Inventory screen |
 | `Z` | Combat screen |
-| `T` | Travel to next location |
-| `R` | Return to outpost |
-| `1`-`9` | Select event/dialogue choice |
+| `T` | Enter the fixed dungeon from the shelter |
+| `R` | Extract at the dungeon exit |
+| `?` | Context help |
+| `F5` | Save the current game |
+| `F9` | Load the current game |
+| `1`-`5` | Select a station type in the build menu |
 | `Q` / `Esc` | Quit / Cancel build mode |
+
+Some controls are currently hardcoded despite the configuration schema.
+Foundation Recovery Phase 7 will make actual input, help, and configured
+bindings share one source of truth.
 
 ## Build & Run
 
@@ -55,20 +79,27 @@ broken-divinity/
 │   ├── bd_tui/             # Terminal UI (Ratatui widgets)
 │   └── bd_test_support/    # Test helpers
 ├── docs/
+│   ├── README.md           # Repository documentation index
 │   ├── ARCHITECTURE_GUARDRAILS.md
 │   ├── DEPENDENCY_MATRIX.md
-│   └── decisions/          # Architecture Decision Records
+│   ├── archive/            # Superseded local GDD/dev plan
+│   └── decisions/          # Historical technical decisions
 ```
 
 ## Configuration
 
 Config file location: `~/.config/broken-divinity/config.toml`
 
-Copy `config/default.toml` to this location and edit. All key bindings are configurable.
+Copy `config/default.toml` to this location and edit. Theme and the currently
+wired binding fields can be configured. Do not assume every displayed command
+is configurable until Recovery Phase 7 passes.
 
 ## Save Files
 
-Save directory: `~/.local/share/broken-divinity/`
+Current save directory: `~/.local/share/broken-divinity/saves/`
+
+The current turn-number save selection is a known recovery defect. Do not rely
+on current development saves as a compatibility contract.
 
 ## Logs
 

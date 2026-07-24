@@ -1,7 +1,11 @@
 # UI Design Architecture
 
+> **RECONCILE — NOT IMPLEMENTATION AUTHORITY**
+> Current UI execution is governed by [Kernel.md](../../../Kernel.md) and the
+> [Foundation Recovery Plan](../../../docs/FOUNDATION-RECOVERY-PLAN.md).
+
 ## Overview
-This document outlines the UI architecture for Broken Divinity MVP using `bevy_egui`. 
+This document outlines the UI architecture for Broken Divinity MVP using `bevy_egui`.
 The game leans entirely into an endless Rimworld-style survival loop. The UI design must facilitate risk/reward decisions with slot-based inventory constraints, post-action reports from auto-resolving shelter raids, and a persistent sanity/action point tracking HUD during turn-based dungeon exploration.
 
 ## 1. UI Framework Integration

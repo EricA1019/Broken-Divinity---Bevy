@@ -1,5 +1,11 @@
 # MVP Dev Plan — Vertical Slices
 
+**Status:** Historical technical plan, archived during Foundation Recovery Phase 0 on 2026-07-24.
+
+**Active replacement:** [Foundation Recovery Plan](../../../docs/FOUNDATION-RECOVERY-PLAN.md)
+
+Completion and scope statements below are historical and do not authorize implementation.
+
 ## Build Requirements
 
 ### Prerequisites
