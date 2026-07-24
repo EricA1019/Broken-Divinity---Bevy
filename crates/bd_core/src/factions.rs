@@ -5,10 +5,12 @@ use std::collections::HashMap;
 use bevy_ecs::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::signals::PoolKind;
+use crate::signals::{PoolDeltaApplied, PoolKind};
+use crate::BdSet;
 
 pub const REPUTATION_MAX: i32 = 100;
 pub const REPUTATION_HOSTILE_THRESHOLD: i32 = 25;
+pub const REPUTATION_ALLIED_THRESHOLD: i32 = 75;
 
 /// All faction reputation PoolKind variants.
 pub const ALL_FACTIONS: &[PoolKind] = &[
@@ -18,6 +20,28 @@ pub const ALL_FACTIONS: &[PoolKind] = &[
     PoolKind::RepDemons,
     PoolKind::RepHumanSettlements,
 ];
+
+/// Relationship standing with a faction.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FactionStatus {
+    Hostile,   // ≤ -REPUTATION_HOSTILE_THRESHOLD
+    Neutral,   // between thresholds
+    Friendly,  // ≥ REPUTATION_HOSTILE_THRESHOLD, < REPUTATION_ALLIED_THRESHOLD
+    Allied,    // ≥ REPUTATION_ALLIED_THRESHOLD
+}
+
+/// Determine faction status from a reputation value.
+pub fn faction_status(value: i32) -> FactionStatus {
+    if value <= -REPUTATION_HOSTILE_THRESHOLD {
+        FactionStatus::Hostile
+    } else if value >= REPUTATION_ALLIED_THRESHOLD {
+        FactionStatus::Allied
+    } else if value >= REPUTATION_HOSTILE_THRESHOLD {
+        FactionStatus::Friendly
+    } else {
+        FactionStatus::Neutral
+    }
+}
 
 /// Resource tracking reputation with each faction.
 /// Map key: faction PoolKind, value: current reputation.
@@ -48,18 +72,46 @@ impl FactionReputation {
     }
 }
 
-/// Adjust faction reputation based on observed events.
-/// For now: stub that only accepts direct delta requests.
-/// Phase 2: observe dialogue choices, combat outcomes, raid results.
+/// Returns true if the PoolKind is a faction reputation pool.
+pub fn is_faction_pool(kind: &PoolKind) -> bool {
+    matches!(
+        kind,
+        PoolKind::RepPuritans
+            | PoolKind::RepWanderers
+            | PoolKind::RepBrokenChoir
+            | PoolKind::RepDemons
+            | PoolKind::RepHumanSettlements
+    )
+}
+
+/// Intercepts PoolDeltaApplied messages and reroutes faction pool deltas to
+/// the FactionReputation resource instead of player entity pools.
 pub fn process_faction_events(
-    _rep: ResMut<FactionReputation>,
-    _game_log: ResMut<crate::gamelog::GameLog>,
+    mut rep: ResMut<FactionReputation>,
+    mut applied: bevy_ecs::message::MessageReader<PoolDeltaApplied>,
+    mut game_log: ResMut<crate::gamelog::GameLog>,
 ) {
-    // Stub: empty. Future: listen for EventSelected messages with faction effects.
+    for msg in applied.read() {
+        if is_faction_pool(&msg.kind) {
+            rep.modify(&msg.kind, msg.amount_applied);
+            let status = faction_status(rep.get(&msg.kind));
+            game_log.push(
+                format!(
+                    "{:?} reputation: {} ({:?})",
+                    msg.kind, rep.get(&msg.kind), status
+                ),
+                crate::gamelog::LogLevel::Info,
+            );
+        }
+    }
 }
 
 pub fn register_factions(app: &mut bevy_app::App) {
     app.init_resource::<FactionReputation>();
+    app.add_systems(
+        bevy_app::Update,
+        process_faction_events.in_set(BdSet::ResultEmission),
+    );
 }
 
 #[cfg(test)]
@@ -100,5 +152,47 @@ mod tests {
         let mut rep = FactionReputation::default();
         rep.modify(&PoolKind::RepPuritans, -(REPUTATION_MAX + 50));
         assert_eq!(rep.get(&PoolKind::RepPuritans), -REPUTATION_MAX);
+    }
+
+    #[test]
+    fn faction_status_hostile_below_threshold() {
+        assert_eq!(
+            faction_status(-REPUTATION_HOSTILE_THRESHOLD),
+            FactionStatus::Hostile
+        );
+        assert_eq!(faction_status(-50), FactionStatus::Hostile);
+    }
+
+    #[test]
+    fn faction_status_allied_above_threshold() {
+        assert_eq!(
+            faction_status(REPUTATION_ALLIED_THRESHOLD),
+            FactionStatus::Allied
+        );
+        assert_eq!(faction_status(90), FactionStatus::Allied);
+    }
+
+    #[test]
+    fn faction_status_neutral_in_middle() {
+        assert_eq!(faction_status(0), FactionStatus::Neutral);
+        assert_eq!(faction_status(10), FactionStatus::Neutral);
+        assert_eq!(faction_status(-10), FactionStatus::Neutral);
+    }
+
+    #[test]
+    fn faction_status_friendly_between_thresholds() {
+        assert_eq!(faction_status(25), FactionStatus::Friendly);
+        assert_eq!(faction_status(50), FactionStatus::Friendly);
+    }
+
+    #[test]
+    fn is_faction_pool_identifies_all_five() {
+        assert!(is_faction_pool(&PoolKind::RepPuritans));
+        assert!(is_faction_pool(&PoolKind::RepWanderers));
+        assert!(is_faction_pool(&PoolKind::RepBrokenChoir));
+        assert!(is_faction_pool(&PoolKind::RepDemons));
+        assert!(is_faction_pool(&PoolKind::RepHumanSettlements));
+        assert!(!is_faction_pool(&PoolKind::Health));
+        assert!(!is_faction_pool(&PoolKind::ActionPoints));
     }
 }

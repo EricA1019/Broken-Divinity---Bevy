@@ -100,6 +100,24 @@ pub fn default_event_registry() -> EventRegistry {
                         effects: vec![
                             Effect::ApplyStatus("status.gabriels_witness".into()),
                             Effect::Flag("gabriel.accepted".into(), true),
+                            Effect::PoolDelta {
+                                kind: PoolKind::Faith,
+                                amount: 10,
+                                tags: vec![],
+                                reason: "accepted Gabriel's witness".into(),
+                            },
+                            Effect::PoolDelta {
+                                kind: PoolKind::Temperance,
+                                amount: 2,
+                                tags: vec![],
+                                reason: "accepted Gabriel's witness".into(),
+                            },
+                            Effect::PoolDelta {
+                                kind: PoolKind::RepPuritans,
+                                amount: -5,
+                                tags: vec![],
+                                reason: "consorting with the mysterious".into(),
+                            },
                             Effect::Log("Gabriel's presence settles over you like a mantle. You are no longer alone.".into(), crate::gamelog::LogLevel::Info),
                         ],
                         next_node: None,
@@ -108,6 +126,24 @@ pub fn default_event_registry() -> EventRegistry {
                         label: "Reject the offer".into(),
                         conditions: vec![Condition::Always],
                         effects: vec![
+                            Effect::PoolDelta {
+                                kind: PoolKind::Prudence,
+                                amount: 2,
+                                tags: vec![],
+                                reason: "rejected the unknown".into(),
+                            },
+                            Effect::PoolDelta {
+                                kind: PoolKind::Fortitude,
+                                amount: 1,
+                                tags: vec![],
+                                reason: "stood firm against temptation".into(),
+                            },
+                            Effect::PoolDelta {
+                                kind: PoolKind::RepPuritans,
+                                amount: 3,
+                                tags: vec![],
+                                reason: "rejected mysterious entity".into(),
+                            },
                             Effect::Log("Gabriel's form flickers with something like disappointment. 'As you wish.' He fades.".into(), crate::gamelog::LogLevel::Info),
                         ],
                         next_node: None,
@@ -116,6 +152,18 @@ pub fn default_event_registry() -> EventRegistry {
                         label: "Defer — ask for time".into(),
                         conditions: vec![Condition::Always],
                         effects: vec![
+                            Effect::PoolDelta {
+                                kind: PoolKind::Justice,
+                                amount: 1,
+                                tags: vec![],
+                                reason: "sought wisdom before deciding".into(),
+                            },
+                            Effect::PoolDelta {
+                                kind: PoolKind::Metis,
+                                amount: 1,
+                                tags: vec![],
+                                reason: "displayed caution".into(),
+                            },
                             Effect::Log("'Time is the one thing I have in abundance.' Gabriel lingers, waiting.".into(), crate::gamelog::LogLevel::Info),
                         ],
                         next_node: None,
@@ -325,24 +373,40 @@ pub fn register_events(app: &mut bevy_app::App) {
 pub const GABRIEL_EVENT_ID: &str = "gabriel.first_encounter";
 pub const GABRIEL_TRIGGER_FLOOR: u32 = 1;
 
-/// When entering Tactical mode on the trigger floor and Gabriel hasn't appeared yet,
-/// fire the Gabriel encounter event.
+/// When entering Tactical mode on the first dungeon trip and Gabriel hasn't
+/// appeared yet, OR when building an Altar in the Outpost, fire the Gabriel
+/// encounter event.
 pub fn trigger_gabriel_encounter(
     mode: Res<crate::spatial::GameMode>,
     mut gabriel: ResMut<crate::gabriel::GabrielState>,
     mut trigger_writer: bevy_ecs::message::MessageWriter<EventTrigger>,
     player: Query<Entity, With<Player>>,
+    stations: Query<Entity, With<crate::colony::stations::Station>>,
+    station_types: Query<&crate::colony::stations::StationType>,
 ) {
-    if *mode != crate::spatial::GameMode::Tactical {
-        return;
-    }
     if gabriel.appeared {
         return;
     }
-    // Use iter().next() to handle potential duplicate player entities
     let Some(player_entity) = player.iter().next() else {
         return;
     };
+
+    let should_trigger = match *mode {
+        crate::spatial::GameMode::Tactical => {
+            // Trigger on first dungeon entry
+            true
+        }
+        crate::spatial::GameMode::Outpost => {
+            // Trigger only when an Altar station exists (not any station)
+            stations.iter().any(|e| station_types.get(e)
+                .is_ok_and(|t| matches!(t, crate::colony::stations::StationType::Altar)))
+        }
+        _ => false,
+    };
+
+    if !should_trigger {
+        return;
+    }
 
     gabriel.appeared = true;
     trigger_writer.write(EventTrigger {

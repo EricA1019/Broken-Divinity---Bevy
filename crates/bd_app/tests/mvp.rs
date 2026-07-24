@@ -265,3 +265,42 @@ fn mvp_save_load_roundtrip() {
     let _ = std::fs::remove_file(&path);
     let _ = std::fs::remove_dir(&temp_dir);
 }
+
+#[test]
+fn first_keypress_in_outpost_is_move_not_build() {
+    use bevy_app::App;
+    use bevy_ecs::message::Messages;
+    use bevy_ratatui::event::KeyMessage;
+    use bevy_ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
+
+    let mut app = App::new();
+    app.add_plugins(bevy_ratatui::RatatuiPlugins::default());
+    app.add_plugins(bd_core::BdCorePlugin);
+    app.add_plugins(bd_tui::BdTuiPlugin);
+
+    // Set Outpost mode to bypass title screen
+    app.world_mut().insert_resource(bd_core::spatial::GameMode::Outpost);
+
+    // Run once to spawn player + initialize systems
+    app.update();
+
+    // Simulate 'd' key without having pressed 'b'
+    let key = KeyEvent::new(KeyCode::Char('d'), KeyModifiers::NONE);
+    app.world_mut()
+        .resource_mut::<Messages<KeyMessage>>()
+        .write(KeyMessage(key));
+
+    app.update();
+
+    // Game log should show "You move." NOT "You build a station."
+    let log = app.world().resource::<bd_core::gamelog::GameLog>();
+    let messages: Vec<_> = log.iter().map(|e| e.message.clone()).collect();
+    assert!(
+        messages.iter().any(|m| m.contains("You move")),
+        "First keypress should produce move. Log: {:?}", messages
+    );
+    assert!(
+        !messages.iter().any(|m| m.contains("build a station")),
+        "Should NOT build without 'b' key. Log: {:?}", messages
+    );
+}

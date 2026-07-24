@@ -10,9 +10,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::map::SmokeMap;
 use crate::{
-    components::Player,
+    components::{ExitTile, Player, Position},
     gamelog::{GameLog, LogLevel},
-    pools::{Pool, Pools},
     signals::PoolKind,
 };
 
@@ -54,11 +53,9 @@ pub struct TransientEntity;
 // Outpost state
 // ---------------------------------------------------------------------------
 
-/// The player's outpost/shelter — resources, party, and storage.
+/// The player's outpost/shelter — party and storage.
 #[derive(Resource, Debug, Clone)]
 pub struct OutpostState {
-    /// Outpost resource pools (Supplies, Morale, Faith, etc.).
-    pub resources: Pools,
     /// Entity IDs of party members currently at the outpost.
     pub party: Vec<Entity>,
     /// The persistent shelter map (never regenerated on revisit).
@@ -68,10 +65,6 @@ pub struct OutpostState {
 impl Default for OutpostState {
     fn default() -> Self {
         Self {
-            resources: Pools::new(vec![
-                Pool::new(PoolKind::Supplies, 10, 0, 50),
-                Pool::new(PoolKind::Morale, 50, 0, 100),
-            ]),
             party: Vec::new(),
             map: crate::colony::shelter::create_shelter_map(),
         }
@@ -151,6 +144,8 @@ pub fn process_transitions(
     outpost: Res<OutpostState>,
     mut colony_res: ResMut<crate::colony::production::ColonyResources>,
     mut overworld: Option<ResMut<crate::overworld::OverworldState>>,
+    gabriel_state: Res<crate::gabriel::GabrielState>,
+    gabriel_q: Query<Entity, With<crate::components::Gabriel>>,
     query: Query<(Entity, Option<&TransientEntity>, Option<&PersistentEntity>)>,
     player_query: Query<Entity, With<Player>>,
 ) {
@@ -181,6 +176,17 @@ pub fn process_transitions(
                 game_log.push("You return to the outpost.", LogLevel::Info);
                 // Sync global map to shelter map so movement validation works
                 *map = outpost.map.clone();
+
+                // P15-C: Spawn Gabriel in shelter if he has appeared and not already present
+                if gabriel_state.appeared && gabriel_q.iter().next().is_none() {
+                    commands.spawn((
+                        crate::components::Position { x: 12, y: 8 },
+                        crate::components::Name("Gabriel".into()),
+                        crate::components::Gabriel,
+                        PersistentEntity,
+                    ));
+                    game_log.push("Gabriel waits silently in the shelter.", LogLevel::Info);
+                }
             }
             GameMode::Travel => {
                 let node_name = msg.node_id.as_deref().unwrap_or("unknown");
@@ -335,6 +341,15 @@ pub fn initialize_outpost(
     }
 
     game_log.push("Survivors gather at the shelter.", crate::gamelog::LogLevel::Info);
+
+    // P22: Spawn resource nodes on the shelter map
+    let node_count = crate::colony::resources::spawn_resource_nodes(&mut commands, &outpost.map);
+    if node_count > 0 {
+        game_log.push(
+            format!("{} resource nodes found near the shelter.", node_count),
+            crate::gamelog::LogLevel::Info,
+        );
+    }
 }
 
 pub fn register_spatial(app: &mut App) {
@@ -355,7 +370,40 @@ pub fn register_spatial(app: &mut App) {
         initialize_outpost.in_set(crate::BdSet::IntentCollection),
     );
 
+    // Exit tile detection — return to outpost when player steps on exit.
+    // Runs in Mutation after movement has applied the new position but before
+    // ResultEmission cleanup systems that might despawn the ExitTile entity.
+    app.add_systems(
+        bevy_app::Update,
+        detect_exit_tile.in_set(crate::BdSet::Mutation),
+    );
+
     tracing::info!("Spatial module registered");
+}
+
+/// When player steps on an ExitTile in Tactical mode, transition back to Outpost.
+fn detect_exit_tile(
+    player: Query<&Position, With<Player>>,
+    exits: Query<&Position, With<ExitTile>>,
+    mode: Res<GameMode>,
+    mut writer: bevy_ecs::message::MessageWriter<TransitionIntent>,
+) {
+    if *mode != GameMode::Tactical {
+        return;
+    }
+    let Ok(player_pos) = player.single() else {
+        return;
+    };
+    for exit_pos in exits.iter() {
+        if *player_pos == *exit_pos {
+            tracing::info!("Player on exit tile at {:?}, returning to Outpost", player_pos);
+            writer.write(TransitionIntent {
+                target: GameMode::Outpost,
+                node_id: None,
+            });
+            return;
+        }
+    }
 }
 
 /// Supplies deducted when traveling from outpost to a dungeon.
@@ -385,8 +433,10 @@ mod tests {
         app.insert_resource(GameLog::default());
         app.insert_resource(crate::colony::production::ColonyResources::default());
         app.insert_resource(SmokeMap::new(10, 10, crate::components::Tile::Floor));
+        app.insert_resource(crate::gabriel::GabrielState::default());
         app.add_message::<TransitionIntent>();
         app.add_systems(bevy_app::Update, process_transitions);
+        app.add_systems(bevy_app::Update, detect_exit_tile);
         app
     }
 
@@ -470,16 +520,12 @@ mod tests {
     }
 
     #[test]
-    fn outpost_resources_use_pool_like_system() {
+    fn colony_resources_have_default_supplies() {
         let app = test_app();
-        let outpost = app.world().resource::<OutpostState>().clone();
-        let supplies = outpost.resources.get(PoolKind::Supplies).unwrap();
+        let res = app.world().resource::<crate::colony::production::ColonyResources>();
+        let supplies = res.pools.get(PoolKind::Supplies).unwrap();
         assert_eq!(supplies.current, 10);
-        assert_eq!(supplies.max, 50);
-
-        let morale = outpost.resources.get(PoolKind::Morale).unwrap();
-        assert_eq!(morale.current, 50);
-        assert_eq!(morale.max, 100);
+        assert_eq!(supplies.max, 100);
     }
 
     #[test]
@@ -503,5 +549,64 @@ mod tests {
         // Non-persistent entities should be despawned
         assert!(!app.world().entities().contains(summon));
         assert!(!app.world().entities().contains(item));
+    }
+
+    #[test]
+    fn exit_tile_detection_triggers_transition_to_outpost() {
+        let mut app = test_app();
+        app.world_mut().insert_resource(GameMode::Tactical);
+
+        let exit_pos = Position { x: 10, y: 5 };
+        let player_pos = exit_pos; // player standing on exit tile
+
+        // Spawn persistent player on the exit tile
+        app.world_mut().spawn((
+            Player,
+            player_pos,
+            PersistentEntity,
+            crate::components::Name("TestPlayer".into()),
+        ));
+
+        // Spawn the exit tile
+        app.world_mut().spawn((ExitTile, exit_pos, crate::components::Name("Exit".into())));
+
+        // Run one frame — detect_exit_tile fires in Mutation, writes TransitionIntent.
+        // TransitionIntent is processed by process_transitions next frame.
+        app.update();
+        app.update();
+
+        // After the TransitionIntent is processed, mode should be Outpost
+        assert_eq!(
+            *app.world().resource::<GameMode>(),
+            GameMode::Outpost,
+            "Player on exit tile should trigger transition to Outpost"
+        );
+    }
+
+    #[test]
+    fn exit_tile_not_triggered_when_player_elsewhere() {
+        let mut app = test_app();
+        app.world_mut().insert_resource(GameMode::Tactical);
+
+        let exit_pos = Position { x: 10, y: 5 };
+        let player_pos = Position { x: 20, y: 15 }; // different position
+
+        app.world_mut().spawn((
+            Player,
+            player_pos,
+            PersistentEntity,
+            crate::components::Name("TestPlayer".into()),
+        ));
+        app.world_mut().spawn((ExitTile, exit_pos, crate::components::Name("Exit".into())));
+
+        app.update();
+        app.update();
+
+        // Mode should still be Tactical
+        assert_eq!(
+            *app.world().resource::<GameMode>(),
+            GameMode::Tactical,
+            "Player not on exit should stay in Tactical mode"
+        );
     }
 }

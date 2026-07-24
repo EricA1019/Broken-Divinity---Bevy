@@ -8,6 +8,24 @@ use crate::signals::PoolKind;
 
 pub const TRAVEL_FOOD_COST_PER_TURN: i32 = 1;
 
+/// Base chance per travel turn of a random encounter (percentage).
+pub const ENCOUNTER_CHANCE_PCT: u32 = 30;
+
+/// Encounter types that can occur during travel.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EncounterType {
+    /// Bandits ambush — spawns 2-3 hostile enemies in a tactical map.
+    BanditAmbush,
+    /// Demon sighting — small sanity hit, possible corruption.
+    DemonSighting,
+    /// Angel patrol — small faith gain, possible blessing.
+    AngelPatrol,
+    /// Survivor camp — gain supplies and potentially a new survivor.
+    SurvivorCamp,
+    /// Weather hazard — extra supply loss, possible stress.
+    WeatherHazard,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OverworldNode {
     pub id: String,
@@ -76,7 +94,9 @@ pub fn register_begin_travel_action() -> ActionDefinition {
 pub fn process_travel_day(
     mut state: ResMut<OverworldState>,
     mode: Res<crate::spatial::GameMode>,
+    time: Res<crate::time::GameTime>,
     mut colony_res: ResMut<crate::colony::production::ColonyResources>,
+    faction_rep: Res<crate::factions::FactionReputation>,
     mut transition_writer: bevy_ecs::message::MessageWriter<crate::spatial::TransitionIntent>,
     mut game_log: ResMut<crate::gamelog::GameLog>,
     mut should_advance: ResMut<crate::time::ShouldAdvanceTime>,
@@ -94,6 +114,16 @@ pub fn process_travel_day(
     // Deduct food from colony resources
     if let Some(supplies) = colony_res.pools.get_mut(PoolKind::Supplies) {
         supplies.current = (supplies.current - TRAVEL_FOOD_COST_PER_TURN).max(0);
+        // P14-B: Sanity drain when out of supplies
+        if supplies.current == 0 {
+            if let Some(sanity) = colony_res.pools.get_mut(PoolKind::Sanity) {
+                sanity.current = (sanity.current - 2).max(0);
+            }
+            game_log.push(
+                "You have no supplies — hunger gnaws at your sanity.".to_string(),
+                crate::gamelog::LogLevel::Warn,
+            );
+        }
     }
 
     state.turns_remaining -= 1;
@@ -101,6 +131,21 @@ pub fn process_travel_day(
         format!("Travel: {} turn(s) remaining...", state.turns_remaining),
         crate::gamelog::LogLevel::Info,
     );
+
+    // P14-A: Roll for random encounters during travel
+    let encounter_seed = time.turn.wrapping_mul(3141592653).wrapping_add(
+        match &state.current_node {
+            Some(n) => n.len() as u64 * 2718281828,
+            None => 0,
+        },
+    );
+    if let Some(encounter) = roll_encounter(encounter_seed, &faction_rep) {
+        game_log.push(
+            format!("Encounter: {:?}!", encounter),
+            crate::gamelog::LogLevel::Info,
+        );
+        resolve_encounter(encounter, &mut colony_res, &mut game_log);
+    }
 
     if state.turns_remaining == 0 {
         // Arrived! Transition to tactical mode
@@ -130,6 +175,97 @@ pub fn roll_weather(seed: u64) -> Weather {
         Weather::Storm
     } else {
         Weather::AnomalyStorm
+    }
+}
+
+/// Roll a random encounter based on a deterministic seed and faction standings.
+/// Factions skew the odds: hostile → more bandits/demons, allied → more angels/camps.
+/// Returns None if no encounter occurs (~30% base chance per turn).
+pub fn roll_encounter(seed: u64, rep: &crate::factions::FactionReputation) -> Option<EncounterType> {
+    let roll = seed % 100;
+    if roll >= ENCOUNTER_CHANCE_PCT as u64 {
+        return None;
+    }
+
+    // Count hostile / allied factions to skew encounter types
+    let hostile_count = crate::factions::ALL_FACTIONS
+        .iter()
+        .filter(|f| rep.get(f) <= -crate::factions::REPUTATION_HOSTILE_THRESHOLD)
+        .count();
+    let allied_count = crate::factions::ALL_FACTIONS
+        .iter()
+        .filter(|f| rep.get(f) >= crate::factions::REPUTATION_ALLIED_THRESHOLD)
+        .count();
+
+    // Base weights: Bandit=20, Demon=20, Angel=20, Camp=20, Weather=20
+    let mut bandit_w = 20i32 + hostile_count as i32 * 10;
+    let mut demon_w = 20i32 + hostile_count as i32 * 5;
+    let mut angel_w = 20i32 + allied_count as i32 * 10;
+    let mut camp_w = 20i32 + allied_count as i32 * 5;
+    let weather_w = 20i32;
+
+    // Clamp negatives
+    bandit_w = bandit_w.max(0);
+    demon_w = demon_w.max(0);
+    angel_w = angel_w.max(0);
+    camp_w = camp_w.max(0);
+
+    let total = (bandit_w + demon_w + angel_w + camp_w + weather_w) as u64;
+    let type_roll = (seed / 100) % total;
+
+    if type_roll < bandit_w as u64 {
+        Some(EncounterType::BanditAmbush)
+    } else if type_roll < (bandit_w + demon_w) as u64 {
+        Some(EncounterType::DemonSighting)
+    } else if type_roll < (bandit_w + demon_w + angel_w) as u64 {
+        Some(EncounterType::AngelPatrol)
+    } else if type_roll < (bandit_w + demon_w + angel_w + camp_w) as u64 {
+        Some(EncounterType::SurvivorCamp)
+    } else {
+        Some(EncounterType::WeatherHazard)
+    }
+}
+
+/// Resolve an encounter — applies pool effects and logs.
+pub fn resolve_encounter(
+    encounter: EncounterType,
+    colony_res: &mut crate::colony::production::ColonyResources,
+    game_log: &mut crate::gamelog::GameLog,
+) {
+    match encounter {
+        EncounterType::BanditAmbush => {
+            game_log.push("Bandits ambush you! You fight them off but take losses.".to_string(), crate::gamelog::LogLevel::Combat);
+            if let Some(supplies) = colony_res.pools.get_mut(PoolKind::Supplies) {
+                supplies.current = (supplies.current - 3).max(0);
+            }
+        }
+        EncounterType::DemonSighting => {
+            game_log.push("A demonic presence streaks across the sky. Your mind reels.".to_string(), crate::gamelog::LogLevel::Combat);
+            if let Some(sanity) = colony_res.pools.get_mut(PoolKind::Sanity) {
+                sanity.current = (sanity.current - 10).max(0);
+            }
+        }
+        EncounterType::AngelPatrol => {
+            game_log.push("An angelic patrol passes overhead. You feel a flicker of hope.".to_string(), crate::gamelog::LogLevel::Info);
+            if let Some(faith) = colony_res.pools.get_mut(PoolKind::Faith) {
+                faith.current = (faith.current + 5).min(faith.max);
+            }
+        }
+        EncounterType::SurvivorCamp => {
+            game_log.push("You stumble upon a survivor camp. They share supplies.".to_string(), crate::gamelog::LogLevel::Info);
+            if let Some(supplies) = colony_res.pools.get_mut(PoolKind::Supplies) {
+                supplies.current = (supplies.current + 5).min(supplies.max);
+            }
+        }
+        EncounterType::WeatherHazard => {
+            game_log.push("Harsh weather damages your supplies and frays your nerves.".to_string(), crate::gamelog::LogLevel::Warn);
+            if let Some(supplies) = colony_res.pools.get_mut(PoolKind::Supplies) {
+                supplies.current = (supplies.current - 2).max(0);
+            }
+            if let Some(stress) = colony_res.pools.get_mut(PoolKind::Stress) {
+                stress.current = (stress.current + 5).min(stress.max);
+            }
+        }
     }
 }
 
@@ -177,6 +313,23 @@ pub fn process_travel_weather(
             format!("{:?} weather increases supply consumption by {}.", state.weather, extra_cost),
             crate::gamelog::LogLevel::Info,
         );
+    }
+}
+
+/// Combined travel context for the TUI layer — bundles overworld state with
+/// the travel map so they can be passed as a single system parameter.
+#[derive(Resource, Debug, Clone)]
+pub struct TravelContext {
+    pub overworld: OverworldState,
+    pub travel_map: crate::spatial::TravelMap,
+}
+
+impl Default for TravelContext {
+    fn default() -> Self {
+        Self {
+            overworld: OverworldState::default(),
+            travel_map: crate::spatial::TravelMap::default(),
+        }
     }
 }
 

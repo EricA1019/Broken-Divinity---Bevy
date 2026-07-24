@@ -15,18 +15,19 @@ use bevy_ecs::{
     message::{MessageReader, MessageWriter},
     query::{With, Without},
     schedule::IntoScheduleConfigs,
-    system::{Local, Query, Res, ResMut},
+    system::{Query, Res, ResMut},
 };
 use bevy_ratatui::{RatatuiContext, event::KeyMessage};
 use ratatui::{
     layout::Alignment,
     layout::Rect,
     style::{Color, Style},
+    text::Line,
     widgets::{Block, Borders, Paragraph},
 };
 
 use bd_core::{
-    BdSet, HelpLine,
+    BdSet,
     components::{BlocksMovement, Player, Position},
     direction::Direction,
     gamelog::{GameLog, LogLevel},
@@ -109,19 +110,19 @@ fn sync_event_screen(
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn map_input_to_intents(
     mut messages: MessageReader<KeyMessage>,
-    player: Query<Entity, With<Player>>,
+    player: Query<(Entity, &Position), With<Player>>,
     enemies: Query<(Entity, &Position), (With<BlocksMovement>, Without<Player>)>,
-    survivors: Query<(Entity, &Position), With<bd_core::colony::survivors::Survivor>>,
-    player_pos: Query<&Position, With<Player>>,
+    survivors: Query<(Entity, &Position, &bd_core::colony::survivors::SurvivorTask), With<bd_core::colony::survivors::Survivor>>,
+    stations: Query<(Entity, &Position), With<bd_core::colony::stations::Station>>,
     mut action_writer: MessageWriter<ActionIntent>,
+    mut assign_writer: MessageWriter<bd_core::signals::AssignToStation>,
     screen_state: Res<ScreenState>,
     mut screen_writer: MessageWriter<ScreenIntent>,
     mut transition_writer: MessageWriter<TransitionIntent>,
     mut mode: ResMut<bd_core::spatial::GameMode>,
     mut game_log: ResMut<GameLog>,
     mut pending_station: ResMut<bd_core::colony::stations::PendingStationBuild>,
-    mut pending_build_idx: Local<i8>,
-    mut has_drained: Local<bool>,
+    (mut build_ghost, mut build_menu): (ResMut<bd_core::colony::stations::BuildGhostState>, ResMut<bd_core::colony::stations::BuildMenuState>),
     current_event: Res<bd_core::events::CurrentEvent>,
     mut event_writer: MessageWriter<bd_core::signals::EventSelected>,
 ) {
@@ -151,26 +152,36 @@ fn map_input_to_intents(
 
     // If in Title mode, any key transitions to Outpost (no player needed yet)
     if *mode == bd_core::spatial::GameMode::Title {
-        if messages.read().next().is_some() {
+        for key in messages.read() {
             // Any key starts the game
             *mode = bd_core::spatial::GameMode::Outpost;
             screen_writer.write(ScreenIntent {
                 screen_id: "outpost".into(),
             });
+            // Remember if user pressed 'b' — auto-enter build mode once player spawns
+            if matches!(key.code, KeyCode::Char('b')) {
+                build_ghost.active = true;
+                // cursor will be set once player position is available
+            }
         }
         return;
     }
 
-    let Ok(player_entity) = player.single() else {
+    let Ok((player_entity, player_pos)) = player.single() else {
+        // Player not spawned yet (spawn_outpost_player runs after Input set).
+        // If build mode was queued from title, position cursor now.
+        if build_ghost.active {
+            // Can't position cursor without player — will be positioned on next frame
+            // when the player exists and this guard passes.
+        }
         return;
     };
 
-    // Drain stale terminal input once on first frame.
-    if !*has_drained {
-        *has_drained = true;
-        while crossterm::event::poll(std::time::Duration::ZERO).unwrap_or(false) {
-            let _ = crossterm::event::read();
-        }
+    // If build mode was queued from title screen, position the ghost cursor now
+    // that we have the player position.
+    if build_ghost.active && build_ghost.cursor.x == 0 && build_ghost.cursor.y == 0 {
+        build_ghost.cursor = *player_pos;
+        game_log.push("BUILD MODE: 1=Stove 2=Altar 3=Workshop 4=Bed 5=Storage | arrows=move | Enter=place | b=cancel".to_string(), LogLevel::Info);
     }
 
     // If an event is active, only number keys for choices are handled
@@ -192,95 +203,79 @@ fn map_input_to_intents(
 
     for key in messages.read() {
         match key.code {
-            // Movement
-            KeyCode::Char('w') | KeyCode::Up => {
-                if *pending_build_idx >= 0 {
-                    *pending_build_idx = -1;
-                    // pending_station already set by 'b' key handler
-                    action_writer.write(ActionIntent {
-                        actor: player_entity,
-                        action_id: "ability.build".into(),
-                        direction: Some(Direction::North),
-                        target: None,
-                    });
-                } else {
-                    action_writer.write(ActionIntent {
-                        actor: player_entity,
-                        action_id: "ability.move".into(),
-                        direction: Some(Direction::North),
-                        target: None,
-                    });
-                }
+            // Movement — ghost cursor in build mode, normal movement otherwise
+            KeyCode::Char('w') => {
+                if build_ghost.active { build_ghost.cursor = *player_pos; build_ghost.cursor.y -= 1; return; }
+                action_writer.write(ActionIntent { actor: player_entity, action_id: "ability.move".into(), direction: Some(Direction::North), target: None });
             }
-            KeyCode::Char('s') | KeyCode::Down => {
-                if *pending_build_idx >= 0 {
-                    *pending_build_idx = -1;
-                    action_writer.write(ActionIntent {
-                        actor: player_entity,
-                        action_id: "ability.build".into(),
-                        direction: Some(Direction::South),
-                        target: None,
-                    });
-                } else {
-                    action_writer.write(ActionIntent {
-                        actor: player_entity,
-                        action_id: "ability.move".into(),
-                        direction: Some(Direction::South),
-                        target: None,
-                    });
-                }
+            KeyCode::Char('s') => {
+                if build_ghost.active { build_ghost.cursor = *player_pos; build_ghost.cursor.y += 1; return; }
+                action_writer.write(ActionIntent { actor: player_entity, action_id: "ability.move".into(), direction: Some(Direction::South), target: None });
             }
             KeyCode::Char('d') | KeyCode::Right => {
-                if *pending_build_idx >= 0 {
-                    *pending_build_idx = -1;
-                    action_writer.write(ActionIntent {
-                        actor: player_entity,
-                        action_id: "ability.build".into(),
-                        direction: Some(Direction::East),
-                        target: None,
-                    });
-                } else {
-                    action_writer.write(ActionIntent {
-                        actor: player_entity,
-                        action_id: "ability.move".into(),
-                        direction: Some(Direction::East),
-                        target: None,
-                    });
+                if build_menu.active { return; }
+                if build_ghost.active {
+                    build_ghost.cursor = *player_pos;
+                    build_ghost.cursor.x += 1;
+                    return;
                 }
+                action_writer.write(ActionIntent {
+                    actor: player_entity,
+                    action_id: "ability.move".into(),
+                    direction: Some(Direction::East),
+                    target: None,
+                });
             }
-            KeyCode::Char('a') | KeyCode::Left => {
-                // In outpost mode, 'a' assigns nearest survivor to task
+            KeyCode::Left => {
+                if build_menu.active { return; }
+                if build_ghost.active {
+                    build_ghost.cursor = *player_pos;
+                    build_ghost.cursor.x -= 1;
+                    return;
+                }
+                action_writer.write(ActionIntent {
+                    actor: player_entity,
+                    action_id: "ability.move".into(),
+                    direction: Some(Direction::West),
+                    target: None,
+                });
+            }
+            // 'a' key: assign survivor in outpost, move left elsewhere
+            KeyCode::Char('a') => {
                 if *mode == bd_core::spatial::GameMode::Outpost {
-                    if let Ok(player_pos) = player_pos.single() {
-                        let nearest = survivors.iter()
-                            .min_by_key(|(_, sp)| {
-                                ((player_pos.x - sp.x).abs() + (player_pos.y - sp.y).abs()) as u32
-                            });
-                        if let Some((survivor_entity, _)) = nearest {
+                    let nearest = survivors.iter()
+                        .min_by_key(|(_, sp, _)| {
+                            ((player_pos.x - sp.x).abs() + (player_pos.y - sp.y).abs()) as u32
+                        });
+                    if let Some((survivor_entity, _, task)) = nearest {
+                            let next_action = match task {
+                                bd_core::colony::survivors::SurvivorTask::Idle => "ability.assign_gathering",
+                                bd_core::colony::survivors::SurvivorTask::Gathering => "ability.assign_defending",
+                                bd_core::colony::survivors::SurvivorTask::Defending => "ability.assign_resting",
+                                bd_core::colony::survivors::SurvivorTask::Resting => "ability.assign_idle",
+                                bd_core::colony::survivors::SurvivorTask::AssignedTo(_) => "ability.assign_idle",
+                            };
                             action_writer.write(ActionIntent {
                                 actor: player_entity,
-                                action_id: "ability.assign_task".into(),
+                                action_id: next_action.into(),
                                 direction: None,
                                 target: Some(survivor_entity),
                             });
+                            return; // consumed by assign, don't move
                         }
                     }
-                } else if *pending_build_idx >= 0 {
-                    *pending_build_idx = -1;
-                    action_writer.write(ActionIntent {
-                        actor: player_entity,
-                        action_id: "ability.build".into(),
-                        direction: Some(Direction::West),
-                        target: None,
-                    });
-                } else {
-                    action_writer.write(ActionIntent {
-                        actor: player_entity,
-                        action_id: "ability.move".into(),
-                        direction: Some(Direction::West),
-                        target: None,
-                    });
+                // Fall through: move left if not in outpost or no survivors nearby
+                if build_ghost.active {
+                    build_ghost.cursor = *player_pos;
+                    build_ghost.cursor.x -= 1;
+                    return;
                 }
+                action_writer.write(ActionIntent {
+                    actor: player_entity,
+                    action_id: "ability.move".into(),
+                    direction: Some(Direction::West),
+                    target: None,
+                });
             }
             // Wait
             KeyCode::Char('.') => {
@@ -293,7 +288,7 @@ fn map_input_to_intents(
             }
             // Attack — target nearest enemy (no-op if none in range)
             KeyCode::Char('f') => {
-                if let Some(nearest) = find_nearest_enemy(player_pos.single().ok(), &enemies) {
+                if let Some(nearest) = find_nearest_enemy(Some(player_pos), &enemies) {
                     action_writer.write(ActionIntent {
                         actor: player_entity,
                         action_id: "ability.attack".into(),
@@ -337,20 +332,19 @@ fn map_input_to_intents(
                     });
                 }
             }
-            // Travel to dungeon (outpost → tactical)
+            // Travel to dungeon (outpost → travel → tactical)
             KeyCode::Char('t') => {
-                let target = if *mode == bd_core::spatial::GameMode::Outpost {
-                    bd_core::spatial::GameMode::Tactical
+                if *mode == bd_core::spatial::GameMode::Outpost {
+                    transition_writer.write(TransitionIntent {
+                        target: bd_core::spatial::GameMode::Travel,
+                        node_id: Some("ruin.ancient_temple".into()),
+                    });
+                    screen_writer.write(ScreenIntent {
+                        screen_id: "combat".into(),
+                    });
                 } else {
-                    bd_core::spatial::GameMode::Outpost
-                };
-                transition_writer.write(TransitionIntent {
-                    target,
-                    node_id: Some("ruin.ancient_temple".into()),
-                });
-                screen_writer.write(ScreenIntent {
-                    screen_id: if target == bd_core::spatial::GameMode::Tactical { "combat" } else { "outpost" }.into(),
-                });
+                    game_log.push("Travel only possible from the outpost.", LogLevel::Warn);
+                }
             }
             // Return to outpost
             KeyCode::Char('r') => {
@@ -362,21 +356,135 @@ fn map_input_to_intents(
                     screen_id: "outpost".into(),
                 });
             }
-            // Build station (outpost mode only) — pending build then direction
-            KeyCode::Char('b') => {
+            // Assign survivor to nearest station (outpost mode only)
+            KeyCode::Char('e') => {
                 if *mode == bd_core::spatial::GameMode::Outpost {
-                    if *pending_build_idx >= 0 {
-                        // Cycle to next station type
-                        let bps = bd_core::colony::stations::default_station_blueprints();
-                        let next = (*pending_build_idx as usize + 1) % bps.len();
-                        *pending_build_idx = next as i8;
-                        pending_station.0 = Some(bps[next].station_type);
-                        game_log.push(format!("Build: {:?} ({} Supplies)", bps[next].station_type, bps[next].build_cost_supplies), LogLevel::Info);
+                    // Find nearest survivor
+                    let nearest_survivor = survivors.iter()
+                        .min_by_key(|(_, sp, _)| {
+                            ((player_pos.x - sp.x).abs() + (player_pos.y - sp.y).abs()) as u32
+                        });
+                    // Find nearest station
+                    let nearest_station = stations.iter()
+                        .min_by_key(|(_, sp)| {
+                            ((player_pos.x - sp.x).abs() + (player_pos.y - sp.y).abs()) as u32
+                        });
+                    if let (Some((survivor_entity, _, _)), Some((station_entity, _))) = (nearest_survivor, nearest_station) {
+                        assign_writer.write(bd_core::signals::AssignToStation {
+                            survivor: survivor_entity,
+                            station: station_entity,
+                        });
                     } else {
-                        *pending_build_idx = 0;
-                        let bps = bd_core::colony::stations::default_station_blueprints();
-                        pending_station.0 = Some(bps[0].station_type);
-                        game_log.push(format!("Build: {:?} ({} Supplies)", bps[0].station_type, bps[0].build_cost_supplies), LogLevel::Info);
+                        game_log.push("No survivor or station nearby to assign.".to_string(), LogLevel::Warn);
+                    }
+                }
+            }
+            // Build mode toggle (outpost mode only)
+            KeyCode::Char('b') => {
+                if *mode != bd_core::spatial::GameMode::Outpost {
+                    return;
+                }
+                if build_menu.active {
+                    // Cancel menu
+                    build_menu.active = false;
+                    game_log.push("Build cancelled.".to_string(), LogLevel::Info);
+                } else if build_ghost.active {
+                    // Cancel ghost placement
+                    build_ghost.active = false;
+                    build_ghost.station_type = None;
+                    game_log.push("Build mode cancelled.".to_string(), LogLevel::Info);
+                } else {
+                    // Open build menu
+                    build_menu.active = true;
+                    build_menu.selected = 0;
+                    game_log.push("Select station to build (↑↓ or 1-5, Enter to confirm, b to cancel)".to_string(), LogLevel::Info);
+                }
+            }
+            // Build menu navigation: up/down arrows when menu is open
+            KeyCode::Up => {
+                if build_menu.active {
+                    if build_menu.selected > 0 {
+                        build_menu.selected -= 1;
+                    }
+                    return;
+                }
+                if build_ghost.active {
+                    build_ghost.cursor = *player_pos;
+                    build_ghost.cursor.y -= 1;
+                    return;
+                }
+                action_writer.write(ActionIntent { actor: player_entity, action_id: "ability.move".into(), direction: Some(Direction::North), target: None });
+            }
+            KeyCode::Down => {
+                if build_menu.active {
+                    let bps = bd_core::colony::stations::default_station_blueprints();
+                    if build_menu.selected + 1 < bps.len() {
+                        build_menu.selected += 1;
+                    }
+                    return;
+                }
+                if build_ghost.active {
+                    build_ghost.cursor = *player_pos;
+                    build_ghost.cursor.y += 1;
+                    return;
+                }
+                action_writer.write(ActionIntent { actor: player_entity, action_id: "ability.move".into(), direction: Some(Direction::South), target: None });
+            }
+            // Number keys 1-5: select in menu, or select type in ghost mode
+            KeyCode::Char(c @ '1'..='5') => {
+                let idx = (c as u8 - b'1') as usize;
+                let bps = bd_core::colony::stations::default_station_blueprints();
+                if build_menu.active {
+                    // Direct selection from menu → confirm and enter ghost mode
+                    if let Some(bp) = bps.get(idx) {
+                        build_ghost.active = true;
+                        build_ghost.cursor = *player_pos;
+                        build_ghost.station_type = Some(bp.station_type);
+                        build_menu.active = false;
+                        game_log.push(format!("Placing: {:?}. arrows=move Enter=place b=cancel", bp.station_type), LogLevel::Info);
+                    }
+                } else if build_ghost.active {
+                    if let Some(bp) = bps.get(idx) {
+                        build_ghost.station_type = Some(bp.station_type);
+                        game_log.push(format!("Selected: {:?} ({} Supplies)", bp.station_type, bp.build_cost_supplies), LogLevel::Info);
+                    }
+                }
+            }
+            // Enter: confirm menu selection → enter ghost mode; or place in ghost mode
+            KeyCode::Enter => {
+                if build_menu.active {
+                    let bps = bd_core::colony::stations::default_station_blueprints();
+                    if let Some(bp) = bps.get(build_menu.selected) {
+                        build_ghost.active = true;
+                        build_ghost.cursor = *player_pos;
+                        build_ghost.station_type = Some(bp.station_type);
+                        build_menu.active = false;
+                        game_log.push(format!("Placing: {:?}. arrows=move Enter=place b=cancel", bp.station_type), LogLevel::Info);
+                    }
+                    return;
+                }
+                if build_ghost.active {
+                    if let Some(st) = build_ghost.station_type {
+                        pending_station.0 = Some(st);
+                        let dx = build_ghost.cursor.x - player_pos.x;
+                        let dy = build_ghost.cursor.y - player_pos.y;
+                        let dir = if dx != 0 {
+                            if dx > 0 { Direction::East } else { Direction::West }
+                        } else if dy != 0 {
+                            if dy > 0 { Direction::South } else { Direction::North }
+                        } else {
+                            Direction::North
+                        };
+                        action_writer.write(ActionIntent {
+                            actor: player_entity,
+                            action_id: "ability.build".into(),
+                            direction: Some(dir),
+                            target: None,
+                        });
+                        build_ghost.active = false;
+                        build_ghost.station_type = None;
+                    } else {
+                        game_log.push("Select a station type first (1-5).".to_string(), LogLevel::Warn);
                     }
                 }
             }
@@ -397,13 +505,16 @@ fn map_input_to_intents(
                 game_log.push("Load not yet implemented (F9).", LogLevel::Warn);
                 // TODO: wire to actual load when main loop supports it
             }
-            // Quit (or cancel pending build)
-            // Use process::exit to prevent buffered keystrokes leaking to shell
+            // Quit (or cancel build mode)
             KeyCode::Char('q') | KeyCode::Esc => {
-                if *pending_build_idx >= 0 {
-                    *pending_build_idx = -1;
+                if build_menu.active {
+                    build_menu.active = false;
+                    game_log.push("Build cancelled.".to_string(), LogLevel::Info);
+                } else if build_ghost.active {
+                    build_ghost.active = false;
+                    build_ghost.station_type = None;
                     pending_station.0 = None;
-                    game_log.push("Build cancelled.", LogLevel::Info);
+                    game_log.push("Build mode cancelled.".to_string(), LogLevel::Info);
                 } else {
                     // Restore terminal and flush output before exit
                     use std::io::Write;
@@ -455,9 +566,9 @@ fn draw_ui(
     help_vm: Res<HelpViewModel>,
     symbols: Res<SymbolRegistry>,
     theme: Res<ThemeRegistry>,
-    help: Res<HelpLine>,
     game_time: Res<bd_core::time::GameTime>,
-    travel_map: Res<bd_core::spatial::TravelMap>,
+    travel_ctx: Res<bd_core::overworld::TravelContext>,
+    pending_station: Res<bd_core::colony::stations::PendingStationBuild>,
 ) {
     let Some(def) = screen_reg.screens.get(&screen_state.current) else {
         tracing::warn!("Unknown screen: {}", screen_state.current);
@@ -466,6 +577,27 @@ fn draw_ui(
 
     let _ = ratatui_ctx.draw(|frame| {
         let area = frame.area();
+
+        // P20-B: Minimum terminal size check
+        if area.width < 80 || area.height < 24 {
+            let block = Block::default()
+                .title(" Terminal Too Small ")
+                .borders(Borders::ALL)
+                .style(Style::default().fg(Color::Red));
+            let inner = block.inner(area);
+            frame.render_widget(block, area);
+            let msg = ratatui::widgets::Paragraph::new(vec![
+                Line::from(""),
+                Line::styled(
+                    format!("Terminal: {}×{} — minimum 80×24 required.", area.width, area.height),
+                    Style::default().fg(Color::Yellow),
+                ),
+                Line::from(""),
+                Line::styled("Please resize your terminal and restart.", Style::default().fg(Color::Gray)),
+            ]);
+            frame.render_widget(msg, inner);
+            return;
+        }
 
         // Build the widget render context from view models
         let wctx = WidgetRenderContext {
@@ -478,7 +610,7 @@ fn draw_ui(
             help: &help_vm,
             symbols: &symbols,
             theme: &theme,
-            travel_map: &travel_map,
+            travel_ctx: &travel_ctx,
         };
 
         // Compute panel positions from the screen definition
@@ -497,8 +629,13 @@ fn draw_ui(
             }
         }
 
-        // Footer — always render at bottom
-        let help_text = &help.0;
+        // Footer — show build mode when active, otherwise default help
+        let default_help = "Move:WASD/↑↓←→ | Wait:. (end turn) | Attack:f | Guard:g | Build:b | Assign:a | Travel:t | Quit:q";
+        let help_text = if pending_station.0.is_some() {
+            "BUILD: b=cycle station, direction=place, q=cancel"
+        } else {
+            default_help
+        };
         render_footer(frame, area, help_text, game_time.turn, game_time.day);
     });
 }

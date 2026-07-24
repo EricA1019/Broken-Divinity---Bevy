@@ -131,6 +131,14 @@ pub fn default_status_definitions() -> Vec<StatusDefinition> {
             stack_policy: StackPolicy::Single,
             default_duration: -1, // permanent
         },
+        StatusDefinition {
+            id: "status.wounded".into(),
+            label: "Wounded".into(),
+            triggers: vec![],
+            modifiers: vec![Modifier::Add(-1)],
+            stack_policy: StackPolicy::Single,
+            default_duration: -1, // persists until healed above threshold
+        },
     ]
 }
 
@@ -268,6 +276,11 @@ pub fn apply_modifiers(
                 if kind == PoolKind::Health && tags.contains(&DeltaTag::Divine) =>
             {
                 &[Modifier::Invert]
+            }
+            "status.wounded"
+                if kind == PoolKind::ActionPoints && amount > 0 =>
+            {
+                &[Modifier::Add(-1)]
             }
             _ => continue,
         };

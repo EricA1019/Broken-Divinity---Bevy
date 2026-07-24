@@ -5,3 +5,4 @@ pub mod stations;
 pub mod survivors;
 pub mod production;
 pub mod raids;
+pub mod resources;

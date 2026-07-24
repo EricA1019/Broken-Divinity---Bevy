@@ -32,6 +32,49 @@ pub const MAX_STATIONS: u32 = 20;
 /// Supplies needed to build a station.
 pub const STATION_BUILD_COST_SUPPLIES: i32 = 2;
 
+// ── P2: Build ghost state (placement preview) ──
+
+/// Tracks the player's build placement cursor and selected station type.
+/// Set by the TUI when the player enters build mode, consumed by the build
+/// action system when the player confirms placement.
+#[derive(Resource, Debug, Clone)]
+pub struct BuildGhostState {
+    /// Which station type the player is about to place.
+    pub station_type: Option<StationType>,
+    /// Where the ghost cursor currently sits on the shelter map.
+    pub cursor: crate::components::Position,
+    /// Whether build mode is currently active (b key toggles).
+    pub active: bool,
+}
+
+impl Default for BuildGhostState {
+    fn default() -> Self {
+        Self {
+            station_type: None,
+            cursor: crate::components::Position { x: 0, y: 0 },
+            active: false,
+        }
+    }
+}
+
+// ── P2: Build menu state (station selection popup) ──
+
+/// Menu shown when the player presses 'b' — lists buildable stations.
+/// Once a station is selected, transitions to BuildGhostState for placement.
+#[derive(Resource, Debug, Clone)]
+pub struct BuildMenuState {
+    /// Whether the build menu is currently open.
+    pub active: bool,
+    /// Index of the currently highlighted option (0-based).
+    pub selected: usize,
+}
+
+impl Default for BuildMenuState {
+    fn default() -> Self {
+        Self { active: false, selected: 0 }
+    }
+}
+
 // ── Components ──
 
 /// Marker component for station entities.
@@ -104,6 +147,7 @@ pub fn register_station_actions() -> ActionDefinition {
         label: "Build".into(),
         requirements: vec![
             Requirement::ResourcePoolAbove(PoolKind::Supplies, STATION_BUILD_COST_SUPPLIES),
+            Requirement::TileVacant,
         ],
         cost_effects: vec![Effect::PoolDelta {
             kind: PoolKind::Supplies,
@@ -198,5 +242,39 @@ mod tests {
         let supplies = app.world().get::<Pools>(p).unwrap().get(PoolKind::Supplies).unwrap().current;
         // Cost should be deducted
         assert_eq!(supplies, 10 - STATION_BUILD_COST_SUPPLIES);
+    }
+
+    // ── P2-A: BuildGhostState tests ──
+
+    #[test]
+    fn build_ghost_state_default_is_inactive() {
+        let state = BuildGhostState::default();
+        assert!(!state.active, "Build ghost should start inactive");
+        assert!(state.station_type.is_none(), "No station type selected by default");
+    }
+
+    #[test]
+    fn build_ghost_state_can_be_activated() {
+        let mut state = BuildGhostState::default();
+        state.active = true;
+        state.station_type = Some(StationType::Stove);
+        state.cursor = Position { x: 10, y: 5 };
+        assert!(state.active);
+        assert_eq!(state.station_type, Some(StationType::Stove));
+        assert_eq!(state.cursor.x, 10);
+        assert_eq!(state.cursor.y, 5);
+    }
+
+    #[test]
+    fn build_ghost_deactivate_clears_selection() {
+        let mut state = BuildGhostState {
+            active: true,
+            station_type: Some(StationType::Workshop),
+            cursor: Position { x: 7, y: 3 },
+        };
+        state.active = false;
+        state.station_type = None;
+        assert!(!state.active);
+        assert!(state.station_type.is_none());
     }
 }

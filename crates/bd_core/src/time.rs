@@ -29,6 +29,11 @@ pub struct GameTime {
     pub turn: u64,
 }
 
+/// Inserted by advance_time when a turn advances. Consumed by regenerate_action_points.
+/// This is a one-shot signal — it exists for exactly one frame.
+#[derive(Resource, Debug, Clone, Copy)]
+pub struct TurnJustAdvanced;
+
 impl Default for GameTime {
     fn default() -> Self {
         Self { day: 0, turn: 0 }
@@ -51,6 +56,7 @@ pub(crate) fn register_time(app: &mut App) {
 /// Advances `GameTime` by one turn only when a player action was processed.
 /// Runs in `ResultEmission` after all gameplay state mutations.
 fn advance_time(
+    mut commands: Commands,
     mut game_time: ResMut<GameTime>,
     mut should_advance: ResMut<ShouldAdvanceTime>,
 ) {
@@ -63,6 +69,8 @@ fn advance_time(
         game_time.day += 1;
         game_time.turn = 0;
     }
+    // Signal that a turn just advanced — AP regen consumes this next frame
+    commands.insert_resource(TurnJustAdvanced);
 }
 
 #[cfg(test)]

@@ -50,7 +50,7 @@ pub struct HelpLine(pub String);
 
 impl Default for HelpLine {
     fn default() -> Self {
-        Self("Move:w↑s↓a←d→ | Wait:. | Attack:f | Guard:g | Inventory:i | Combat:z | Quit:q".into())
+        Self("Move:w↑s↓a←d→ | Wait:. (end turn) | Attack:f | Guard:g | Inventory:i | Quit:q".into())
     }
 }
 
@@ -120,6 +120,9 @@ impl Plugin for BdCorePlugin {
         app.add_message::<crate::signals::MoveBlocked>();
         app.add_message::<crate::signals::EntityMoved>();
 
+        // Register colony assignment message
+        app.add_message::<crate::signals::AssignToStation>();
+
         // Register event system resources and messages
         app.insert_resource(crate::events::default_event_registry());
         app.insert_resource(crate::events::CurrentEvent::default());
@@ -147,9 +150,12 @@ impl Plugin for BdCorePlugin {
 
         // Register colony resources (must exist before actions validate them)
         app.init_resource::<crate::colony::stations::PendingStationBuild>();
-    app.insert_resource(crate::colony::production::ColonyResources::default());
+        app.init_resource::<crate::colony::stations::BuildGhostState>();
+        app.init_resource::<crate::colony::stations::BuildMenuState>();
+        app.insert_resource(crate::colony::production::ColonyResources::default());
         app.insert_resource(crate::party::PartyState::default());
         app.insert_resource(crate::overworld::OverworldState::default());
+        app.insert_resource(crate::overworld::TravelContext::default());
         app.insert_resource(crate::dialogue::DialogueLog::default());
         app.insert_resource(crate::gabriel::GabrielState::default());
 
@@ -174,15 +180,30 @@ impl Plugin for BdCorePlugin {
         // Register survivor actions
         app.world_mut()
             .resource_mut::<crate::actions::ActionRegistry>()
-            .register(crate::colony::survivors::register_assign_task_action());
+            .register(crate::colony::survivors::register_assign_gathering_action());
         app.world_mut()
             .resource_mut::<crate::actions::ActionRegistry>()
             .register(crate::colony::survivors::register_unassign_task_action());
+        app.world_mut()
+            .resource_mut::<crate::actions::ActionRegistry>()
+            .register(crate::colony::survivors::register_assign_defending_action());
+        app.world_mut()
+            .resource_mut::<crate::actions::ActionRegistry>()
+            .register(crate::colony::survivors::register_assign_resting_action());
+        app.world_mut()
+            .resource_mut::<crate::actions::ActionRegistry>()
+            .register(crate::colony::survivors::register_assign_idle_action());
 
         // Register consume_shelter_resources system
         app.add_systems(
             bevy_app::Update,
             crate::colony::survivors::consume_shelter_resources.in_set(BdSet::Mutation),
+        );
+
+        // Register station assignment system (reads AssignToStation messages)
+        app.add_systems(
+            bevy_app::Update,
+            crate::colony::survivors::process_station_assignments.in_set(BdSet::Mutation),
         );
 
         // Register combat actions
@@ -221,11 +242,26 @@ impl Plugin for BdCorePlugin {
     // Register travel system
     crate::overworld::register_travel(app);
 
+    // Register raid system
+    crate::colony::raids::register_raids(app);
+
 
         // Register production and raid systems
         app.add_systems(
             bevy_app::Update,
             crate::colony::production::process_production.in_set(BdSet::Mutation),
+        );
+
+        // P22: Register survivor gathering system
+        app.add_systems(
+            bevy_app::Update,
+            crate::colony::resources::process_survivor_gathering.in_set(BdSet::Mutation),
+        );
+
+        // P3: Register survivor movement system
+        app.add_systems(
+            bevy_app::Update,
+            crate::colony::survivors::process_survivor_movement.in_set(BdSet::Mutation),
         );
 
         tracing::info!("BdCorePlugin initialized");

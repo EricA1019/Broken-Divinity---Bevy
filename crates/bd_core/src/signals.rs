@@ -109,6 +109,12 @@ pub enum PoolKind {
     RepBrokenChoir,
     RepDemons,
     RepHumanSettlements,
+    /// Ammo pool for ranged weapons.
+    Ammo,
+    /// Raw building materials gathered from resource nodes.
+    Materials,
+    /// Raw food gathered from wild plants.
+    WildPlants,
 }
 
 /// Tag categorizing a pool delta for modifier routing.
@@ -159,4 +165,13 @@ pub struct PoolDeltaApplied {
 pub struct EntityDefeated {
     pub entity: Entity,
     pub kind: PoolKind,
+}
+
+// ── Colony: survivor-station assignment ──
+
+/// Assign a survivor to work at a specific station.
+#[derive(Message, Debug, Clone)]
+pub struct AssignToStation {
+    pub survivor: Entity,
+    pub station: Entity,
 }

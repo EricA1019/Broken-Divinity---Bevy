@@ -9,10 +9,11 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     BdSet,
-
+    combat::CombatRng,
     gamelog::{GameLog, LogLevel},
-    signals::{EntityDefeated, EntityMoved, PoolDeltaApplied, PoolDeltaRequested, PoolKind},
+    signals::{DeltaTag, EntityDefeated, EntityMoved, PoolDeltaApplied, PoolDeltaRequested, PoolKind},
     statuses::Statuses,
+    time::TurnJustAdvanced,
     trace::SignalTrace,
 };
 
@@ -93,6 +94,32 @@ pub(crate) fn register_pools(app: &mut App) {
         bevy_app::Update,
         log_combat_damage.in_set(BdSet::ResultEmission),
     );
+
+    // P21: AP regeneration at turn start for ALL entities
+    app.add_systems(
+        bevy_app::Update,
+        regenerate_action_points.in_set(BdSet::Input),
+    );
+}
+
+// ── AP Regeneration ──
+
+/// Restores ActionPoints to max for every entity when a turn advances.
+/// Consumes the TurnJustAdvanced signal so it only fires once per turn.
+fn regenerate_action_points(
+    turn_signal: Option<Res<TurnJustAdvanced>>,
+    mut commands: Commands,
+    mut query: Query<&mut Pools>,
+) {
+    if turn_signal.is_none() {
+        return;
+    }
+    for mut pools in &mut query {
+        if let Some(ap) = pools.get_mut(PoolKind::ActionPoints) {
+            ap.current = ap.max;
+        }
+    }
+    commands.remove_resource::<TurnJustAdvanced>();
 }
 
 // ── Resolver ──
@@ -100,13 +127,14 @@ pub(crate) fn register_pools(app: &mut App) {
 /// The single system that applies all `PoolDeltaRequested` messages.
 /// This is the ONLY system that mutates pool values.
 fn resolve_pool_deltas(
-    _commands: Commands,
+    mut commands: Commands,
+    mut combat_rng: Option<ResMut<CombatRng>>,
     mut requests: bevy_ecs::message::MessageReader<PoolDeltaRequested>,
     mut applied_writer: bevy_ecs::message::MessageWriter<PoolDeltaApplied>,
     mut defeated_writer: bevy_ecs::message::MessageWriter<EntityDefeated>,
     mut game_log: ResMut<GameLog>,
     mut trace: ResMut<SignalTrace>,
-    mut query: Query<(Entity, &mut Pools, Option<&Statuses>)>,
+    mut query: Query<(Entity, &mut Pools, Option<&Statuses>, Option<&mut crate::combat::Armor>)>,
 ) {
     for req in requests.read() {
         trace.push(
@@ -114,7 +142,7 @@ fn resolve_pool_deltas(
             "PoolDelta",
             format!("{:?} {:?} {}", req.target, req.kind, req.amount),
         );
-        let Ok((entity, mut pools, statuses)) = query.get_mut(req.target) else {
+        let Ok((entity, mut pools, statuses, armor)) = query.get_mut(req.target) else {
             continue; // target has no Pools component — skip
         };
 
@@ -123,11 +151,44 @@ fn resolve_pool_deltas(
         };
 
         // Apply status modifiers (e.g., Guarded halves physical damage)
-        let modified_amount = if let Some(statuses) = statuses {
+        let mut modified_amount = if let Some(statuses) = statuses {
             crate::statuses::apply_modifiers(entity, req.kind, req.amount, &req.tags, statuses)
         } else {
             req.amount
         };
+
+        // P13-A: Apply d100 damage variance to Health deltas with combat damage tags
+        if req.kind == PoolKind::Health
+            && modified_amount < 0
+            && req.tags.iter().any(|t| {
+                matches!(t, DeltaTag::Physical | DeltaTag::Ballistic | DeltaTag::Slash)
+            })
+        {
+            modified_amount = CombatRng::apply_damage_variance(
+                modified_amount,
+                combat_rng.as_deref_mut(),
+            );
+        }
+
+        // P13-C: Armor reduces physical/ballistic/slash damage
+        if modified_amount < 0
+            && req.kind == PoolKind::Health
+            && req.tags.iter().any(|t| {
+                matches!(t, DeltaTag::Physical | DeltaTag::Ballistic | DeltaTag::Slash)
+            })
+        {
+            if let Some(mut armor) = armor {
+                if armor.durability > 0 && armor.reduction > 0 {
+                    let absorbed = armor.reduction.min(-modified_amount);
+                    modified_amount += absorbed;
+                    armor.durability -= 1;
+                    tracing::debug!(
+                        "Armor absorbed {} damage (durability: {})",
+                        absorbed, armor.durability
+                    );
+                }
+            }
+        }
 
 
 
@@ -156,6 +217,22 @@ fn resolve_pool_deltas(
             game_log.push(
                 format!("Entity {entity:?} has been defeated!"),
                 LogLevel::Combat,
+            );
+        }
+
+        // P13-E: Apply Wounded status when HP drops below threshold
+        if req.kind == PoolKind::Health
+            && after > pool.min
+            && after <= pool.max * crate::combat::WOUND_THRESHOLD_PCT / 100
+        {
+            let defs = crate::statuses::default_status_definitions();
+            crate::statuses::apply_status(
+                entity,
+                "status.wounded",
+                0,
+                None,
+                &mut commands,
+                &defs,
             );
         }
 

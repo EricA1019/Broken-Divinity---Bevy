@@ -26,6 +26,25 @@ pub struct Name(pub String);
 #[derive(Component, Debug, Default, Serialize, Deserialize)]
 pub struct ExitTile;
 
+/// Marks an entity as Gabriel — the mysterious entity who appears in the shelter.
+#[derive(Component, Debug, Default, Serialize, Deserialize)]
+pub struct Gabriel;
+
+/// Resource node on the shelter map that survivors can gather from.
+#[derive(Component, Debug, Clone, Serialize, Deserialize)]
+pub struct ResourceNode {
+    pub kind: ResourceNodeType,
+    pub depleted: bool,
+}
+
+/// Types of resource nodes available on the shelter map.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ResourceNodeType {
+    Trees,
+    WaterSource,
+    WildPlants,
+}
+
 /// A tile on the smoke map.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Tile {

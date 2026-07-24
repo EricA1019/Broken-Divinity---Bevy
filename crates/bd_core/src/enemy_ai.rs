@@ -202,7 +202,13 @@ mod tests {
             .get(PoolKind::Health)
             .unwrap()
             .current;
-        assert_eq!(hp, 15, "player should take 5 damage from enemy attack (20 - 5)");
+        // P13: d100 variance means damage is 0.5x/1.0x/1.5x of base 5
+        // Expected: 3, 5, or 8 damage. Accept any valid variance.
+        let damage_taken = 20 - hp;
+        assert!(damage_taken >= 2 && damage_taken <= 8,
+            "player should take 2-8 damage from base 5 with d100 variance, took {} (HP: 20 -> {})",
+            damage_taken, hp);
+        assert!(hp < 20, "player should take some damage, HP still 20");
     }
 
     #[test]

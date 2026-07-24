@@ -60,6 +60,8 @@ pub enum Requirement {
     TargetTaskIsIdle,
     /// Player must be within range of the target entity.
     PlayerHasEntityInRange(u32),
+    /// Target tile must be vacant (no blocking entities) — for build actions.
+    TileVacant,
 }
 
 /// An effect produced by a successful action.
@@ -141,12 +143,6 @@ impl ActionRegistry {
                     requirements: vec![Requirement::EntityAlive],
                     cost_effects: vec![],
                     effects: vec![
-                        Effect::PoolDelta {
-                            kind: PoolKind::ActionPoints,
-                            amount: 1,
-                            tags: vec![DeltaTag::Recovery],
-                            reason: "wait".into(),
-                        },
                         Effect::Log("You wait.".into(), LogLevel::Info),
                     ],
                 },
@@ -229,6 +225,7 @@ fn validate_action_intents(
     mut commands: Commands,
     registry: Res<ActionRegistry>,
     map: Res<SmokeMap>,
+    mode: Res<crate::spatial::GameMode>,
     mut messages: bevy_ecs::message::MessageReader<ActionIntent>,
     mut denied_writer: bevy_ecs::message::MessageWriter<ActionDenied>,
     mut game_log: ResMut<GameLog>,
@@ -237,6 +234,7 @@ fn validate_action_intents(
     actors: Query<(Entity, &Position, Option<&Pools>, Option<&Player>)>,
     targets: Query<(Entity, &Position, Option<&Player>)>,
     survivors: Query<(Entity, &SurvivorTask), With<Survivor>>,
+    blocked_positions: Query<&Position, With<BlocksMovement>>,
 ) {
     let target_positions: Vec<(Entity, &Position, Option<&Player>)> = targets.iter().collect();
 
@@ -265,10 +263,16 @@ fn validate_action_intents(
         for req in &def.requirements {
             match req {
                 Requirement::HasPoolAtLeast(kind, min) => {
-                    let current = pools.and_then(|p| p.get(*kind)).map_or(0, |p| p.current);
-                    if current < *min {
-                        denied = Some(DenialReason::NotEnoughPool(*kind));
-                        break;
+                    // P21: Free movement in colony/outpost mode
+                    let is_colony_move = *kind == PoolKind::ActionPoints
+                        && *mode == crate::spatial::GameMode::Outpost
+                        && intent.action_id == "ability.move";
+                    if !is_colony_move {
+                        let current = pools.and_then(|p| p.get(*kind)).map_or(0, |p| p.current);
+                        if current < *min {
+                            denied = Some(DenialReason::NotEnoughPool(*kind));
+                            break;
+                        }
                     }
                 }
                 Requirement::TileWalkable => {
@@ -384,6 +388,23 @@ fn validate_action_intents(
                         }
                     }
                 }
+                Requirement::TileVacant => {
+                    // Compute target tile position from actor position + direction
+                    let actor_pos = actors.iter()
+                        .find(|(e, _, _, _)| *e == intent.actor)
+                        .map(|(_, p, _, _)| *p);
+                    if let (Some(pos), Some(dir)) = (actor_pos, intent.direction) {
+                        let (dx, dy) = dir.delta();
+                        let target_pos = crate::components::Position { x: pos.x + dx, y: pos.y + dy };
+                        // Check if any blocking entity occupies that tile
+                        let occupied = blocked_positions.iter()
+                            .any(|bp| bp.x == target_pos.x && bp.y == target_pos.y);
+                        if occupied {
+                            denied = Some(DenialReason::Other("tile occupied".into()));
+                            break;
+                        }
+                    }
+                }
             }
         }
 
@@ -489,8 +510,8 @@ fn resolve_action_effects(
             "EffectResolve",
             format!("entity={:?} action={}", entity, pending.action_id),
         );
-        // Set time advancement flag for player actions
-        if player_flag.is_some() {
+        // Only advance time on wait action (not move/attack/guard)
+        if player_flag.is_some() && pending.action_id == "ability.wait" {
             should_advance.0 = true;
         }
         let Some(def) = registry.get(&pending.action_id) else {
@@ -614,6 +635,8 @@ fn resolve_action_effects(
                         let new_task = match task.as_str() {
                             "Idle" => SurvivorTask::Idle,
                             "Resting" => SurvivorTask::Resting,
+                            "Gathering" => SurvivorTask::Gathering,
+                            "Defending" => SurvivorTask::Defending,
                             _ => SurvivorTask::Idle,
                         };
                         commands.entity(target).insert(new_task);
@@ -741,7 +764,7 @@ mod tests {
     }
 
     #[test]
-    fn wait_restores_ap() {
+    fn wait_advances_turn_and_triggers_ap_regen_to_max() {
         let mut app = test_app();
         app.world_mut()
             .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
@@ -753,9 +776,10 @@ mod tests {
                 Pools::new(vec![Pool::new(PoolKind::ActionPoints, 1, 0, 3)]),
             ))
             .id();
+        // P21: AP restored to max by regenerate_action_points, not by wait PoolDelta
         send_action(&mut app, p, "ability.wait", None, None);
         app.update();
-        app.update(); // second frame to process pool deltas
+        app.update(); // second frame: TurnJustAdvanced consumed, AP regen fires
         let ap = app
             .world()
             .get::<Pools>(p)
@@ -763,7 +787,7 @@ mod tests {
             .get(PoolKind::ActionPoints)
             .unwrap()
             .current;
-        assert_eq!(ap, 2);
+        assert_eq!(ap, 3, "After wait, AP should regenerate to max (3), not +1");
     }
 
     #[test]
@@ -829,7 +853,13 @@ mod tests {
             .get(PoolKind::Health)
             .unwrap()
             .current;
-        assert_eq!(dummy_hp, 5, "dummy should take 5 damage (10 - {})", ATTACK_DAMAGE_BASE);
+        // P13: d100 variance means damage is 0.5x/1.0x/1.5x of base 5
+        // Expected: 3, 5, or 8 damage. Accept any valid variance.
+        let damage_dealt = 10 - dummy_hp;
+        assert!(damage_dealt >= 2 && damage_dealt <= 8,
+            "dummy should take 2-8 damage from base 5 with d100 variance, took {} (HP: {} -> {})",
+            damage_dealt, 10, dummy_hp);
+        assert!(dummy_hp < 10, "dummy should take some damage, HP still 10");
         let player_hp = app
             .world()
             .get::<Pools>(p)
@@ -929,5 +959,34 @@ mod tests {
         let has_pickup = log.iter().any(|e| e.message.contains("Healing Potion"));
         assert!(has_pickup, "Item pickup log should mention item name, got: {:?}",
             log.iter().map(|e| &e.message).collect::<Vec<_>>());
+    }
+
+    // ── P21: Turn model tests ──
+
+    #[test]
+    fn only_wait_advances_time_move_does_not() {
+        use crate::time::GameTime;
+        let mut app = test_app();
+        app.world_mut()
+            .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
+        let p = spawn_player(&mut app, 5, 5);
+
+        let turn_before = app.world().resource::<GameTime>().turn;
+
+        // Move — should NOT advance time
+        send_action(&mut app, p, "ability.move", Some(Direction::East), None);
+        app.update();
+        let turn_after_move = app.world().resource::<GameTime>().turn;
+        assert_eq!(turn_after_move, turn_before,
+            "Move should NOT advance time. Turn was {} before, {} after.",
+            turn_before, turn_after_move);
+
+        // Wait — SHOULD advance time
+        send_action(&mut app, p, "ability.wait", None, None);
+        app.update();
+        let turn_after_wait = app.world().resource::<GameTime>().turn;
+        assert_eq!(turn_after_wait, turn_before + 1,
+            "Wait SHOULD advance time. Turn was {} before, {} after.",
+            turn_before, turn_after_wait);
     }
 }

@@ -27,8 +27,12 @@ pub struct StatsViewModel {
     pub ap_max: i32,
     pub supplies: i32,
     pub faith: i32,
+    pub materials: i32,
+    pub wild_plants: i32,
     pub day: u64,
     pub party_names: Vec<String>,
+    /// Compact faction standings: (label, value, status_text).
+    pub faction_standings: Vec<(String, i32, String)>,
 }
 
 #[derive(Resource, Debug, Clone, Default)]
@@ -65,6 +69,25 @@ pub struct MapViewModel {
     /// Per-enemy glyph characters at corresponding indices to enemy_positions.
     /// When empty, all enemies render as default 'E'.
     pub enemy_glyphs: Vec<(Position, char)>,
+    /// Survivor positions and glyphs for outpost map rendering.
+    pub survivor_glyphs: Vec<(Position, char)>,
+    /// Station positions and glyphs for outpost map rendering.
+    pub station_glyphs: Vec<(Position, char)>,
+    /// Gabriel position and glyph for outpost map rendering. None if not present.
+    pub gabriel_glyph: Option<(Position, char)>,
+    /// Resource node positions and glyphs for outpost map rendering.
+    pub resource_glyphs: Vec<(Position, char)>,
+    /// Build ghost cursor position and glyph for outpost map rendering.
+    pub build_ghost: Option<(Position, char)>,
+    /// Build menu entries with highlight index (None if menu closed).
+    pub build_menu: Option<BuildMenuVm>,
+}
+
+/// Build menu data for the station selection popup.
+#[derive(Debug, Clone)]
+pub struct BuildMenuVm {
+    pub options: Vec<(String, i32)>, // (label, supply_cost)
+    pub selected: usize,
 }
 
 #[derive(Resource, Debug, Clone, Default)]
@@ -107,6 +130,7 @@ impl Default for HelpViewModel {
                 ("i".into(), "Toggle inventory".into()),
                 ("b".into(), "Build / cycle station".into()),
                 ("a".into(), "Assign survivor task".into()),
+                ("e".into(), "Assign survivor to station".into()),
                 ("?".into(), "Toggle help".into()),
                 ("Esc / q".into(), "Cancel build / Quit".into()),
             ],
@@ -151,6 +175,7 @@ fn build_stats_vm(
     mut vm: ResMut<StatsViewModel>,
     colony_res: Res<bd_core::colony::production::ColonyResources>,
     game_time: Res<bd_core::time::GameTime>,
+    faction_rep: Res<bd_core::factions::FactionReputation>,
 ) {
     if let Ok(pools) = player_pools.single() {
         vm.hp_current = pools.get(PoolKind::Health).map_or(0, |p| p.current);
@@ -160,7 +185,31 @@ fn build_stats_vm(
     }
     vm.supplies = colony_res.pools.get(PoolKind::Supplies).map_or(0, |p| p.current);
     vm.faith = colony_res.pools.get(PoolKind::Faith).map_or(0, |p| p.current);
+    vm.materials = colony_res.pools.get(PoolKind::Materials).map_or(0, |p| p.current);
+    vm.wild_plants = colony_res.pools.get(PoolKind::WildPlants).map_or(0, |p| p.current);
     vm.day = game_time.day;
+
+    // P17-D: Faction standings
+    vm.faction_standings.clear();
+    for faction in bd_core::factions::ALL_FACTIONS {
+        let val = faction_rep.get(faction);
+        let status = bd_core::factions::faction_status(val);
+        let label = match faction {
+            PoolKind::RepPuritans => "Puritans",
+            PoolKind::RepWanderers => "Wanderers",
+            PoolKind::RepBrokenChoir => "BrokenChoir",
+            PoolKind::RepDemons => "Demons",
+            PoolKind::RepHumanSettlements => "Settlements",
+            _ => "???",
+        };
+        let status_text = match status {
+            bd_core::factions::FactionStatus::Hostile => "H",
+            bd_core::factions::FactionStatus::Neutral => "N",
+            bd_core::factions::FactionStatus::Friendly => "F",
+            bd_core::factions::FactionStatus::Allied => "A",
+        };
+        vm.faction_standings.push((label.to_string(), val, status_text.to_string()));
+    }
 }
 
 fn build_party_vm(
@@ -241,6 +290,12 @@ fn build_map_vm(
     map: Res<SmokeMap>,
     player_pos: Query<&Position, With<Player>>,
     enemies: Query<(&Position, Option<&bd_core::components::Name>), (With<BlocksMovement>, Without<Player>)>,
+    survivors: Query<(&Position, Option<&bd_core::components::Name>, &bd_core::colony::survivors::SurvivorTask), With<bd_core::colony::survivors::Survivor>>,
+    stations: Query<(&Position, &bd_core::colony::stations::StationType)>,
+    gabriel_q: Query<&Position, With<bd_core::components::Gabriel>>,
+    resource_nodes: Query<(&Position, &bd_core::components::ResourceNode)>,
+    build_ghost: Res<bd_core::colony::stations::BuildGhostState>,
+    build_menu: Res<bd_core::colony::stations::BuildMenuState>,
     mut vm: ResMut<MapViewModel>,
     mode: Res<bd_core::spatial::GameMode>,
     outpost: Res<bd_core::spatial::OutpostState>,
@@ -263,16 +318,84 @@ fn build_map_vm(
     vm.player_pos = player_pos.single().ok().copied();
     vm.enemy_positions.clear();
     vm.enemy_glyphs.clear();
-    for (pos, name) in enemies.iter() {
-        vm.enemy_positions.push(*pos);
-        let glyph = name.map_or('E', |n| match n.0.as_str() {
-            "Rat" => 'r',
-            "Skeleton" => 'S',
-            "Boss" => 'B',
-            _ => 'E',
-        });
-        vm.enemy_glyphs.push((*pos, glyph));
+    // Only collect enemies in tactical/dungeon mode — shelter has no enemies
+    if *mode != bd_core::spatial::GameMode::Outpost {
+        for (pos, name) in enemies.iter() {
+            vm.enemy_positions.push(*pos);
+            let glyph = name.map_or('E', |n| match n.0.as_str() {
+                "Rat" => 'r',
+                "Skeleton" => 'S',
+                "Boss" => 'B',
+                _ => 'E',
+            });
+            vm.enemy_glyphs.push((*pos, glyph));
+        }
     }
+    vm.survivor_glyphs.clear();
+    for (pos, _name, task) in survivors.iter() {
+        let glyph = match task {
+            bd_core::colony::survivors::SurvivorTask::Idle => 'A',
+            bd_core::colony::survivors::SurvivorTask::Gathering => 'G',
+            bd_core::colony::survivors::SurvivorTask::Defending => 'D',
+            bd_core::colony::survivors::SurvivorTask::Resting => 'R',
+            _ => 'A',
+        };
+        vm.survivor_glyphs.push((*pos, glyph));
+    }
+    vm.station_glyphs.clear();
+    for (pos, stype) in stations.iter() {
+        let glyph = match stype {
+            bd_core::colony::stations::StationType::Stove => 'F',
+            bd_core::colony::stations::StationType::Altar => 'A',
+            bd_core::colony::stations::StationType::Workshop => 'W',
+            bd_core::colony::stations::StationType::Bed => 'B',
+            bd_core::colony::stations::StationType::Storage => 'S',
+        };
+        vm.station_glyphs.push((*pos, glyph));
+    }
+
+    // P15-C: Gabriel glyph on shelter map
+    vm.gabriel_glyph = gabriel_q.iter().next().map(|pos| (*pos, 'G'));
+
+    // P22-D: Resource node glyphs on shelter map
+    vm.resource_glyphs.clear();
+    for (pos, node) in resource_nodes.iter() {
+        let glyph = match node.kind {
+            bd_core::components::ResourceNodeType::Trees => 'T',
+            bd_core::components::ResourceNodeType::WaterSource => 'W',
+            bd_core::components::ResourceNodeType::WildPlants => 'P',
+        };
+        vm.resource_glyphs.push((*pos, glyph));
+    }
+
+    // P2-C: Build ghost cursor on shelter map
+    vm.build_ghost = if build_ghost.active {
+        let glyph = match build_ghost.station_type {
+            Some(bd_core::colony::stations::StationType::Stove) => 'f',
+            Some(bd_core::colony::stations::StationType::Altar) => 'a',
+            Some(bd_core::colony::stations::StationType::Workshop) => 'w',
+            Some(bd_core::colony::stations::StationType::Bed) => 'b',
+            Some(bd_core::colony::stations::StationType::Storage) => 's',
+            None => '?',
+        };
+        Some((build_ghost.cursor, glyph))
+    } else {
+        None
+    };
+
+    // P2: Build menu popup
+    vm.build_menu = if build_menu.active {
+        let bps = bd_core::colony::stations::default_station_blueprints();
+        let options: Vec<(String, i32)> = bps.iter()
+            .map(|bp| (bp.label.to_string(), bp.build_cost_supplies))
+            .collect();
+        Some(BuildMenuVm {
+            options,
+            selected: build_menu.selected,
+        })
+    } else {
+        None
+    };
 }
 
 /// Build the inventory container view model for the player.

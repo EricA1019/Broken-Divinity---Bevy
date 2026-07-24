@@ -71,22 +71,41 @@ pub struct Ammo {
     pub max: i32,
 }
 
+/// Armor absorbs a flat amount from each instance of physical/ballistic/slash damage.
+/// Durability decreases with each hit absorbed.
+#[derive(Component, Debug, Clone, Serialize, Deserialize)]
+pub struct Armor {
+    /// Flat damage reduction per hit.
+    pub reduction: i32,
+    /// Remaining durability; armor is destroyed at 0.
+    pub durability: i32,
+}
+
 pub fn register_aimed_attack_action() -> ActionDefinition {
     ActionDefinition {
         id: "ability.aimed_attack".into(),
         label: "Aimed Attack".into(),
         requirements: vec![
             Requirement::HasPoolAtLeast(PoolKind::ActionPoints, 2),
+            Requirement::HasPoolAtLeast(PoolKind::Ammo, 1),
             Requirement::TargetExists,
             Requirement::TargetHostile,
             Requirement::TargetInRange(2),
         ],
-        cost_effects: vec![Effect::PoolDelta {
-            kind: PoolKind::ActionPoints,
-            amount: -2,
-            tags: vec![],
-            reason: "aimed attack cost".into(),
-        }],
+        cost_effects: vec![
+            Effect::PoolDelta {
+                kind: PoolKind::ActionPoints,
+                amount: -2,
+                tags: vec![],
+                reason: "aimed attack cost".into(),
+            },
+            Effect::PoolDelta {
+                kind: PoolKind::Ammo,
+                amount: -1,
+                tags: vec![],
+                reason: "ammo consumed".into(),
+            },
+        ],
         effects: vec![
             Effect::PoolDelta {
                 kind: PoolKind::Health,
@@ -139,6 +158,12 @@ pub fn register_reload_action() -> ActionDefinition {
             reason: "reload cost".into(),
         }],
         effects: vec![
+            Effect::PoolDelta {
+                kind: PoolKind::Ammo,
+                amount: AMMO_PER_RANGED_WEAPON,
+                tags: vec![],
+                reason: "reload".into(),
+            },
             Effect::Log("You reload.".into(), crate::gamelog::LogLevel::Info),
         ],
     }

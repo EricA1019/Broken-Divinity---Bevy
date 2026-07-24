@@ -41,10 +41,6 @@ fn ap_color(current: i32, max: i32) -> ratatui::style::Color {
 
 // ── UI color constants ──
 
-/// Panel border color.
-const BORDER_COLOR: ratatui::style::Color = ratatui::style::Color::Gray;
-/// Default panel text color.
-const TEXT_COLOR: ratatui::style::Color = ratatui::style::Color::White;
 /// Secondary/muted text color.
 const MUTED_COLOR: ratatui::style::Color = ratatui::style::Color::DarkGray;
 /// Highlight/accent color (labels, active items).
@@ -121,7 +117,7 @@ pub struct WidgetRenderContext<'a> {
     pub help: &'a HelpViewModel,
     pub symbols: &'a SymbolRegistry,
     pub theme: &'a ThemeRegistry,
-    pub travel_map: &'a bd_core::spatial::TravelMap,
+    pub travel_ctx: &'a bd_core::overworld::TravelContext,
 }
 
 /// A registered widget knows its view-model dependency and how to render.
@@ -310,7 +306,7 @@ pub fn default_screen_registry() -> ScreenRegistry {
             },
             PanelDefinition {
                 id: "outpost_travel".into(),
-                layout: PanelLayout::Bottom { height_pct: 10 },
+                layout: PanelLayout::Bottom { height_pct: 20 },
                 view_model: "ContainerViewModel".into(),
             },
             PanelDefinition {
@@ -410,79 +406,85 @@ pub fn default_screen_registry() -> ScreenRegistry {
 /// Build the default widget registry with all known renderers.
 /// Render the game over screen splash.
 fn render_game_over_splash_widget(frame: &mut Frame, area: Rect, _ctx: &WidgetRenderContext) {
-    let title = r#"   ____                         ___                 
-  / ___| __ _ _ __ ___   ___   / _ \__   _____ _ __ 
- | |  _ / _` | '_ ` _ \ / _ \ | | | \ \ / / _ \ '__|
- | |_| | (_| | | | | | |  __/ | |_| |\ V /  __/ |   
-  \____|\__,_|_| |_| |_|\___|  \___/  \_/ \___|_|   
-"#;
-    let text = vec![
-        ratatui::text::Line::from(""),
-        ratatui::text::Line::styled(
-            title,
-            ratatui::style::Style::default().fg(ratatui::style::Color::Red).add_modifier(ratatui::style::Modifier::BOLD),
-        ),
-        ratatui::text::Line::from(""),
-        ratatui::text::Line::styled(
-            "  You have died.",
-            ratatui::style::Style::default().fg(MUTED_COLOR),
-        ),
-        ratatui::text::Line::from(""),
-        ratatui::text::Line::styled(
-            "  Press any key to quit",
-            ratatui::style::Style::default().fg(ACCENT_COLOR),
-        ),
-    ];
-    let para = ratatui::widgets::Paragraph::new(text)
-        .alignment(ratatui::layout::Alignment::Center)
-        .wrap(ratatui::widgets::Wrap { trim: false });
+    let style_title = ratatui::style::Style::default().fg(ratatui::style::Color::Red).add_modifier(ratatui::style::Modifier::BOLD);
+    let style_muted = ratatui::style::Style::default().fg(MUTED_COLOR);
+    let style_accent = ratatui::style::Style::default().fg(ACCENT_COLOR);
+
+    let text: Vec<ratatui::text::Line> = if area.width < 50 || area.height < 10 {
+        vec![
+            ratatui::text::Line::from(""),
+            ratatui::text::Line::styled("GAME OVER", style_title),
+            ratatui::text::Line::from(""),
+            ratatui::text::Line::styled("  You have died.", style_muted),
+            ratatui::text::Line::from(""),
+            ratatui::text::Line::styled("  Press any key to quit", style_accent),
+        ]
+    } else {
+        let title_lines = [
+            "   ____                         ___                 ",
+            "  / ___| __ _ _ __ ___   ___   / _ \\__   _____ _ __ ",
+            " | |  _ / _` | '_ ` _ \\ / _ \\ | | | \\ \\ / / _ \\ '__|",
+            " | |_| | (_| | | | | | |  __/ | |_| |\\ V /  __/ |   ",
+            "  \\____|\\__,_|_| |_| |_|\\___|  \\___/  \\_/ \\___|_|   ",
+        ];
+        let max_w = title_lines.iter().map(|l| l.len()).max().unwrap_or(0);
+        let indent = " ".repeat(area.width.saturating_sub(max_w as u16) as usize / 2);
+        let mut lines: Vec<ratatui::text::Line> = vec![ratatui::text::Line::from("")];
+        for line in title_lines {
+            let padded = format!("{indent}{line:<max_w$}");
+            lines.push(ratatui::text::Line::styled(padded, style_title));
+        }
+        let died_line = format!("{indent}  You have died.");
+        let quit_line = format!("{indent}  Press any key to quit");
+        lines.push(ratatui::text::Line::from(""));
+        lines.push(ratatui::text::Line::styled(died_line, style_muted));
+        lines.push(ratatui::text::Line::from(""));
+        lines.push(ratatui::text::Line::styled(quit_line, style_accent));
+        lines
+    };
+    let para = ratatui::widgets::Paragraph::new(text);
     frame.render_widget(para, area);
 }
 
 /// Render the title screen splash.
 fn render_title_splash_widget(frame: &mut Frame, area: Rect, _ctx: &WidgetRenderContext) {
+    let style_title = ratatui::style::Style::default().fg(ACCENT_COLOR).add_modifier(ratatui::style::Modifier::BOLD);
+    let style_muted = ratatui::style::Style::default().fg(MUTED_COLOR);
+    let style_accent = ratatui::style::Style::default().fg(ACCENT_COLOR);
+
     let text: Vec<ratatui::text::Line> = if area.width < 50 || area.height < 12 {
-        // Terminal too small for ASCII art — show minimal message
         vec![
             ratatui::text::Line::from(""),
-            ratatui::text::Line::styled(
-                "Broken Divinity Kernel",
-                ratatui::style::Style::default().fg(ACCENT_COLOR).add_modifier(ratatui::style::Modifier::BOLD),
-            ),
+            ratatui::text::Line::styled("Broken Divinity Kernel", style_title),
             ratatui::text::Line::from(""),
-            ratatui::text::Line::styled(
-                "  Press any key to begin",
-                ratatui::style::Style::default().fg(ACCENT_COLOR),
-            ),
+            ratatui::text::Line::styled("  Press any key to begin", style_accent),
         ]
     } else {
-        let title = r#"  ____             _      ___     _ _            _   _
- | __ ) _ __ ___  | | __ |_ _|_ _(_) |_ ___  _ _| |_(_)_ __   __ _
- |  _ \| '__/ _ \| |/ /   | || '__| | __/ _ \| / /  _| | '  \ / _` |
- | |_) | | | (_) |   <   | || |  | | || (_) |   \| |_| | | | | (_| |
- |_.__/|_|  \___/|_|\_\ |___|_|  |_|\__\___/|_|\_\__|_|_| |_|\__, |
-                                                               |___/"#;
-        vec![
-            ratatui::text::Line::from(""),
-            ratatui::text::Line::styled(
-                title,
-                ratatui::style::Style::default().fg(ACCENT_COLOR).add_modifier(ratatui::style::Modifier::BOLD),
-            ),
-            ratatui::text::Line::from(""),
-            ratatui::text::Line::styled(
-                format!("  Kernel v{}  ", env!("CARGO_PKG_VERSION")),
-                ratatui::style::Style::default().fg(MUTED_COLOR),
-            ),
-            ratatui::text::Line::from(""),
-            ratatui::text::Line::styled(
-                "  Press any key to begin",
-                ratatui::style::Style::default().fg(ACCENT_COLOR),
-            ),
-        ]
+        let title_lines = [
+            "  ____             _      ___     _ _            _   _ ",
+            " | __ ) _ __ ___  | | __ |_ _|_ _(_) |_ ___  _ _| |_(_)_ __   __ _",
+            " |  _ \\| '__/ _ \\| |/ /   | || '__| | __/ _ \\| / /  _| | '  \\ / _` |",
+            " | |_) | | | (_) |   <   | || |  | | || (_) |   \\| |_| | | | | (_| |",
+            " |_.__/|_|  \\___/|_|\\_\\ |___|_|  |_|\\__\\___/|_|\\_\\__|_|_| |_|\\__, |",
+            "                                                               |___/",
+        ];
+        // Pad all lines to the same width so center-alignment is clean
+        let max_w = title_lines.iter().map(|l| l.len()).max().unwrap_or(0);
+        let indent = " ".repeat(area.width.saturating_sub(max_w as u16) as usize / 2);
+        let mut lines: Vec<ratatui::text::Line> = vec![ratatui::text::Line::from("")];
+        for line in title_lines {
+            let padded = format!("{indent}{line:<max_w$}");
+            lines.push(ratatui::text::Line::styled(padded, style_title));
+        }
+        let version_line = format!("{indent}  Kernel v{}  ", env!("CARGO_PKG_VERSION"));
+        let prompt_line = format!("{indent}  Press any key to begin");
+        lines.push(ratatui::text::Line::from(""));
+        lines.push(ratatui::text::Line::styled(version_line, style_muted));
+        lines.push(ratatui::text::Line::from(""));
+        lines.push(ratatui::text::Line::styled(prompt_line, style_accent));
+        lines
     };
-    let para = ratatui::widgets::Paragraph::new(text)
-        .alignment(ratatui::layout::Alignment::Center)
-        .wrap(ratatui::widgets::Wrap { trim: false });
+    let para = ratatui::widgets::Paragraph::new(text);
     frame.render_widget(para, area);
 }
 
@@ -713,6 +715,55 @@ fn render_map_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
         }
     }
 
+    // Render survivors on shelter map as Ally tokens
+    for (pos, glyph) in &ctx.map.survivor_glyphs {
+        if pos.x >= 0 && pos.x < w as i32 && pos.y >= 0 && pos.y < h as i32 {
+            grid.set_glyph(pos.x as u16, pos.y as u16, *glyph, VisualToken::Ally, ctx.symbols, ctx.theme);
+        }
+    }
+
+    // Render stations on map
+    for (pos, glyph) in &ctx.map.station_glyphs {
+        if pos.x >= 0 && pos.x < w as i32 && pos.y >= 0 && pos.y < h as i32 {
+            grid.set_glyph(pos.x as u16, pos.y as u16, *glyph, VisualToken::Item, ctx.symbols, ctx.theme);
+        }
+    }
+
+    // P15-C: Render Gabriel on shelter map
+    if let Some((pos, glyph)) = &ctx.map.gabriel_glyph {
+        if pos.x >= 0 && pos.x < w as i32 && pos.y >= 0 && pos.y < h as i32 {
+            grid.set_glyph(pos.x as u16, pos.y as u16, *glyph, VisualToken::Ally, ctx.symbols, ctx.theme);
+        }
+    }
+
+    // P22-D: Render resource nodes on shelter map
+    for (pos, glyph) in &ctx.map.resource_glyphs {
+        if pos.x >= 0 && pos.x < w as i32 && pos.y >= 0 && pos.y < h as i32 {
+            grid.set_glyph(pos.x as u16, pos.y as u16, *glyph, VisualToken::Item, ctx.symbols, ctx.theme);
+        }
+    }
+
+    // P2-C: Render build ghost cursor on shelter map
+    if let Some((pos, glyph)) = &ctx.map.build_ghost {
+        if pos.x >= 0 && pos.x < w as i32 && pos.y >= 0 && pos.y < h as i32 {
+            grid.set_glyph(pos.x as u16, pos.y as u16, *glyph, VisualToken::Selection, ctx.symbols, ctx.theme);
+        }
+    }
+
+    // P2: Build menu overlay — render as text lines below the map
+    let mut menu_lines: Vec<ratatui::text::Line> = Vec::new();
+    if let Some(ref menu) = ctx.map.build_menu {
+        menu_lines.push(ratatui::text::Line::from("══ Build ══"));
+        for (i, (label, cost)) in menu.options.iter().enumerate() {
+            let prefix = if i == menu.selected { "▶" } else { " " };
+            let key = (i + 1).to_string();
+            menu_lines.push(ratatui::text::Line::from(
+                format!("{prefix} {key}. {label} ({cost} Supplies)")
+            ));
+        }
+        menu_lines.push(ratatui::text::Line::from("↑↓/1-5:select Enter:confirm b:cancel"));
+    }
+
     let lines: Vec<ratatui::text::Line> = grid
         .rows()
         .map(|row| {
@@ -724,7 +775,10 @@ fn render_map_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
         })
         .collect();
 
-    let para = ratatui::widgets::Paragraph::new(lines);
+    // Append build menu lines below the map grid if menu is open
+    let all_lines: Vec<ratatui::text::Line> = lines.into_iter().chain(menu_lines.into_iter()).collect();
+
+    let para = ratatui::widgets::Paragraph::new(all_lines);
     frame.render_widget(para, inner);
 }
 
@@ -762,12 +816,36 @@ fn render_stats_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext)
             format!("Faith: {}", ctx.stats.faith),
             ratatui::style::Style::default().fg(ACCENT_COLOR),
         ),
+        ratatui::text::Line::styled(
+            format!("Materials: {}", ctx.stats.materials),
+            ratatui::style::Style::default().fg(ratatui::style::Color::Yellow),
+        ),
+        ratatui::text::Line::styled(
+            format!("Plants: {}", ctx.stats.wild_plants),
+            ratatui::style::Style::default().fg(ratatui::style::Color::Green),
+        ),
         ratatui::text::Line::from(""),
         ratatui::text::Line::styled(
             format!("Day: {}", ctx.stats.day),
             ratatui::style::Style::default().fg(MUTED_COLOR),
         ),
+        ratatui::text::Line::from(""),
     ];
+
+    // P17-D: Faction standings
+    let mut text = text;
+    for (label, _val, status) in &ctx.stats.faction_standings {
+        let color = match status.as_str() {
+            "H" => ratatui::style::Color::Red,
+            "F" => ratatui::style::Color::Green,
+            "A" => ratatui::style::Color::Cyan,
+            _ => ratatui::style::Color::Gray,
+        };
+        text.push(ratatui::text::Line::styled(
+            format!("{}: {}", label, status),
+            ratatui::style::Style::default().fg(color),
+        ));
+    }
 
     let para = ratatui::widgets::Paragraph::new(text);
     frame.render_widget(para, inner);
@@ -1033,7 +1111,39 @@ fn render_outpost_travel_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRende
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let text: Vec<ratatui::text::Line> = if ctx.travel_map.nodes.is_empty() {
+    let ow = &ctx.travel_ctx.overworld;
+    let is_traveling = ow.turns_remaining > 0;
+
+    let text: Vec<ratatui::text::Line> = if is_traveling {
+        // Travel in progress — show destination, turns, weather
+        let dest = ow.current_node.as_deref().unwrap_or("unknown");
+        let weather_icon = match ow.weather {
+            bd_core::overworld::Weather::Clear => "☀ Clear",
+            bd_core::overworld::Weather::Rain => "🌧 Rain",
+            bd_core::overworld::Weather::Storm => "⛈ Storm",
+            bd_core::overworld::Weather::AnomalyStorm => "⚠ Anomaly Storm",
+        };
+        let weather_color = match ow.weather {
+            bd_core::overworld::Weather::Clear => ratatui::style::Color::Green,
+            bd_core::overworld::Weather::Rain => ratatui::style::Color::Cyan,
+            bd_core::overworld::Weather::Storm => ratatui::style::Color::Yellow,
+            bd_core::overworld::Weather::AnomalyStorm => ratatui::style::Color::Red,
+        };
+        vec![
+            ratatui::text::Line::styled(
+                format!(" Traveling to: {}", dest),
+                ratatui::style::Style::default().fg(ACCENT_COLOR),
+            ),
+            ratatui::text::Line::styled(
+                format!(" Turns remaining: {}", ow.turns_remaining),
+                ratatui::style::Style::default().fg(ratatui::style::Color::White),
+            ),
+            ratatui::text::Line::styled(
+                format!(" Weather: {}", weather_icon),
+                ratatui::style::Style::default().fg(weather_color),
+            ),
+        ]
+    } else if ctx.travel_ctx.travel_map.nodes.is_empty() {
         vec![
             ratatui::text::Line::from(""),
             ratatui::text::Line::styled(
@@ -1054,7 +1164,7 @@ fn render_outpost_travel_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRende
             ),
             ratatui::text::Line::from(""),
         ];
-        for node in &ctx.travel_map.nodes {
+        for node in &ctx.travel_ctx.travel_map.nodes {
             lines.push(
                 ratatui::text::Line::styled(
                     format!("  {} ({} turns)", node.name, node.travel_time),
