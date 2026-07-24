@@ -743,6 +743,13 @@ fn render_map_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
         }
     }
 
+    // P3-A: Render exit tiles (shelter gate, dungeon exits)
+    for (pos, glyph) in &ctx.map.exit_glyphs {
+        if pos.x >= 0 && pos.x < w as i32 && pos.y >= 0 && pos.y < h as i32 {
+            grid.set_glyph(pos.x as u16, pos.y as u16, *glyph, VisualToken::Exit, ctx.symbols, ctx.theme);
+        }
+    }
+
     // P2-C: Render build ghost cursor on shelter map
     if let Some((pos, glyph)) = &ctx.map.build_ghost {
         if pos.x >= 0 && pos.x < w as i32 && pos.y >= 0 && pos.y < h as i32 {

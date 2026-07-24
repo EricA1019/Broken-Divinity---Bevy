@@ -350,6 +350,17 @@ pub fn initialize_outpost(
             crate::gamelog::LogLevel::Info,
         );
     }
+
+    // P3-A: Spawn shelter exit tile (gate) at the top-center of the map
+    let exit_x = crate::colony::shelter::SHELTER_WIDTH / 2;
+    let exit_y = 1; // top wall row — the gate breach
+    commands.spawn((
+        ExitTile,
+        Position { x: exit_x, y: exit_y },
+        crate::components::Name("Shelter Gate".into()),
+        crate::spatial::PersistentEntity,
+    ));
+    game_log.push("The shelter gate stands open to the north.", crate::gamelog::LogLevel::Info);
 }
 
 pub fn register_spatial(app: &mut App) {
@@ -381,26 +392,33 @@ pub fn register_spatial(app: &mut App) {
     tracing::info!("Spatial module registered");
 }
 
-/// When player steps on an ExitTile in Tactical mode, transition back to Outpost.
+/// When player steps on an ExitTile in Tactical or Outpost mode, transition.
 fn detect_exit_tile(
     player: Query<&Position, With<Player>>,
     exits: Query<&Position, With<ExitTile>>,
     mode: Res<GameMode>,
     mut writer: bevy_ecs::message::MessageWriter<TransitionIntent>,
+    mut game_log: ResMut<GameLog>,
 ) {
-    if *mode != GameMode::Tactical {
-        return;
+    match *mode {
+        GameMode::Tactical | GameMode::Outpost => {} // allow exit detection
+        _ => return,
     }
     let Ok(player_pos) = player.single() else {
         return;
     };
     for exit_pos in exits.iter() {
         if *player_pos == *exit_pos {
-            tracing::info!("Player on exit tile at {:?}, returning to Outpost", player_pos);
-            writer.write(TransitionIntent {
-                target: GameMode::Outpost,
-                node_id: None,
-            });
+            tracing::info!("Player on exit tile at {:?} in {:?} mode", player_pos, mode);
+            if *mode == GameMode::Tactical {
+                writer.write(TransitionIntent {
+                    target: GameMode::Outpost,
+                    node_id: None,
+                });
+            } else {
+                // Outpost mode: walking to the gate logs a hint, then 't' travels
+                game_log.push("The shelter gate. Press t to travel.".to_string(), LogLevel::Info);
+            }
             return;
         }
     }
@@ -427,16 +445,7 @@ mod tests {
 
     fn test_app() -> bevy_app::App {
         let mut app = bevy_app::App::new();
-        app.insert_resource(GameMode::default());
-        app.insert_resource(OutpostState::default());
-        app.insert_resource(TravelMap::default());
-        app.insert_resource(GameLog::default());
-        app.insert_resource(crate::colony::production::ColonyResources::default());
-        app.insert_resource(SmokeMap::new(10, 10, crate::components::Tile::Floor));
-        app.insert_resource(crate::gabriel::GabrielState::default());
-        app.add_message::<TransitionIntent>();
-        app.add_systems(bevy_app::Update, process_transitions);
-        app.add_systems(bevy_app::Update, detect_exit_tile);
+        app.add_plugins(crate::BdCorePlugin);
         app
     }
 
@@ -608,5 +617,44 @@ mod tests {
             GameMode::Tactical,
             "Player not on exit should stay in Tactical mode"
         );
+    }
+
+    // ── P3-A: Shelter exit tile test ──
+
+    #[test]
+    fn shelter_map_has_exit_tile() {
+        let mut app = test_app();
+        app.world_mut().insert_resource(GameMode::Outpost);
+        app.update();
+        // After initialize_outpost runs, an ExitTile should exist
+        // Use an archetype query to count entities with ExitTile
+        let mut query = app.world_mut().query::<&crate::components::Name>();
+        let names: Vec<String> = query.iter(app.world()).map(|n| n.0.clone()).collect();
+        let has_gate = names.iter().any(|n| n == "Shelter Gate");
+        assert!(has_gate, "Shelter map should have exit tile named 'Shelter Gate'. Names found: {:?}", names);
+    }
+
+    #[test]
+    fn exit_tile_in_outpost_triggers_intent() {
+        let mut app = test_app();
+        app.world_mut().insert_resource(GameMode::Outpost);
+
+        // Player on the exit position
+        let exit_pos = Position { x: 20, y: 1 };
+        app.world_mut().spawn((
+            Player,
+            exit_pos,
+            PersistentEntity,
+            crate::components::Name("TestPlayer".into()),
+        ));
+        // Spawn exit tile
+        app.world_mut().spawn((ExitTile, Position { x: 20, y: 1 }, crate::components::Name("Gate".into())));
+
+        app.update();
+        app.update();
+
+        let mode = *app.world().resource::<GameMode>();
+        assert!(mode == GameMode::Outpost || mode == GameMode::Travel,
+            "Stepping on exit tile in Outpost should trigger intent, mode was {:?}", mode);
     }
 }

@@ -104,7 +104,7 @@ pub fn process_survivor_gathering(
         if let Some((_dist, node)) = nearest {
             let pool_kind = match node.kind {
                 ResourceNodeType::Trees => PoolKind::Materials,
-                ResourceNodeType::WaterSource => PoolKind::Materials, // water → materials for now
+                ResourceNodeType::WaterSource => PoolKind::Supplies, // water → supplies (drinking water)
                 ResourceNodeType::WildPlants => PoolKind::WildPlants,
             };
             if let Some(pool) = colony_res.pools.get_mut(pool_kind) {

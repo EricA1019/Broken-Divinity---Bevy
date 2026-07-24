@@ -77,6 +77,8 @@ pub struct MapViewModel {
     pub gabriel_glyph: Option<(Position, char)>,
     /// Resource node positions and glyphs for outpost map rendering.
     pub resource_glyphs: Vec<(Position, char)>,
+    /// Exit tile positions and glyphs (shelter gate, dungeon exits).
+    pub exit_glyphs: Vec<(Position, char)>,
     /// Build ghost cursor position and glyph for outpost map rendering.
     pub build_ghost: Option<(Position, char)>,
     /// Build menu entries with highlight index (None if menu closed).
@@ -294,6 +296,7 @@ fn build_map_vm(
     stations: Query<(&Position, &bd_core::colony::stations::StationType)>,
     gabriel_q: Query<&Position, With<bd_core::components::Gabriel>>,
     resource_nodes: Query<(&Position, &bd_core::components::ResourceNode)>,
+    exit_tiles: Query<&Position, With<bd_core::components::ExitTile>>,
     build_ghost: Res<bd_core::colony::stations::BuildGhostState>,
     build_menu: Res<bd_core::colony::stations::BuildMenuState>,
     mut vm: ResMut<MapViewModel>,
@@ -366,6 +369,12 @@ fn build_map_vm(
             bd_core::components::ResourceNodeType::WildPlants => 'P',
         };
         vm.resource_glyphs.push((*pos, glyph));
+    }
+
+    // P3-A: Exit tile glyphs on the shelter map (gate, dungeon exits)
+    vm.exit_glyphs.clear();
+    for pos in exit_tiles.iter() {
+        vm.exit_glyphs.push((*pos, '>'));
     }
 
     // P2-C: Build ghost cursor on shelter map
