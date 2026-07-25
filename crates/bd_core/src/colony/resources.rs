@@ -78,7 +78,7 @@ pub fn spawn_resource_nodes(commands: &mut Commands, map: &SmokeMap) -> u32 {
 
 /// Process gathering at day change: survivors with Gathering task near resource
 /// nodes produce resources into ColonyResources.
-pub fn process_survivor_gathering(
+pub(crate) fn process_survivor_gathering(
     survivors: Query<
         (
             &Position,
@@ -90,18 +90,16 @@ pub fn process_survivor_gathering(
     nodes: Query<(&Position, &ResourceNode)>,
     mut colony_res: ResMut<crate::colony::production::ColonyResources>,
     mode: Res<crate::spatial::GameMode>,
-    game_time: Res<crate::time::GameTime>,
-    mut last_day: Local<u64>,
+    mut days: bevy_ecs::message::MessageReader<crate::time::DayAdvanced>,
     mut game_log: ResMut<crate::gamelog::GameLog>,
+    mut draft: ResMut<crate::colony::production::DailyCycleDraft>,
 ) {
     if *mode != crate::spatial::GameMode::Outpost {
         return;
     }
-    // Only run on day change (matches process_production + process_raids pattern)
-    if game_time.day == *last_day || game_time.day == 0 {
+    if days.read().next().is_none() {
         return;
     }
-    *last_day = game_time.day;
 
     for (pos, task, name) in &survivors {
         if !matches!(task, crate::colony::survivors::SurvivorTask::Gathering) {
@@ -125,8 +123,21 @@ pub fn process_survivor_gathering(
                 ResourceNodeType::WaterSource => PoolKind::Supplies, // water → supplies (drinking water)
                 ResourceNodeType::WildPlants => PoolKind::WildPlants,
             };
-            if let Some(pool) = colony_res.pools.get_mut(pool_kind) {
+            let gathered = if let Some(pool) = colony_res.pools.get_mut(pool_kind) {
+                let before = pool.current;
                 pool.current = (pool.current + GATHERING_YIELD_PER_DAY).min(pool.max);
+                pool.current - before
+            } else {
+                0
+            };
+            if let Some(summary) = draft.0.as_mut() {
+                summary.gathering_units += 1;
+                match pool_kind {
+                    PoolKind::Supplies => summary.gathered_supplies += gathered,
+                    PoolKind::Materials => summary.gathered_materials += gathered,
+                    PoolKind::WildPlants => summary.gathered_wild_plants += gathered,
+                    _ => {}
+                }
             }
             let survivor_name = name.map_or("A survivor", |n| n.0.as_str());
             game_log.push(

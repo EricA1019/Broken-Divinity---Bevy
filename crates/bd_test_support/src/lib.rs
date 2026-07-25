@@ -140,17 +140,25 @@ struct ScenarioObservations {
     resolved: Vec<ActionResolved>,
     denied: Vec<ActionDenied>,
     transitions: Vec<TransitionComplete>,
+    days: Vec<bd_core::time::DayAdvanced>,
+    daily_summaries: Vec<bd_core::colony::production::DailySummary>,
 }
 
 fn observe_scenario_results(
     mut resolved: MessageReader<ActionResolved>,
     mut denied: MessageReader<ActionDenied>,
     mut transitions: MessageReader<TransitionComplete>,
+    mut days: MessageReader<bd_core::time::DayAdvanced>,
+    mut daily_summaries: MessageReader<bd_core::colony::production::DailySummary>,
     mut observations: ResMut<ScenarioObservations>,
 ) {
     observations.resolved.extend(resolved.read().cloned());
     observations.denied.extend(denied.read().cloned());
     observations.transitions.extend(transitions.read().cloned());
+    observations.days.extend(days.read().copied());
+    observations
+        .daily_summaries
+        .extend(daily_summaries.read().cloned());
 }
 
 /// Headless production-path driver for the canonical Foundation scenario.
@@ -715,6 +723,52 @@ impl FoundationDriver {
             .map(|pool| pool.current)
     }
 
+    pub fn entity_pool_current(&self, entity: Entity, kind: PoolKind) -> Option<i32> {
+        self.app
+            .world()
+            .get::<Pools>(entity)
+            .and_then(|pools| pools.get(kind))
+            .map(|pool| pool.current)
+    }
+
+    pub fn resource_current(&self, kind: PoolKind) -> Option<i32> {
+        self.app
+            .world()
+            .resource::<bd_core::colony::production::ColonyResources>()
+            .pools
+            .get(kind)
+            .map(|pool| pool.current)
+    }
+
+    pub fn latest_daily_summary(&self) -> Option<bd_core::colony::production::DailySummary> {
+        self.app
+            .world()
+            .resource::<bd_core::colony::production::LatestDailySummary>()
+            .0
+            .clone()
+    }
+
+    pub fn last_day_advanced_count(&self) -> usize {
+        self.app
+            .world()
+            .resource::<ScenarioObservations>()
+            .days
+            .len()
+    }
+
+    /// Phase 6 fixture setup for starvation boundary tests.
+    pub fn fixture_set_colony_resource(&mut self, kind: PoolKind, value: i32) {
+        if let Some(pool) = self
+            .app
+            .world_mut()
+            .resource_mut::<bd_core::colony::production::ColonyResources>()
+            .pools
+            .get_mut(kind)
+        {
+            pool.current = value.clamp(pool.min, pool.max);
+        }
+    }
+
     pub fn deferred_resources_present(&self) -> Vec<&'static str> {
         let world = self.app.world();
         let mut present = Vec::new();
@@ -855,6 +909,8 @@ impl FoundationDriver {
         observations.resolved.clear();
         observations.denied.clear();
         observations.transitions.clear();
+        observations.days.clear();
+        observations.daily_summaries.clear();
     }
 }
 

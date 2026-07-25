@@ -39,7 +39,7 @@ use crate::{
 // ---------------------------------------------------------------------------
 
 /// Current save format version. Bump on breaking changes.
-pub const SAVE_VERSION: u32 = 4;
+pub const SAVE_VERSION: u32 = 5;
 
 /// Content version — corresponds to the content pack hash/date.
 pub const CONTENT_VERSION: &str = "foundation-2026-07-24";
@@ -148,6 +148,7 @@ pub struct RunSnapshot {
     pub colony_resources: Vec<PoolSnapshot>,
     pub outpost_party: Vec<SaveId>,
     pub combat_rng: CombatRng,
+    pub latest_daily_summary: crate::colony::production::LatestDailySummary,
 }
 
 pub const MANUAL_SLOT_FILE: &str = "manual-slot.ron";
@@ -572,6 +573,10 @@ fn build_snapshot(world: &mut World, seed: u64, turn: u64) -> RunSnapshot {
         .get_resource::<CombatRng>()
         .cloned()
         .unwrap_or_else(|| CombatRng::from_seed(seed));
+    let latest_daily_summary = world
+        .get_resource::<crate::colony::production::LatestDailySummary>()
+        .cloned()
+        .unwrap_or_default();
 
     RunSnapshot {
         save_version: SAVE_VERSION,
@@ -588,6 +593,7 @@ fn build_snapshot(world: &mut World, seed: u64, turn: u64) -> RunSnapshot {
         colony_resources,
         outpost_party,
         combat_rng,
+        latest_daily_summary,
     }
 }
 
@@ -644,6 +650,8 @@ pub fn restore_snapshot_into(
     });
     world.insert_resource(snapshot.colony_storage.clone());
     world.insert_resource(snapshot.combat_rng.clone());
+    world.insert_resource(snapshot.latest_daily_summary.clone());
+    world.init_resource::<crate::colony::production::DailyCycleDraft>();
 
     // First pass: spawn all entities (empty)
     let mut save_id_to_entity: HashMap<SaveId, Entity> = HashMap::new();
@@ -893,6 +901,7 @@ mod tests {
             colony_resources: Vec::new(),
             outpost_party: Vec::new(),
             combat_rng: CombatRng::from_seed(42),
+            latest_daily_summary: crate::colony::production::LatestDailySummary::default(),
         }
     }
 

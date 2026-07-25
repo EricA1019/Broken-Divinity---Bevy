@@ -7,7 +7,6 @@ use crate::{
     actions::{ActionDefinition, Effect, Requirement},
     pools::{Pool, Pools},
     signals::{DeltaTag, PoolKind},
-    time::GameTime,
 };
 
 // ── Constants ──
@@ -205,27 +204,24 @@ pub fn process_station_assignments(
 /// Consumes shelter resources each day change: food per survivor, mood penalties.
 /// P0-A fix: checks colony-level ColonyResources instead of entity-level Supplies
 /// (survivors don't have entity-level Supplies — they only have Mood + AP).
-pub fn consume_shelter_resources(
+pub(crate) fn consume_shelter_resources(
     query: Query<(Entity, &mut Pools, Option<&SurvivorTask>)>,
-    colony_res: Res<crate::colony::production::ColonyResources>,
     mode: Res<crate::spatial::GameMode>,
-    game_time: Res<GameTime>,
+    mut days: bevy_ecs::message::MessageReader<crate::time::DayAdvanced>,
     mut pool_delta_writer: bevy_ecs::message::MessageWriter<crate::signals::PoolDeltaRequested>,
+    draft: Res<crate::colony::production::DailyCycleDraft>,
 ) {
     if *mode != crate::spatial::GameMode::Outpost {
         return;
     }
-    // Only runs on day change (turn 0)
-    if game_time.turn != 0 {
+    if days.read().next().is_none() {
         return;
     }
 
-    // Check colony-level supplies once (not per-survivor entity-level,
-    // since survivors don't have a Supplies pool).
-    let colony_has_supplies = colony_res
-        .pools
-        .get(PoolKind::Supplies)
-        .map_or(false, |p| p.current >= FOOD_PER_SURVIVOR_PER_DAY);
+    let starved = draft
+        .0
+        .as_ref()
+        .is_some_and(|summary| summary.starved_survivors > 0);
 
     for (entity, pools, task) in query.iter() {
         // Skip non-survivors
@@ -233,7 +229,7 @@ pub fn consume_shelter_resources(
             continue;
         }
 
-        if !colony_has_supplies {
+        if starved {
             // Starvation: mood penalty when colony is out of supplies
             pool_delta_writer.write(crate::signals::PoolDeltaRequested {
                 source: None,
@@ -379,16 +375,13 @@ mod tests {
             .get_mut(PoolKind::Supplies)
             .unwrap()
             .current = 10;
-        // Advance to day 1, turn 0
-        app.world_mut().resource_mut::<crate::time::GameTime>().day = 1;
-        app.world_mut().resource_mut::<crate::time::GameTime>().turn = 0;
-        // Set ShouldAdvanceTime so turn advances past 0 after first frame
-        app.world_mut()
-            .resource_mut::<crate::time::ShouldAdvanceTime>()
-            .0 = true;
-        // Frame 1: consume_shelter_resources sees supplies>0 → no starvation
-        app.update();
-        // Frame 2: PoolDeltaRequested messages from frame 1 processed by resolve_pool_deltas
+        for _ in 0..crate::time::TURNS_PER_DAY {
+            app.world_mut()
+                .resource_mut::<crate::time::ShouldAdvanceTime>()
+                .0 = true;
+            app.update();
+        }
+        // Process the emitted day boundary transaction.
         app.update();
         // All survivors should still have max mood
         let mut query = app.world_mut().query::<&crate::pools::Pools>();
@@ -418,16 +411,12 @@ mod tests {
             .get_mut(PoolKind::Supplies)
             .unwrap()
             .current = 0;
-        // Advance to day 1, turn 0
-        app.world_mut().resource_mut::<crate::time::GameTime>().day = 1;
-        app.world_mut().resource_mut::<crate::time::GameTime>().turn = 0;
-        // Set ShouldAdvanceTime so turn advances past 0 after first frame
-        app.world_mut()
-            .resource_mut::<crate::time::ShouldAdvanceTime>()
-            .0 = true;
-        // Frame 1: consume_shelter_resources sees supplies=0 → writes PoolDeltaRequested(Mood, -10)
-        app.update();
-        // Frame 2: resolve_pool_deltas reads and applies those messages
+        for _ in 0..crate::time::TURNS_PER_DAY {
+            app.world_mut()
+                .resource_mut::<crate::time::ShouldAdvanceTime>()
+                .0 = true;
+            app.update();
+        }
         app.update();
         // Survivors should have lost mood
         let mut query = app.world_mut().query::<&crate::pools::Pools>();

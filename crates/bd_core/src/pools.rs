@@ -130,7 +130,7 @@ fn regenerate_action_points(
 
 /// The single system that applies all `PoolDeltaRequested` messages.
 /// This is the ONLY system that mutates pool values.
-fn resolve_pool_deltas(
+pub(crate) fn resolve_pool_deltas(
     mut commands: Commands,
     mut combat_rng: Option<ResMut<CombatRng>>,
     mut requests: bevy_ecs::message::MessageReader<PoolDeltaRequested>,

@@ -39,6 +39,11 @@ pub struct GameTime {
 #[derive(Resource, Debug, Clone, Copy)]
 pub struct TurnJustAdvanced;
 
+#[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DayAdvanced {
+    pub day: u64,
+}
+
 impl Default for GameTime {
     fn default() -> Self {
         Self { day: 0, turn: 0 }
@@ -50,6 +55,7 @@ impl Default for GameTime {
 pub(crate) fn register_time(app: &mut App) {
     app.insert_resource(GameTime::default());
     app.init_resource::<ShouldAdvanceTime>();
+    app.add_message::<DayAdvanced>();
     app.add_systems(bevy_app::Update, advance_time.in_set(BdSet::ResultEmission));
 }
 
@@ -62,6 +68,7 @@ fn advance_time(
     mut game_time: ResMut<GameTime>,
     mut session: ResMut<crate::session::RunSession>,
     mut should_advance: ResMut<ShouldAdvanceTime>,
+    mut day_advanced: bevy_ecs::message::MessageWriter<DayAdvanced>,
 ) {
     if !should_advance.0 {
         return;
@@ -71,6 +78,7 @@ fn advance_time(
     if game_time.turn >= TURNS_PER_DAY {
         game_time.day += 1;
         game_time.turn = 0;
+        day_advanced.write(DayAdvanced { day: game_time.day });
     }
     session.day = game_time.day;
     session.turn = game_time.turn;

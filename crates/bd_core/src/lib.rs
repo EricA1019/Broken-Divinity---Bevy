@@ -180,6 +180,9 @@ fn register_foundation(app: &mut App, foundation: bool) {
     app.init_resource::<crate::colony::stations::BuildMenuState>();
     app.insert_resource(crate::colony::production::ColonyResources::default());
     app.init_resource::<crate::colony::production::ColonyStorage>();
+    app.init_resource::<crate::colony::production::DailyCycleDraft>();
+    app.init_resource::<crate::colony::production::LatestDailySummary>();
+    app.add_message::<crate::colony::production::DailySummary>();
 
     // Register action system (replaces direct movement systems)
     actions::register_actions(app);
@@ -218,7 +221,10 @@ fn register_foundation(app: &mut App, foundation: bool) {
     // Register consume_shelter_resources system
     app.add_systems(
         bevy_app::Update,
-        crate::colony::survivors::consume_shelter_resources.in_set(BdSet::Mutation),
+        crate::colony::survivors::consume_shelter_resources
+            .after(crate::colony::production::process_production)
+            .before(crate::pools::resolve_pool_deltas)
+            .in_set(BdSet::Mutation),
     );
 
     // Register station assignment system (reads AssignToStation messages)
@@ -255,7 +261,16 @@ fn register_foundation(app: &mut App, foundation: bool) {
     // P22: Register survivor gathering system
     app.add_systems(
         bevy_app::Update,
-        crate::colony::resources::process_survivor_gathering.in_set(BdSet::Mutation),
+        crate::colony::resources::process_survivor_gathering
+            .after(crate::colony::production::process_production)
+            .in_set(BdSet::Mutation),
+    );
+    app.add_systems(
+        bevy_app::Update,
+        crate::colony::production::finalize_daily_cycle
+            .after(crate::colony::survivors::consume_shelter_resources)
+            .after(crate::colony::resources::process_survivor_gathering)
+            .in_set(BdSet::Mutation),
     );
 
     // P3: Register survivor movement system

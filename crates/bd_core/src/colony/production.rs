@@ -10,7 +10,6 @@ use crate::{
     gamelog::{GameLog, LogLevel},
     pools::{Pool, Pools},
     signals::PoolKind,
-    time::GameTime,
 };
 
 // ── Constants ──
@@ -30,6 +29,37 @@ pub struct ColonyResources {
 #[derive(Resource, Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ColonyStorage {
     pub items: BTreeMap<String, u32>,
+}
+
+#[derive(Message, Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DailySummary {
+    pub day: u64,
+    pub supplies_before: i32,
+    pub supplies_after: i32,
+    pub materials_before: i32,
+    pub materials_after: i32,
+    pub wild_plants_before: i32,
+    pub wild_plants_after: i32,
+    pub faith_before: i32,
+    pub faith_after: i32,
+    pub food_consumed: i32,
+    pub staffed_stations: u32,
+    pub station_supplies_produced: i32,
+    pub gathered_supplies: i32,
+    pub gathered_materials: i32,
+    pub gathered_wild_plants: i32,
+    pub gathering_units: u32,
+    pub starved_survivors: u32,
+}
+
+#[derive(Resource, Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LatestDailySummary(pub Option<DailySummary>);
+
+#[derive(Resource, Debug, Default)]
+pub(crate) struct DailyCycleDraft(pub Option<DailySummary>);
+
+fn resource_value(resources: &ColonyResources, kind: PoolKind) -> i32 {
+    resources.pools.get(kind).map_or(0, |pool| pool.current)
 }
 
 impl ColonyStorage {
@@ -56,7 +86,7 @@ impl Default for ColonyResources {
 }
 
 /// Processes production at day change: stations produce (only if staffed), survivors eat.
-pub fn process_production(
+pub(crate) fn process_production(
     mut colony_res: ResMut<ColonyResources>,
     survivors_query: Query<&SurvivorTask, With<Survivor>>,
     stations_query: Query<
@@ -64,24 +94,33 @@ pub fn process_production(
         With<crate::colony::stations::Station>,
     >,
     mode: Res<crate::spatial::GameMode>,
-    game_time: Res<GameTime>,
-    mut game_log: ResMut<GameLog>,
-    mut last_day: bevy_ecs::system::Local<u64>,
+    mut days: bevy_ecs::message::MessageReader<crate::time::DayAdvanced>,
+    mut draft: ResMut<DailyCycleDraft>,
 ) {
     if *mode != crate::spatial::GameMode::Outpost {
         return;
     }
-    if game_time.day == *last_day || game_time.day == 0 {
+    let Some(day) = days.read().last().map(|event| event.day) else {
         return;
-    }
-    *last_day = game_time.day;
+    };
+    let mut summary = DailySummary {
+        day,
+        supplies_before: resource_value(&colony_res, PoolKind::Supplies),
+        materials_before: resource_value(&colony_res, PoolKind::Materials),
+        wild_plants_before: resource_value(&colony_res, PoolKind::WildPlants),
+        faith_before: resource_value(&colony_res, PoolKind::Faith),
+        ..Default::default()
+    };
 
     // Survivors consume food
     let survivor_count = survivors_query.iter().count() as i32;
     if let Some(supplies) = colony_res.pools.get_mut(PoolKind::Supplies) {
-        supplies.current = (supplies.current
-            - survivor_count * crate::colony::survivors::FOOD_PER_SURVIVOR_PER_DAY)
-            .max(0);
+        let required = survivor_count * crate::colony::survivors::FOOD_PER_SURVIVOR_PER_DAY;
+        summary.food_consumed = required.min(supplies.current);
+        if supplies.current < required {
+            summary.starved_survivors = survivor_count as u32;
+        }
+        supplies.current -= summary.food_consumed;
     }
 
     // Collect which station entities have at least one assigned worker
@@ -100,40 +139,50 @@ pub fn process_production(
         if !staffed.contains(&station_entity) {
             continue; // no worker assigned — skip production
         }
+        summary.staffed_stations += 1;
         if let Some(bp) = blueprints.iter().find(|b| b.station_type == *station_type) {
             if let Some((kind, amount)) = bp.produces {
                 if let Some(pool) = colony_res.pools.get_mut(kind) {
+                    let before = pool.current;
                     pool.current = (pool.current + amount).min(pool.max);
+                    if kind == PoolKind::Supplies {
+                        summary.station_supplies_produced += pool.current - before;
+                    }
                 }
             }
         }
     }
+    draft.0 = Some(summary);
+}
 
-    // Daily summary log
-    let supplies = colony_res
-        .pools
-        .get(PoolKind::Supplies)
-        .map_or(0, |p| p.current);
-    let materials = colony_res
-        .pools
-        .get(PoolKind::Materials)
-        .map_or(0, |p| p.current);
-    let plants = colony_res
-        .pools
-        .get(PoolKind::WildPlants)
-        .map_or(0, |p| p.current);
-    let faith = colony_res
-        .pools
-        .get(PoolKind::Faith)
-        .map_or(0, |p| p.current);
-    let food_consumed = survivor_count * crate::colony::survivors::FOOD_PER_SURVIVOR_PER_DAY;
+pub(crate) fn finalize_daily_cycle(
+    resources: Res<ColonyResources>,
+    mut draft: ResMut<DailyCycleDraft>,
+    mut latest: ResMut<LatestDailySummary>,
+    mut summaries: bevy_ecs::message::MessageWriter<DailySummary>,
+    mut game_log: ResMut<GameLog>,
+) {
+    let Some(mut summary) = draft.0.take() else {
+        return;
+    };
+    summary.supplies_after = resource_value(&resources, PoolKind::Supplies);
+    summary.materials_after = resource_value(&resources, PoolKind::Materials);
+    summary.wild_plants_after = resource_value(&resources, PoolKind::WildPlants);
+    summary.faith_after = resource_value(&resources, PoolKind::Faith);
     game_log.push(
         format!(
             "--- Day {} --- Supplies:{} Materials:{} Plants:{} Faith:{} | Food: -{}",
-            game_time.day, supplies, materials, plants, faith, food_consumed
+            summary.day,
+            summary.supplies_after,
+            summary.materials_after,
+            summary.wild_plants_after,
+            summary.faith_after,
+            summary.food_consumed
         ),
         LogLevel::Info,
     );
+    latest.0 = Some(summary.clone());
+    summaries.write(summary);
 }
 
 #[cfg(test)]
