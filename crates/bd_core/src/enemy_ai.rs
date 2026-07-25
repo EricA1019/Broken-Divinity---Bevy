@@ -74,24 +74,38 @@ fn enemy_melee_action() -> ActionDefinition {
 /// by validation.
 #[allow(clippy::type_complexity)] // Query types are inherently complex in ECS
 fn process_enemy_turns(
-    enemies: Query<(Entity, &Position), (With<BlocksMovement>, Without<Player>)>,
-    player: Query<(Entity, &Position), With<Player>>,
+    enemies: Query<
+        (Entity, &Position, Option<&crate::spatial::EntityScope>),
+        (With<BlocksMovement>, Without<Player>),
+    >,
+    player: Query<(Entity, &Position, Option<&crate::spatial::EntityScope>), With<Player>>,
     map: Res<SmokeMap>,
     mode: Res<crate::spatial::GameMode>,
+    foundation: Option<Res<crate::session::FoundationRuntime>>,
     mut turn: ResMut<crate::time::ShouldAdvanceTime>,
-    blockers: Query<&Position, (With<BlocksMovement>, Without<Player>)>,
+    blockers: Query<
+        (&Position, Option<&crate::spatial::EntityScope>),
+        (With<BlocksMovement>, Without<Player>),
+    >,
     mut action_writer: bevy_ecs::message::MessageWriter<ActionIntent>,
 ) {
     if !turn.1 || *mode != crate::spatial::GameMode::Tactical {
         return;
     }
 
-    let Ok((player_entity, player_pos)) = player.single() else {
+    let foundation_runtime = foundation.is_some();
+    let Some((player_entity, player_pos, _)) = player
+        .iter()
+        .find(|(_, _, scope)| crate::spatial::entity_is_active(*scope, *mode, foundation_runtime))
+    else {
         turn.1 = false;
         return; // No player alive — enemies idle
     };
 
-    for (entity, pos) in &enemies {
+    for (entity, pos, scope) in &enemies {
+        if !crate::spatial::entity_is_active(scope, *mode, foundation_runtime) {
+            continue;
+        }
         let dx = player_pos.x - pos.x;
         let dy = player_pos.y - pos.y;
         let dist = dx.abs() + dy.abs();
@@ -123,7 +137,10 @@ fn process_enemy_turns(
             }
 
             // Check for blocking entities (other enemies occupy target)
-            let is_occupied = blockers.iter().any(|p| *p == target_pos);
+            let is_occupied = blockers.iter().any(|(position, scope)| {
+                crate::spatial::entity_is_active(scope, *mode, foundation_runtime)
+                    && *position == target_pos
+            });
             if is_occupied {
                 continue; // Blocked by entity
             }

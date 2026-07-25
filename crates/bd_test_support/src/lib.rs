@@ -12,6 +12,7 @@ use bd_core::{
     },
     components::{Player, Position, ResourceNode},
     direction::Direction,
+    gamelog::GameLog,
     inventory::Item,
     map::SmokeMap,
     pathfinding::{AStarPathfinder, Pathfinder},
@@ -20,8 +21,8 @@ use bd_core::{
     relationships::{ContainedIn, FactionMember},
     save::{RunSnapshot, SaveError},
     session::{RunOutcome, RunSession},
-    signals::{ActionDenied, ActionIntent, PoolKind},
-    spatial::{GameMode, TransitionComplete, TransitionIntent},
+    signals::{ActionDenied, ActionIntent, AssignToStation, PoolKind},
+    spatial::{EntityScope, GameMode, TransitionComplete, TransitionIntent},
     trace::SignalTrace,
 };
 use bevy_app::{App, Update};
@@ -465,6 +466,91 @@ impl FoundationDriver {
 
     pub fn advance_idle(&mut self) {
         self.app.update();
+    }
+
+    /// Phase 2 fixture adapter for the pre-Phase-4 assignment message.
+    ///
+    /// This invokes the production assignment system and is intentionally not
+    /// used by the canonical acceptance scenario.
+    pub fn fixture_assign_station(
+        &mut self,
+        survivor: Entity,
+        station: Entity,
+    ) -> Result<(), ScenarioError> {
+        self.app
+            .world_mut()
+            .resource_mut::<Messages<AssignToStation>>()
+            .write(AssignToStation { survivor, station });
+        self.app.update();
+        match self.app.world().get::<SurvivorTask>(survivor) {
+            Some(SurvivorTask::AssignedTo(station_bits)) if *station_bits == station.to_bits() => {
+                Ok(())
+            }
+            task => Err(ScenarioError::new(
+                "scope fixture assignment",
+                format!("production assignment did not resolve; task={task:?}"),
+            )),
+        }
+    }
+
+    /// Phase 2 fixture adapter for the pre-Phase-4 pickup message.
+    pub fn fixture_pick_up(&mut self, item: Entity) -> Result<(), ScenarioError> {
+        let position = self
+            .position(item)
+            .ok_or_else(|| ScenarioError::new("scope fixture pickup", "item has no position"))?;
+        self.move_player_to("scope fixture pickup movement", position)?;
+        let player = self
+            .player()
+            .ok_or_else(|| ScenarioError::new("scope fixture pickup", "player is unavailable"))?;
+        self.app
+            .world_mut()
+            .resource_mut::<Messages<bd_core::inventory::PickupIntent>>()
+            .write(bd_core::inventory::PickupIntent {
+                actor: player,
+                item,
+            });
+        self.app.update();
+        self.app.update();
+        match self.app.world().get::<ContainedIn>(item) {
+            Some(contained) if contained.0 == player => Ok(()),
+            _ => Err(ScenarioError::new(
+                "scope fixture pickup",
+                "production pickup did not contain the item",
+            )),
+        }
+    }
+
+    pub fn entity_exists(&self, entity: Entity) -> bool {
+        self.app.world().entities().contains(entity)
+    }
+
+    pub fn entity_scope(&self, entity: Entity) -> Option<EntityScope> {
+        self.app.world().get::<EntityScope>(entity).copied()
+    }
+
+    pub fn scope_count(&mut self, scope: EntityScope) -> usize {
+        let entities = self.entity_ids();
+        entities
+            .into_iter()
+            .filter(|entity| self.entity_scope(*entity) == Some(scope))
+            .count()
+    }
+
+    pub fn resource_nodes(&mut self) -> Vec<Entity> {
+        let entities = self.entity_ids();
+        entities
+            .into_iter()
+            .filter(|entity| self.app.world().entity(*entity).contains::<ResourceNode>())
+            .collect()
+    }
+
+    pub fn log_messages(&self) -> Vec<String> {
+        self.app
+            .world()
+            .resource::<GameLog>()
+            .iter()
+            .map(|entry| entry.message.clone())
+            .collect()
     }
 
     pub fn player(&mut self) -> Option<Entity> {

@@ -342,6 +342,7 @@ fn legacy_action_first_foundation_action_in_outpost_is_move_not_build() {
                 Pool::new(PoolKind::Health, 20, 0, 20),
                 Pool::new(PoolKind::ActionPoints, 3, 0, 3),
             ]),
+            bd_core::spatial::EntityScope::RunPersistent,
             bd_core::spatial::PersistentEntity,
         ))
         .id();

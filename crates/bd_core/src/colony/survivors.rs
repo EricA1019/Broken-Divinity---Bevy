@@ -213,9 +213,13 @@ pub fn process_station_assignments(
 pub fn consume_shelter_resources(
     query: Query<(Entity, &mut Pools, Option<&SurvivorTask>)>,
     colony_res: Res<crate::colony::production::ColonyResources>,
+    mode: Res<crate::spatial::GameMode>,
     game_time: Res<GameTime>,
     mut pool_delta_writer: bevy_ecs::message::MessageWriter<crate::signals::PoolDeltaRequested>,
 ) {
+    if *mode != crate::spatial::GameMode::Outpost {
+        return;
+    }
     // Only runs on day change (turn 0)
     if game_time.turn != 0 {
         return;
@@ -280,9 +284,10 @@ pub fn process_survivor_movement(
         (With<crate::colony::stations::Station>, Without<Survivor>),
     >,
     map: Res<crate::map::SmokeMap>,
+    mode: Res<crate::spatial::GameMode>,
     should_advance: Res<crate::time::ShouldAdvanceTime>,
 ) {
-    if !should_advance.0 {
+    if *mode != crate::spatial::GameMode::Outpost || !should_advance.0 {
         return;
     }
     for (mut pos, task) in &mut survivors {
@@ -326,6 +331,8 @@ mod tests {
     fn test_app() -> App {
         let mut app = App::new();
         app.add_plugins(crate::BdCorePlugin);
+        app.world_mut()
+            .insert_resource(crate::spatial::GameMode::Outpost);
         app
     }
 

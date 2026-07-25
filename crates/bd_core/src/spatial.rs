@@ -39,13 +39,49 @@ pub enum GameMode {
 // Persistent vs transient entity markers
 // ---------------------------------------------------------------------------
 
+/// Authoritative Foundation location scope.
+///
+/// Cleanup, simulation queries, and presentation use this component instead
+/// of inferring lifetime from the absence of another marker.
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EntityScope {
+    RunPersistent,
+    ColonyPersistent,
+    DungeonTransient,
+}
+
+impl EntityScope {
+    pub fn is_active(self, mode: GameMode) -> bool {
+        match self {
+            Self::RunPersistent => true,
+            Self::ColonyPersistent => mode == GameMode::Outpost,
+            Self::DungeonTransient => mode == GameMode::Tactical,
+        }
+    }
+}
+
+/// Whether an entity belongs to the active simulation location.
+///
+/// Unscoped entities remain available only to the legacy/deferred runtime.
+pub fn entity_is_active(
+    scope: Option<&EntityScope>,
+    mode: GameMode,
+    foundation_runtime: bool,
+) -> bool {
+    scope.map_or(!foundation_runtime, |scope| scope.is_active(mode))
+}
+
 /// Entities with this component survive location transitions (player, party,
 /// permanent items).
+///
+/// DEPRECATED compatibility marker: Foundation code uses [`EntityScope`].
 #[derive(Component, Debug, Default, Serialize, Deserialize)]
 pub struct PersistentEntity;
 
 /// Entities with this component are removed when leaving a tactical location
 /// (combat enemies, temporary summons, dropped loot not collected).
+///
+/// DEPRECATED compatibility marker: Foundation code uses [`EntityScope`].
 #[derive(Component, Debug, Default, Serialize, Deserialize)]
 pub struct TransientEntity;
 
@@ -145,7 +181,7 @@ struct ExtractionContext<'w, 's> {
             Entity,
             &'static crate::components::ContentIdentity,
             &'static crate::relationships::ContainedIn,
-            Option<&'static TransientEntity>,
+            &'static EntityScope,
         ),
         With<crate::inventory::Item>,
     >,
@@ -165,7 +201,7 @@ fn process_transitions(
     // headless foundation runtime.
     gabriel_state: Option<Res<crate::gabriel::GabrielState>>,
     gabriel_q: Query<Entity, With<crate::components::Gabriel>>,
-    query: Query<(Entity, Option<&TransientEntity>, Option<&PersistentEntity>)>,
+    scoped_entities: Query<(Entity, &EntityScope)>,
     mut transition_complete: bevy_ecs::message::MessageWriter<TransitionComplete>,
     foundation: Option<Res<crate::session::FoundationRuntime>>,
     foundation_content: Option<Res<crate::content::FoundationContent>>,
@@ -193,11 +229,8 @@ fn process_transitions(
 
         // Clean up transient entities when leaving tactical mode
         if *mode == GameMode::Tactical && msg.target != GameMode::Tactical {
-            // Despawn each transient/non-persistent entity once. The prior
-            // two-pass cleanup scheduled transient entities twice because
-            // they are also non-persistent, producing invalid-entity warnings.
-            for (entity, transient, persistent) in query.iter() {
-                if transient.is_some() || persistent.is_none() {
+            for (entity, scope) in scoped_entities.iter() {
+                if *scope == EntityScope::DungeonTransient {
                     commands.entity(entity).despawn();
                     tracing::debug!("Despawned transient entity {entity:?}");
                 }
@@ -215,8 +248,8 @@ fn process_transitions(
                     let player = player_query.iter().next();
                     let mut transferred = 0usize;
                     if let Some(player) = player {
-                        for (_, identity, contained, transient) in extraction.loot.iter() {
-                            if transient.is_some() && contained.0 == player {
+                        for (_, identity, contained, scope) in extraction.loot.iter() {
+                            if *scope == EntityScope::DungeonTransient && contained.0 == player {
                                 extraction.storage.add_item(identity.0.clone());
                                 transferred += 1;
                             }
@@ -314,18 +347,23 @@ fn spawn_fixed_dungeon(
     **map = SmokeMap::from_tiles(dungeon.width, dungeon.height, &dungeon.tiles);
 
     if let Some(player) = player_query.iter().next() {
-        commands
-            .entity(player)
-            .insert((dungeon.entrance, Container::default()));
+        commands.entity(player).insert((
+            dungeon.entrance,
+            Container::default(),
+            EntityScope::RunPersistent,
+            PersistentEntity,
+        ));
     } else if let Some(blueprint) = content
         .blueprints
         .iter()
         .find(|bp| bp.id == "blueprint.player")
     {
         let player = spawn_from_blueprint(blueprint, Some(dungeon.entrance), &[], commands);
-        commands
-            .entity(player)
-            .insert((PersistentEntity, Container::default()));
+        commands.entity(player).insert((
+            EntityScope::RunPersistent,
+            PersistentEntity,
+            Container::default(),
+        ));
     }
 
     for placement in &dungeon.enemy_placements {
@@ -335,7 +373,9 @@ fn spawn_fixed_dungeon(
             .find(|bp| bp.id == placement.content_id)
         {
             let enemy = spawn_from_blueprint(blueprint, Some(placement.position), &[], commands);
-            commands.entity(enemy).insert(TransientEntity);
+            commands
+                .entity(enemy)
+                .insert((EntityScope::DungeonTransient, TransientEntity));
             if let Some(faction_id) = placement.faction_id.as_deref() {
                 commands
                     .entity(enemy)
@@ -364,6 +404,7 @@ fn spawn_fixed_dungeon(
             Item,
             ContentIdentity(item_def.id.clone()),
             Name(item_def.label.clone()),
+            EntityScope::DungeonTransient,
             TransientEntity,
         ));
         if item_def.usable {
@@ -383,6 +424,7 @@ fn spawn_fixed_dungeon(
         ExitTile,
         dungeon.extraction,
         Name("Dungeon Exit".into()),
+        EntityScope::DungeonTransient,
         TransientEntity,
     ));
 }
@@ -489,6 +531,8 @@ pub fn initialize_outpost(
     mut game_log: ResMut<GameLog>,
     mut map: ResMut<SmokeMap>,
     mode: Res<GameMode>,
+    foundation_content: Option<Res<crate::content::FoundationContent>>,
+    player_query: Query<Entity, With<Player>>,
 ) {
     if *mode != GameMode::Outpost {
         return;
@@ -505,6 +549,27 @@ pub fn initialize_outpost(
         *map = outpost.map.clone();
     }
 
+    if player_query.iter().next().is_none() {
+        if let Some(blueprint) = foundation_content.as_deref().and_then(|content| {
+            content
+                .blueprints
+                .iter()
+                .find(|blueprint| blueprint.id == "blueprint.player")
+        }) {
+            let player = crate::factory::spawn_from_blueprint(
+                blueprint,
+                Some(Position { x: 1, y: 1 }),
+                &[],
+                &mut commands,
+            );
+            commands.entity(player).insert((
+                EntityScope::RunPersistent,
+                PersistentEntity,
+                crate::inventory::Container::default(),
+            ));
+        }
+    }
+
     // Spawn a few starter survivors
     for i in 0..3 {
         let x = 5 + i as i32 * 5;
@@ -516,6 +581,7 @@ pub fn initialize_outpost(
                 crate::colony::survivors::Survivor,
                 crate::colony::survivors::SurvivorTask::Idle,
                 crate::colony::survivors::default_survivor_pools(),
+                EntityScope::ColonyPersistent,
                 PersistentEntity,
             ))
             .id();
@@ -546,6 +612,7 @@ pub fn initialize_outpost(
             y: exit_y,
         },
         crate::components::Name("Shelter Gate".into()),
+        EntityScope::ColonyPersistent,
         crate::spatial::PersistentEntity,
     ));
     game_log.push(
@@ -650,16 +717,24 @@ mod tests {
         let mut app = test_app();
         app.world_mut().insert_resource(GameMode::Tactical);
 
-        // Spawn player with PersistentEntity
+        // Spawn player with authoritative run scope.
         let player = app
             .world_mut()
-            .spawn((PersistentEntity, Position { x: 5, y: 5 }))
+            .spawn((
+                EntityScope::RunPersistent,
+                PersistentEntity,
+                Position { x: 5, y: 5 },
+            ))
             .id();
 
-        // Spawn transient enemy
+        // Spawn transient enemy.
         let enemy = app
             .world_mut()
-            .spawn((TransientEntity, Position { x: 3, y: 3 }))
+            .spawn((
+                EntityScope::DungeonTransient,
+                TransientEntity,
+                Position { x: 3, y: 3 },
+            ))
             .id();
 
         // Transition to Outpost
@@ -744,11 +819,18 @@ mod tests {
         let mut app = test_app();
         app.world_mut().insert_resource(GameMode::Tactical);
 
-        // Spawn entities without marker (assumed transient)
-        let summon = app.world_mut().spawn(Position { x: 1, y: 1 }).id();
+        // Spawn explicitly dungeon-owned entities.
+        let summon = app
+            .world_mut()
+            .spawn((EntityScope::DungeonTransient, Position { x: 1, y: 1 }))
+            .id();
         let item = app
             .world_mut()
-            .spawn((crate::inventory::Item, Position { x: 2, y: 2 }))
+            .spawn((
+                EntityScope::DungeonTransient,
+                crate::inventory::Item,
+                Position { x: 2, y: 2 },
+            ))
             .id();
 
         // Transition to outpost
@@ -760,7 +842,7 @@ mod tests {
             });
         app.update();
 
-        // Non-persistent entities should be despawned
+        // Dungeon-scoped entities should be despawned.
         assert!(!app.world().entities().contains(summon));
         assert!(!app.world().entities().contains(item));
     }

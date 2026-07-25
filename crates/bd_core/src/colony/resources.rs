@@ -64,6 +64,7 @@ pub fn spawn_resource_nodes(commands: &mut Commands, map: &SmokeMap) -> u32 {
                 },
                 Position { x, y },
                 Name(name.into()),
+                crate::spatial::EntityScope::ColonyPersistent,
             ));
             spawned += 1;
         }
@@ -88,10 +89,14 @@ pub fn process_survivor_gathering(
     >,
     nodes: Query<(&Position, &ResourceNode)>,
     mut colony_res: ResMut<crate::colony::production::ColonyResources>,
+    mode: Res<crate::spatial::GameMode>,
     game_time: Res<crate::time::GameTime>,
     mut last_day: Local<u64>,
     mut game_log: ResMut<crate::gamelog::GameLog>,
 ) {
+    if *mode != crate::spatial::GameMode::Outpost {
+        return;
+    }
     // Only run on day change (matches process_production + process_raids pattern)
     if game_time.day == *last_day || game_time.day == 0 {
         return;

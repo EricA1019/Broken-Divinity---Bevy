@@ -186,6 +186,11 @@ mod tests {
             }],
             ..Default::default()
         });
+        app.world_mut()
+            .insert_resource(crate::spatial::GameMode::Tactical);
+        app.world_mut()
+            .resource_mut::<crate::session::RunSession>()
+            .phase = crate::spatial::GameMode::Tactical;
         app
     }
 
@@ -197,6 +202,7 @@ mod tests {
             .world_mut()
             .spawn((
                 Player,
+                crate::spatial::EntityScope::RunPersistent,
                 Name("Player".into()),
                 Position { x: 5, y: 5 },
                 SkillProgression::default(),
@@ -211,6 +217,7 @@ mod tests {
             .world_mut()
             .spawn((
                 BlocksMovement,
+                crate::spatial::EntityScope::DungeonTransient,
                 Position { x: 6, y: 5 },
                 Pools::new(vec![Pool::new(PoolKind::Health, 20, 0, 20)]),
             ))
@@ -246,6 +253,7 @@ mod tests {
             .world_mut()
             .spawn((
                 Player,
+                crate::spatial::EntityScope::RunPersistent,
                 Position { x: 5, y: 5 },
                 SkillProgression::default(),
                 Pools::new(vec![Pool::new(PoolKind::ActionPoints, 3, 0, 3)]),

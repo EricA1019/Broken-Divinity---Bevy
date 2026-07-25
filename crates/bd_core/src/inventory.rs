@@ -124,21 +124,35 @@ fn process_pickup(
         &Position,
         Option<&crate::components::Player>,
         Option<&crate::time::AwaitingEnemyPhase>,
+        Option<&crate::spatial::EntityScope>,
     )>,
     containers: Query<&Container>,
     #[allow(clippy::type_complexity)] items: Query<
-        (Entity, &Name, &Position),
+        (
+            Entity,
+            &Name,
+            &Position,
+            Option<&crate::spatial::EntityScope>,
+        ),
         (With<Item>, Without<Container>),
     >,
+    mode: Res<crate::spatial::GameMode>,
+    foundation: Option<Res<crate::session::FoundationRuntime>>,
 ) {
+    let foundation_runtime = foundation.is_some();
     for intent in messages.read() {
-        let Ok((actor_position, player, awaiting_enemy_phase)) = actors.get(intent.actor) else {
+        let Ok((actor_position, player, awaiting_enemy_phase, actor_scope)) =
+            actors.get(intent.actor)
+        else {
             game_log.push(
                 "You cannot pick up an item without a position.",
                 LogLevel::Warn,
             );
             continue;
         };
+        if !crate::spatial::entity_is_active(actor_scope, *mode, foundation_runtime) {
+            continue;
+        }
         if player.is_some() && awaiting_enemy_phase.is_some() {
             game_log.push(
                 "Enemy phase is resolving; wait for the next turn.",
@@ -150,10 +164,14 @@ fn process_pickup(
             game_log.push("You have nowhere to store that item.", LogLevel::Warn);
             continue;
         }
-        let Ok((_, item_name, item_position)) = items.get(intent.item) else {
+        let Ok((_, item_name, item_position, item_scope)) = items.get(intent.item) else {
             game_log.push("That item is no longer available.", LogLevel::Warn);
             continue;
         };
+        if !crate::spatial::entity_is_active(item_scope, *mode, foundation_runtime) {
+            game_log.push("That item is not in this location.", LogLevel::Warn);
+            continue;
+        }
         if actor_position != item_position {
             game_log.push("You must stand on the item to pick it up.", LogLevel::Warn);
             continue;

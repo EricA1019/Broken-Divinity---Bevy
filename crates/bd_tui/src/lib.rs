@@ -114,8 +114,26 @@ fn sync_event_screen(
 /// Map keyboard input to ActionIntent messages.
 #[derive(SystemParam)]
 struct InputQueries<'w, 's> {
-    player: Query<'w, 's, (Entity, &'static Position), With<Player>>,
-    enemies: Query<'w, 's, (Entity, &'static Position), (With<BlocksMovement>, Without<Player>)>,
+    player: Query<
+        'w,
+        's,
+        (
+            Entity,
+            &'static Position,
+            Option<&'static bd_core::spatial::EntityScope>,
+        ),
+        With<Player>,
+    >,
+    enemies: Query<
+        'w,
+        's,
+        (
+            Entity,
+            &'static Position,
+            Option<&'static bd_core::spatial::EntityScope>,
+        ),
+        (With<BlocksMovement>, Without<Player>),
+    >,
     items: Query<
         'w,
         's,
@@ -124,6 +142,7 @@ struct InputQueries<'w, 's> {
             Option<&'static Position>,
             Option<&'static bd_core::inventory::Usable>,
             Option<&'static bd_core::relationships::ContainedIn>,
+            Option<&'static bd_core::spatial::EntityScope>,
         ),
         With<bd_core::inventory::Item>,
     >,
@@ -134,10 +153,20 @@ struct InputQueries<'w, 's> {
             Entity,
             &'static Position,
             &'static bd_core::colony::survivors::SurvivorTask,
+            Option<&'static bd_core::spatial::EntityScope>,
         ),
         With<bd_core::colony::survivors::Survivor>,
     >,
-    stations: Query<'w, 's, (Entity, &'static Position), With<bd_core::colony::stations::Station>>,
+    stations: Query<
+        'w,
+        's,
+        (
+            Entity,
+            &'static Position,
+            Option<&'static bd_core::spatial::EntityScope>,
+        ),
+        With<bd_core::colony::stations::Station>,
+    >,
 }
 
 #[derive(SystemParam)]
@@ -221,7 +250,11 @@ fn map_input_to_intents(
         return;
     }
 
-    let Ok((player_entity, player_pos)) = input.player.single() else {
+    let Some((player_entity, player_pos, _)) = input
+        .player
+        .iter()
+        .find(|(_, _, scope)| scope_is_active(*scope, *mode))
+    else {
         // Player not spawned yet (spawn_outpost_player runs after Input set).
         // If build mode was queued from title, position cursor now.
         if build_ghost.active {
@@ -322,10 +355,14 @@ fn map_input_to_intents(
             // 'a' key: assign survivor in outpost, move left elsewhere
             KeyCode::Char('a') => {
                 if *mode == bd_core::spatial::GameMode::Outpost {
-                    let nearest = input.survivors.iter().min_by_key(|(_, sp, _)| {
-                        ((player_pos.x - sp.x).abs() + (player_pos.y - sp.y).abs()) as u32
-                    });
-                    if let Some((survivor_entity, _, task)) = nearest {
+                    let nearest = input
+                        .survivors
+                        .iter()
+                        .filter(|(_, _, _, scope)| scope_is_active(*scope, *mode))
+                        .min_by_key(|(_, sp, _, _)| {
+                            ((player_pos.x - sp.x).abs() + (player_pos.y - sp.y).abs()) as u32
+                        });
+                    if let Some((survivor_entity, _, task, _)) = nearest {
                         let next_action = match task {
                             bd_core::colony::survivors::SurvivorTask::Idle => {
                                 "ability.assign_gathering"
@@ -376,7 +413,7 @@ fn map_input_to_intents(
             }
             // Attack — target nearest enemy (no-op if none in range)
             KeyCode::Char('f') => {
-                if let Some(nearest) = find_nearest_enemy(Some(player_pos), &input.enemies) {
+                if let Some(nearest) = find_nearest_enemy(Some(player_pos), &input.enemies, *mode) {
                     action_writer.write(ActionIntent {
                         actor: player_entity,
                         action_id: "ability.attack".into(),
@@ -402,10 +439,11 @@ fn map_input_to_intents(
             }
             // Pick up the item at the player's current position.
             KeyCode::Char('p') => {
-                if let Some((item, _, _, _)) = input
+                if let Some((item, _, _, _, _)) = input
                     .items
                     .iter()
-                    .find(|(_, pos, _, _)| pos.is_some_and(|pos| *pos == *player_pos))
+                    .filter(|(_, _, _, _, scope)| scope_is_active(*scope, *mode))
+                    .find(|(_, pos, _, _, _)| pos.is_some_and(|pos| *pos == *player_pos))
                 {
                     pickup_writer.write(bd_core::inventory::PickupIntent {
                         actor: player_entity,
@@ -417,10 +455,11 @@ fn map_input_to_intents(
             }
             // Use the first carried usable item through the action pipeline.
             KeyCode::Char('u') => {
-                if let Some((item, _, Some(_), Some(_))) = input
+                if let Some((item, _, Some(_), Some(_), _)) = input
                     .items
                     .iter()
-                    .find(|(_, _, usable, contained)| usable.is_some() && contained.is_some())
+                    .filter(|(_, _, _, _, scope)| scope_is_active(*scope, *mode))
+                    .find(|(_, _, usable, contained, _)| usable.is_some() && contained.is_some())
                 {
                     action_writer.write(ActionIntent {
                         actor: player_entity,
@@ -485,14 +524,22 @@ fn map_input_to_intents(
             KeyCode::Char('e') => {
                 if *mode == bd_core::spatial::GameMode::Outpost {
                     // Find nearest survivor
-                    let nearest_survivor = input.survivors.iter().min_by_key(|(_, sp, _)| {
-                        ((player_pos.x - sp.x).abs() + (player_pos.y - sp.y).abs()) as u32
-                    });
+                    let nearest_survivor = input
+                        .survivors
+                        .iter()
+                        .filter(|(_, _, _, scope)| scope_is_active(*scope, *mode))
+                        .min_by_key(|(_, sp, _, _)| {
+                            ((player_pos.x - sp.x).abs() + (player_pos.y - sp.y).abs()) as u32
+                        });
                     // Find nearest station
-                    let nearest_station = input.stations.iter().min_by_key(|(_, sp)| {
-                        ((player_pos.x - sp.x).abs() + (player_pos.y - sp.y).abs()) as u32
-                    });
-                    if let (Some((survivor_entity, _, _)), Some((station_entity, _))) =
+                    let nearest_station = input
+                        .stations
+                        .iter()
+                        .filter(|(_, _, scope)| scope_is_active(*scope, *mode))
+                        .min_by_key(|(_, sp, _)| {
+                            ((player_pos.x - sp.x).abs() + (player_pos.y - sp.y).abs()) as u32
+                        });
+                    if let (Some((survivor_entity, _, _, _)), Some((station_entity, _, _))) =
                         (nearest_survivor, nearest_station)
                     {
                         assign_writer.write(bd_core::signals::AssignToStation {
@@ -711,13 +758,25 @@ fn map_input_to_intents(
 #[allow(clippy::type_complexity)]
 fn find_nearest_enemy(
     player_pos: Option<&Position>,
-    enemies: &Query<(Entity, &Position), (With<BlocksMovement>, Without<Player>)>,
+    enemies: &Query<
+        (Entity, &Position, Option<&bd_core::spatial::EntityScope>),
+        (With<BlocksMovement>, Without<Player>),
+    >,
+    mode: bd_core::spatial::GameMode,
 ) -> Option<Entity> {
     let pp = player_pos?;
     enemies
         .iter()
-        .min_by_key(|(_, pos)| (pos.x - pp.x).unsigned_abs() + (pos.y - pp.y).unsigned_abs())
-        .map(|(e, _)| e)
+        .filter(|(_, _, scope)| scope_is_active(*scope, mode))
+        .min_by_key(|(_, pos, _)| (pos.x - pp.x).unsigned_abs() + (pos.y - pp.y).unsigned_abs())
+        .map(|(entity, _, _)| entity)
+}
+
+fn scope_is_active(
+    scope: Option<&bd_core::spatial::EntityScope>,
+    mode: bd_core::spatial::GameMode,
+) -> bool {
+    scope.is_none_or(|scope| scope.is_active(mode))
 }
 
 /// Draw the full TUI layout driven by the current screen definition.

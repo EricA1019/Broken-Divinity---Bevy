@@ -63,10 +63,14 @@ pub fn process_production(
         (Entity, &crate::colony::stations::StationType),
         With<crate::colony::stations::Station>,
     >,
+    mode: Res<crate::spatial::GameMode>,
     game_time: Res<GameTime>,
     mut game_log: ResMut<GameLog>,
     mut last_day: bevy_ecs::system::Local<u64>,
 ) {
+    if *mode != crate::spatial::GameMode::Outpost {
+        return;
+    }
     if game_time.day == *last_day || game_time.day == 0 {
         return;
     }

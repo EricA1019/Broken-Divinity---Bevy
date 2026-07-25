@@ -245,10 +245,18 @@ fn build_stats_vm(
 }
 
 fn build_party_vm(
-    survivors: Query<&Name, With<bd_core::colony::survivors::Survivor>>,
+    survivors: Query<
+        (&Name, Option<&bd_core::spatial::EntityScope>),
+        With<bd_core::colony::survivors::Survivor>,
+    >,
+    mode: Res<bd_core::spatial::GameMode>,
     mut vm: ResMut<StatsViewModel>,
 ) {
-    vm.party_names = survivors.iter().map(|n| n.0.clone()).collect();
+    vm.party_names = survivors
+        .iter()
+        .filter(|(_, scope)| scope_active(*scope, *mode))
+        .map(|(name, _)| name.0.clone())
+        .collect();
 }
 
 fn build_log_vm(log: Res<GameLog>, mut vm: ResMut<LogViewModel>) {
@@ -262,12 +270,19 @@ fn build_log_vm(log: Res<GameLog>, mut vm: ResMut<LogViewModel>) {
 }
 
 fn build_action_list_vm(
-    player: Query<(&Position, &Pools), With<Player>>,
-    enemies: Query<&Position, (With<BlocksMovement>, Without<Player>)>,
+    player: Query<(&Position, &Pools, Option<&bd_core::spatial::EntityScope>), With<Player>>,
+    enemies: Query<
+        (&Position, Option<&bd_core::spatial::EntityScope>),
+        (With<BlocksMovement>, Without<Player>),
+    >,
+    mode: Res<bd_core::spatial::GameMode>,
     map: Res<SmokeMap>,
     mut vm: ResMut<ActionListViewModel>,
 ) {
-    let Ok((pp, pools)) = player.single() else {
+    let Some((pp, pools, _)) = player
+        .iter()
+        .find(|(_, _, scope)| scope_active(*scope, *mode))
+    else {
         vm.actions.clear();
         return;
     };
@@ -275,7 +290,10 @@ fn build_action_list_vm(
     let has_ap = ap >= 1;
     let enemy_near = enemies
         .iter()
-        .any(|ep| (ep.x - pp.x).unsigned_abs() + (ep.y - pp.y).unsigned_abs() <= 1);
+        .filter(|(_, scope)| scope_active(*scope, *mode))
+        .any(|(position, _)| {
+            (position.x - pp.x).unsigned_abs() + (position.y - pp.y).unsigned_abs() <= 1
+        });
     let can_move = map.is_walkable(pp.x + 1, pp.y);
 
     vm.actions = vec![
@@ -320,9 +338,13 @@ fn build_action_list_vm(
 
 fn build_map_vm(
     map: Res<SmokeMap>,
-    player_pos: Query<&Position, With<Player>>,
+    player_pos: Query<(&Position, Option<&bd_core::spatial::EntityScope>), With<Player>>,
     enemies: Query<
-        (&Position, Option<&bd_core::components::Name>),
+        (
+            &Position,
+            Option<&bd_core::components::Name>,
+            Option<&bd_core::spatial::EntityScope>,
+        ),
         (With<BlocksMovement>, Without<Player>),
     >,
     survivors: Query<
@@ -330,13 +352,28 @@ fn build_map_vm(
             &Position,
             Option<&bd_core::components::Name>,
             &bd_core::colony::survivors::SurvivorTask,
+            Option<&bd_core::spatial::EntityScope>,
         ),
         With<bd_core::colony::survivors::Survivor>,
     >,
-    stations: Query<(&Position, &bd_core::colony::stations::StationType)>,
-    gabriel_q: Query<&Position, With<bd_core::components::Gabriel>>,
-    resource_nodes: Query<(&Position, &bd_core::components::ResourceNode)>,
-    exit_tiles: Query<&Position, With<bd_core::components::ExitTile>>,
+    stations: Query<(
+        &Position,
+        &bd_core::colony::stations::StationType,
+        Option<&bd_core::spatial::EntityScope>,
+    )>,
+    gabriel_q: Query<
+        (&Position, Option<&bd_core::spatial::EntityScope>),
+        With<bd_core::components::Gabriel>,
+    >,
+    resource_nodes: Query<(
+        &Position,
+        &bd_core::components::ResourceNode,
+        Option<&bd_core::spatial::EntityScope>,
+    )>,
+    exit_tiles: Query<
+        (&Position, Option<&bd_core::spatial::EntityScope>),
+        With<bd_core::components::ExitTile>,
+    >,
     build_ghost: Res<bd_core::colony::stations::BuildGhostState>,
     build_menu: Res<bd_core::colony::stations::BuildMenuState>,
     mut vm: ResMut<MapViewModel>,
@@ -358,12 +395,18 @@ fn build_map_vm(
             vm.tiles.push(active_map.get(x, y).unwrap_or(Tile::Wall));
         }
     }
-    vm.player_pos = player_pos.single().ok().copied();
+    vm.player_pos = player_pos
+        .iter()
+        .find(|(_, scope)| scope_active(*scope, *mode))
+        .map(|(position, _)| *position);
     vm.enemy_positions.clear();
     vm.enemy_glyphs.clear();
     // Only collect enemies in tactical/dungeon mode — shelter has no enemies
     if *mode != bd_core::spatial::GameMode::Outpost {
-        for (pos, name) in enemies.iter() {
+        for (pos, name, scope) in enemies.iter() {
+            if !scope_active(scope, *mode) {
+                continue;
+            }
             vm.enemy_positions.push(*pos);
             let glyph = name.map_or('E', |n| match n.0.as_str() {
                 "Rat" => 'r',
@@ -375,7 +418,10 @@ fn build_map_vm(
         }
     }
     vm.survivor_glyphs.clear();
-    for (pos, _name, task) in survivors.iter() {
+    for (pos, _name, task, scope) in survivors.iter() {
+        if !scope_active(scope, *mode) {
+            continue;
+        }
         let glyph = match task {
             bd_core::colony::survivors::SurvivorTask::Idle => 'A',
             bd_core::colony::survivors::SurvivorTask::Gathering => 'G',
@@ -386,7 +432,10 @@ fn build_map_vm(
         vm.survivor_glyphs.push((*pos, glyph));
     }
     vm.station_glyphs.clear();
-    for (pos, stype) in stations.iter() {
+    for (pos, stype, scope) in stations.iter() {
+        if !scope_active(scope, *mode) {
+            continue;
+        }
         let glyph = match stype {
             bd_core::colony::stations::StationType::Stove => 'F',
             bd_core::colony::stations::StationType::Altar => 'A',
@@ -398,11 +447,17 @@ fn build_map_vm(
     }
 
     // P15-C: Gabriel glyph on shelter map
-    vm.gabriel_glyph = gabriel_q.iter().next().map(|pos| (*pos, 'G'));
+    vm.gabriel_glyph = gabriel_q
+        .iter()
+        .find(|(_, scope)| scope_active(*scope, *mode))
+        .map(|(position, _)| (*position, 'G'));
 
     // P22-D: Resource node glyphs on shelter map
     vm.resource_glyphs.clear();
-    for (pos, node) in resource_nodes.iter() {
+    for (pos, node, scope) in resource_nodes.iter() {
+        if !scope_active(scope, *mode) {
+            continue;
+        }
         let glyph = match node.kind {
             bd_core::components::ResourceNodeType::Trees => 'T',
             bd_core::components::ResourceNodeType::WaterSource => 'W',
@@ -413,7 +468,10 @@ fn build_map_vm(
 
     // P3-A: Exit tile glyphs on the shelter map (gate, dungeon exits)
     vm.exit_glyphs.clear();
-    for pos in exit_tiles.iter() {
+    for (pos, scope) in exit_tiles.iter() {
+        if !scope_active(scope, *mode) {
+            continue;
+        }
         vm.exit_glyphs.push((*pos, '>'));
     }
 
@@ -450,20 +508,30 @@ fn build_map_vm(
 
 /// Build the inventory container view model for the player.
 fn build_container_vm(
-    player: Query<Entity, With<Player>>,
-    items: Query<(Entity, Option<&Name>, Option<&Item>)>,
+    player: Query<(Entity, Option<&bd_core::spatial::EntityScope>), With<Player>>,
+    items: Query<(
+        Entity,
+        Option<&Name>,
+        Option<&Item>,
+        Option<&bd_core::spatial::EntityScope>,
+    )>,
     contained_in: Query<&ContainedIn>,
     equipped_by: Query<&EquippedBy>,
+    mode: Res<bd_core::spatial::GameMode>,
     mut vm: ResMut<ContainerViewModel>,
 ) {
-    let Ok(player_entity) = player.single() else {
+    let Some((player_entity, _)) = player.iter().find(|(_, scope)| scope_active(*scope, *mode))
+    else {
         vm.items.clear();
         return;
     };
 
     // Find items in player's inventory (ContainedIn → player)
     let mut entries: Vec<ItemEntryVm> = Vec::new();
-    for (entity, name, _item) in items.iter() {
+    for (entity, name, _item, scope) in items.iter() {
+        if !scope_active(scope, *mode) {
+            continue;
+        }
         // Check if this item belongs to the player
         let is_contained = contained_in
             .get(entity)
@@ -486,6 +554,13 @@ fn build_container_vm(
     }
 
     vm.items = entries;
+}
+
+fn scope_active(
+    scope: Option<&bd_core::spatial::EntityScope>,
+    mode: bd_core::spatial::GameMode,
+) -> bool {
+    scope.is_none_or(|scope| scope.is_active(mode))
 }
 
 /// Build the event view model from the CurrentEvent resource.

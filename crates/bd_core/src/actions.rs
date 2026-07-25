@@ -5,6 +5,7 @@
 
 use bevy_app::App;
 use bevy_ecs::prelude::*;
+use bevy_ecs::system::SystemParam;
 
 use crate::{
     BdSet,
@@ -270,6 +271,70 @@ struct PendingAction {
     target: Option<Entity>,
 }
 
+#[derive(SystemParam)]
+struct ActionValidationQueries<'w, 's> {
+    actors: Query<
+        'w,
+        's,
+        (
+            Entity,
+            &'static Position,
+            Option<&'static Pools>,
+            Option<&'static Player>,
+            Option<&'static crate::time::AwaitingEnemyPhase>,
+            Option<&'static crate::spatial::EntityScope>,
+        ),
+    >,
+    targets: Query<
+        'w,
+        's,
+        (
+            Entity,
+            &'static Position,
+            Option<&'static Player>,
+            Option<&'static crate::spatial::EntityScope>,
+        ),
+    >,
+    all_entities: Query<'w, 's, (Entity, Option<&'static crate::spatial::EntityScope>)>,
+    contained_items: Query<
+        'w,
+        's,
+        (
+            Entity,
+            &'static crate::relationships::ContainedIn,
+            Option<&'static crate::spatial::EntityScope>,
+        ),
+    >,
+    survivors: Query<
+        'w,
+        's,
+        (
+            Entity,
+            &'static SurvivorTask,
+            Option<&'static crate::spatial::EntityScope>,
+        ),
+        With<Survivor>,
+    >,
+    blocked_positions: Query<
+        'w,
+        's,
+        (
+            &'static Position,
+            Option<&'static crate::spatial::EntityScope>,
+        ),
+        With<BlocksMovement>,
+    >,
+    exit_positions: Query<
+        'w,
+        's,
+        (
+            &'static Position,
+            Option<&'static crate::spatial::EntityScope>,
+        ),
+        With<crate::components::ExitTile>,
+    >,
+}
+
 /// Read ActionIntent messages, validate against action definitions, and
 /// either tag with PendingAction or emit ActionDenied.
 #[allow(clippy::too_many_arguments)]
@@ -278,26 +343,23 @@ fn validate_action_intents(
     registry: Res<ActionRegistry>,
     map: Res<SmokeMap>,
     mode: Res<crate::spatial::GameMode>,
+    foundation: Option<Res<crate::session::FoundationRuntime>>,
     mut messages: bevy_ecs::message::MessageReader<ActionIntent>,
     mut denied_writer: bevy_ecs::message::MessageWriter<ActionDenied>,
     mut game_log: ResMut<GameLog>,
     mut trace: ResMut<SignalTrace>,
     colony_res: Res<ColonyResources>,
-    actors: Query<(
-        Entity,
-        &Position,
-        Option<&Pools>,
-        Option<&Player>,
-        Option<&crate::time::AwaitingEnemyPhase>,
-    )>,
-    targets: Query<(Entity, &Position, Option<&Player>)>,
-    all_entities: Query<Entity>,
-    contained_items: Query<(Entity, &crate::relationships::ContainedIn)>,
-    survivors: Query<(Entity, &SurvivorTask), With<Survivor>>,
-    blocked_positions: Query<&Position, With<BlocksMovement>>,
-    exit_positions: Query<&Position, With<crate::components::ExitTile>>,
+    queries: ActionValidationQueries,
 ) {
-    let target_positions: Vec<(Entity, &Position, Option<&Player>)> = targets.iter().collect();
+    let foundation_runtime = foundation.is_some();
+    let target_positions: Vec<(Entity, &Position, Option<&Player>)> = queries
+        .targets
+        .iter()
+        .filter(|(_, _, _, scope)| {
+            crate::spatial::entity_is_active(*scope, *mode, foundation_runtime)
+        })
+        .map(|(entity, position, player, _)| (entity, position, player))
+        .collect();
 
     for intent in messages.read() {
         trace.push(
@@ -305,10 +367,14 @@ fn validate_action_intents(
             "ActionIntent",
             format!("actor={:?} action={}", intent.actor, intent.action_id),
         );
-        let Ok((_, actor_pos, pools, player_flag, awaiting_enemy_phase)) = actors.get(intent.actor)
+        let Ok((_, actor_pos, pools, player_flag, awaiting_enemy_phase, actor_scope)) =
+            queries.actors.get(intent.actor)
         else {
             continue;
         };
+        if !crate::spatial::entity_is_active(actor_scope, *mode, foundation_runtime) {
+            continue;
+        }
 
         let Some(def) = registry.get(&intent.action_id) else {
             denied_writer.write(ActionDenied {
@@ -417,8 +483,22 @@ fn validate_action_intents(
                 }
                 Requirement::TargetHasComponent(component_name) => {
                     let has_component = intent.target.map_or(false, |t| match *component_name {
-                        "Survivor" => survivors.iter().any(|(e, _)| e == t),
-                        _ => all_entities.iter().any(|e| e == t),
+                        "Survivor" => queries.survivors.iter().any(|(e, _, scope)| {
+                            e == t
+                                && crate::spatial::entity_is_active(
+                                    scope,
+                                    *mode,
+                                    foundation_runtime,
+                                )
+                        }),
+                        _ => queries.all_entities.iter().any(|(e, scope)| {
+                            e == t
+                                && crate::spatial::entity_is_active(
+                                    scope,
+                                    *mode,
+                                    foundation_runtime,
+                                )
+                        }),
                     });
                     if !has_component {
                         denied = Some(DenialReason::InvalidTarget);
@@ -427,9 +507,18 @@ fn validate_action_intents(
                 }
                 Requirement::TargetContainedByActor => {
                     let contained = intent.target.is_some_and(|target| {
-                        contained_items
+                        queries
+                            .contained_items
                             .iter()
-                            .any(|(item, container)| item == target && container.0 == intent.actor)
+                            .any(|(item, container, scope)| {
+                                item == target
+                                    && container.0 == intent.actor
+                                    && crate::spatial::entity_is_active(
+                                        scope,
+                                        *mode,
+                                        foundation_runtime,
+                                    )
+                            })
                     });
                     if !contained {
                         denied = Some(DenialReason::InvalidTarget);
@@ -438,10 +527,18 @@ fn validate_action_intents(
                 }
                 Requirement::TargetTaskIsIdle => {
                     let is_idle = intent.target.map_or(false, |t| {
-                        survivors
+                        queries
+                            .survivors
                             .iter()
-                            .find(|(e, _)| *e == t)
-                            .map_or(false, |(_, task)| matches!(task, SurvivorTask::Idle))
+                            .find(|(e, _, scope)| {
+                                *e == t
+                                    && crate::spatial::entity_is_active(
+                                        *scope,
+                                        *mode,
+                                        foundation_runtime,
+                                    )
+                            })
+                            .map_or(false, |(_, task, _)| matches!(task, SurvivorTask::Idle))
                     });
                     if !is_idle {
                         denied = Some(DenialReason::Other("target not idle".into()));
@@ -449,10 +546,18 @@ fn validate_action_intents(
                     }
                 }
                 Requirement::PlayerHasEntityInRange(range) => {
-                    let player_pos = actors
+                    let player_pos = queries
+                        .actors
                         .iter()
-                        .find(|(_, _, _, player, _)| player.is_some())
-                        .map(|(_, p, _, _, _)| *p);
+                        .find(|(_, _, _, player, _, scope)| {
+                            player.is_some()
+                                && crate::spatial::entity_is_active(
+                                    *scope,
+                                    *mode,
+                                    foundation_runtime,
+                                )
+                        })
+                        .map(|(_, p, _, _, _, _)| *p);
                     let target_pos = intent.target.and_then(|t| {
                         target_positions
                             .iter()
@@ -475,10 +580,18 @@ fn validate_action_intents(
                 }
                 Requirement::TileVacant => {
                     // Compute target tile position from actor position + direction
-                    let actor_pos = actors
+                    let actor_pos = queries
+                        .actors
                         .iter()
-                        .find(|(e, _, _, _, _)| *e == intent.actor)
-                        .map(|(_, p, _, _, _)| *p);
+                        .find(|(e, _, _, _, _, scope)| {
+                            *e == intent.actor
+                                && crate::spatial::entity_is_active(
+                                    *scope,
+                                    *mode,
+                                    foundation_runtime,
+                                )
+                        })
+                        .map(|(_, p, _, _, _, _)| *p);
                     if let (Some(pos), Some(dir)) = (actor_pos, intent.direction) {
                         let (dx, dy) = dir.delta();
                         let target_pos = crate::components::Position {
@@ -486,9 +599,11 @@ fn validate_action_intents(
                             y: pos.y + dy,
                         };
                         // Check if any blocking entity occupies that tile
-                        let occupied = blocked_positions
-                            .iter()
-                            .any(|bp| bp.x == target_pos.x && bp.y == target_pos.y);
+                        let occupied = queries.blocked_positions.iter().any(|(position, scope)| {
+                            crate::spatial::entity_is_active(scope, *mode, foundation_runtime)
+                                && position.x == target_pos.x
+                                && position.y == target_pos.y
+                        });
                         if occupied {
                             denied = Some(DenialReason::Other("tile occupied".into()));
                             break;
@@ -496,7 +611,10 @@ fn validate_action_intents(
                     }
                 }
                 Requirement::AtExit => {
-                    if !exit_positions.iter().any(|exit| *exit == *actor_pos) {
+                    if !queries.exit_positions.iter().any(|(exit, scope)| {
+                        crate::spatial::entity_is_active(scope, *mode, foundation_runtime)
+                            && *exit == *actor_pos
+                    }) {
                         denied = Some(DenialReason::Other(
                             "You must stand at the exit to extract.".into(),
                         ));
@@ -584,6 +702,32 @@ fn compile_action_costs(
 
 // ── Effect resolution ──
 
+#[derive(SystemParam)]
+struct ActionResolutionLocation<'w, 's> {
+    mode: Res<'w, crate::spatial::GameMode>,
+    foundation: Option<Res<'w, crate::session::FoundationRuntime>>,
+    actors: Query<
+        'w,
+        's,
+        (
+            Entity,
+            &'static Position,
+            &'static PendingAction,
+            Option<&'static Player>,
+            Option<&'static crate::spatial::EntityScope>,
+        ),
+    >,
+    blockers: Query<
+        'w,
+        's,
+        (
+            &'static Position,
+            Option<&'static crate::spatial::EntityScope>,
+        ),
+        With<BlocksMovement>,
+    >,
+}
+
 /// Resolve action effects: move entities, apply pool deltas (via messages), log, etc.
 #[allow(clippy::too_many_arguments)]
 fn resolve_action_effects(
@@ -601,12 +745,22 @@ fn resolve_action_effects(
     mut pending_station: ResMut<crate::colony::stations::PendingStationBuild>,
     mut should_advance: ResMut<crate::time::ShouldAdvanceTime>,
     mut session: ResMut<crate::session::RunSession>,
-    actors: Query<(Entity, &Position, &PendingAction, Option<&Player>)>,
-    blockers: Query<&Position, With<BlocksMovement>>,
+    location: ActionResolutionLocation,
 ) {
-    let blocked_positions: Vec<Position> = blockers.iter().copied().collect();
+    let foundation_runtime = location.foundation.is_some();
+    let blocked_positions: Vec<Position> = location
+        .blockers
+        .iter()
+        .filter(|(_, scope)| {
+            crate::spatial::entity_is_active(*scope, *location.mode, foundation_runtime)
+        })
+        .map(|(position, _)| *position)
+        .collect();
 
-    for (entity, pos, pending, player_flag) in actors.iter() {
+    for (entity, pos, pending, player_flag, scope) in location.actors.iter() {
+        if !crate::spatial::entity_is_active(scope, *location.mode, foundation_runtime) {
+            continue;
+        }
         trace.push(
             "Mutation",
             "EffectResolve",
@@ -734,6 +888,7 @@ fn resolve_action_effects(
                         build_pos,
                         crate::components::BlocksMovement,
                         crate::components::Name(format!("{:?}", station_type)),
+                        crate::spatial::EntityScope::ColonyPersistent,
                     ));
                     if player_flag.is_some() {
                         game_log.push(format!("You build a {:?}.", station_type), LogLevel::Info);
