@@ -498,7 +498,7 @@ mod tests {
         components::{Player, Position, Tile},
         gamelog::GameLog,
         map::SmokeMap,
-        pools::{Pool, Pools},
+        pools::Pools,
         signals::EventTrigger,
     };
     use bevy_app::App;

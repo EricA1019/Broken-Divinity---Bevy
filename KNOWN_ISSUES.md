@@ -1,9 +1,16 @@
-# Known Issues — Broken Divinity Kernel
+# Historical Known Issues Snapshot — Broken Divinity Kernel
+
+> **Historical only.** This file records the 2026-07-11 project state and must
+> not be used as a current issue list or implementation plan. Foundation
+> Recovery resolved or reclassified multiple entries below. Current limitations
+> and final evidence are recorded in
+> [`../docs/FOUNDATION-RECOVERY-PLAN.md`](../docs/FOUNDATION-RECOVERY-PLAN.md).
+> Product P2 requires a new owner-approved plan.
 
 **Date**: 2026-07-11  
 **Phase**: GDD Gap Closure Complete
 
-This document tracks known limitations, unimplemented features, and design gaps. Issues are not blockers for the production gate — they represent follow-up work.
+The sections below are preserved as historical evidence and may be stale.
 
 ## Critical (no known critical issues)
 

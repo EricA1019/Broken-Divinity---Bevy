@@ -183,8 +183,6 @@ fn register_foundation(app: &mut App, foundation: bool) {
     actions::register_actions(app);
     progression::register_progression(app);
 
-    // Register colony resources...<!--  DUPLICATE MARKER -->
-
     // Register status/trigger/modifier system
     statuses::register_statuses(app);
     // Register virtue gain systems

@@ -209,46 +209,66 @@ fn map_input_to_intents(
 ) {
     use crossterm::event::KeyCode;
 
-    // If in GameOver mode, offer a clean restart while preserving explicit quit.
+    // Game over preserves the terminal outcome until the player explicitly
+    // restarts, loads a save, or quits.
     if *mode == bd_core::spatial::GameMode::GameOver {
         if screen_state.current != "game_over" {
             screen_writer.write(ScreenIntent {
                 screen_id: "game_over".into(),
             });
         } else if let Some(key) = messages.read().next() {
-            let command =
-                bindings.command_for_key_in(&key.code, *mode, commands::InteractionMode::GameOver);
-            if command == Some(commands::UiCommand::Restart) {
-                transition_writer.write(TransitionIntent {
-                    target: bd_core::spatial::GameMode::Title,
-                    node_id: None,
-                });
-                screen_writer.write(ScreenIntent {
-                    screen_id: "title".into(),
-                });
-                game_log.push("Restarting the run.", LogLevel::Info);
-            } else if command == Some(commands::UiCommand::Quit) {
-                exit_request.0 = true;
+            match commands::game_over_input(&bindings, &key.code) {
+                Some(commands::GameOverInput::Restart) => {
+                    transition_writer.write(TransitionIntent {
+                        target: bd_core::spatial::GameMode::Title,
+                        node_id: None,
+                    });
+                    screen_writer.write(ScreenIntent {
+                        screen_id: "title".into(),
+                    });
+                    game_log.push("Restarting the run.", LogLevel::Info);
+                }
+                Some(commands::GameOverInput::Save) => {
+                    persistence.save.0 = true;
+                    game_log.push("Save requested.", LogLevel::Info);
+                }
+                Some(commands::GameOverInput::Load) => {
+                    persistence.load.0 = true;
+                    game_log.push("Load requested.", LogLevel::Info);
+                }
+                Some(commands::GameOverInput::Quit) => {
+                    exit_request.0 = true;
+                }
+                None => {}
             }
         }
         return;
     }
 
-    // If in Title mode, any key transitions to Outpost (no player needed yet)
+    // Title accepts explicit load/quit controls; every other key begins a run.
     if *mode == bd_core::spatial::GameMode::Title {
         for key in messages.read() {
-            // Any key starts the game
-            transition_writer.write(TransitionIntent {
-                target: bd_core::spatial::GameMode::Outpost,
-                node_id: None,
-            });
-            screen_writer.write(ScreenIntent {
-                screen_id: "outpost".into(),
-            });
-            // Remember if user pressed 'b' — auto-enter build mode once player spawns
-            if matches!(key.code, KeyCode::Char('b')) {
-                build_ghost.active = true;
-                // cursor will be set once player position is available
+            match commands::title_input(&bindings, &key.code) {
+                commands::TitleInput::Load => {
+                    persistence.load.0 = true;
+                    game_log.push("Load requested.", LogLevel::Info);
+                }
+                commands::TitleInput::Quit => {
+                    exit_request.0 = true;
+                }
+                commands::TitleInput::Begin => {
+                    transition_writer.write(TransitionIntent {
+                        target: bd_core::spatial::GameMode::Outpost,
+                        node_id: None,
+                    });
+                    screen_writer.write(ScreenIntent {
+                        screen_id: "outpost".into(),
+                    });
+                    // Preserve the build shortcut across the startup frame.
+                    if matches!(key.code, KeyCode::Char('b')) {
+                        build_ghost.active = true;
+                    }
+                }
             }
         }
         return;

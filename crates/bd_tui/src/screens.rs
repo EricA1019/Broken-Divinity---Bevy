@@ -407,6 +407,10 @@ pub fn default_screen_registry() -> ScreenRegistry {
 
 /// Build the default widget registry with all known renderers.
 /// Render the game over screen splash.
+fn game_over_status_line(extracted_loot: u32) -> String {
+    format!("Run ended with {extracted_loot} loot. Use the controls below.")
+}
+
 fn render_game_over_splash_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
     let style_title = ratatui::style::Style::default()
         .fg(ratatui::style::Color::Red)
@@ -421,7 +425,10 @@ fn render_game_over_splash_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRen
             ratatui::text::Line::from(""),
             ratatui::text::Line::styled("  You have died.", style_muted),
             ratatui::text::Line::from(""),
-            ratatui::text::Line::styled("  Press r to restart | q to quit", style_accent),
+            ratatui::text::Line::styled(
+                format!("  {}", game_over_status_line(ctx.stats.extracted_loot)),
+                style_accent,
+            ),
         ]
     } else {
         let title_lines = [
@@ -439,14 +446,14 @@ fn render_game_over_splash_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRen
             lines.push(ratatui::text::Line::styled(padded, style_title));
         }
         let died_line = format!("{indent}  You have died.");
-        let quit_line = format!(
-            "{indent}  Press r to restart | q to quit ({} loot)",
-            ctx.stats.extracted_loot
+        let status_line = format!(
+            "{indent}  {}",
+            game_over_status_line(ctx.stats.extracted_loot)
         );
         lines.push(ratatui::text::Line::from(""));
         lines.push(ratatui::text::Line::styled(died_line, style_muted));
         lines.push(ratatui::text::Line::from(""));
-        lines.push(ratatui::text::Line::styled(quit_line, style_accent));
+        lines.push(ratatui::text::Line::styled(status_line, style_accent));
         lines
     };
     let para = ratatui::widgets::Paragraph::new(text);
@@ -1337,6 +1344,15 @@ fn render_event_choices_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRender
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn game_over_splash_defers_to_the_complete_contextual_controls() {
+        let line = game_over_status_line(3);
+
+        assert!(line.contains("3 loot"));
+        assert!(line.contains("controls below"));
+        assert!(!line.contains("q to quit"));
+    }
 
     #[test]
     fn outpost_has_contextual_action_panel() {

@@ -4,9 +4,10 @@ A reusable terminal-based roguelike/tactics game kernel built with Rust, Bevy EC
 
 ## Current Status
 
-The Broken Divinity Foundation MVP is in recovery. Build and unit-test gates
-pass, but the project has not yet passed the canonical colony, dungeon,
-persistence, progression, and manual acceptance scenario.
+The Broken Divinity Foundation MVP passed its final recovery gate on
+2026-07-24. The canonical scenario passes 14/14, automated workspace/content
+gates pass without warnings, and terminal extraction, resume, defeat, and
+save/load paths have been manually audited.
 
 Project authority:
 
@@ -43,9 +44,9 @@ Controls:
 | `1`-`5` | Select a station type in the build menu |
 | `Q` / `Esc` | Quit / Cancel build mode |
 
-Some controls are currently hardcoded despite the configuration schema.
-Foundation Recovery Phase 7 will make actual input, help, and configured
-bindings share one source of truth.
+Semantic command bindings, runtime input, contextual help, action panels, and
+the footer share one binding source. Numbered build-menu selection remains a
+fixed menu interaction rather than a configurable gameplay command.
 
 ## Build & Run
 
@@ -90,16 +91,18 @@ broken-divinity/
 
 Config file location: `~/.config/broken-divinity/config.toml`
 
-Copy `config/default.toml` to this location and edit. Theme and the currently
-wired binding fields can be configured. Do not assume every displayed command
-is configurable until Recovery Phase 7 passes.
+Copy `config/default.toml` to this location and edit. Theme and semantic command
+bindings are validated at startup; invalid or conflicting bindings fail with a
+readable configuration error.
 
 ## Save Files
 
 Current save directory: `~/.local/share/broken-divinity/saves/`
 
-The current turn-number save selection is a known recovery defect. Do not rely
-on current development saves as a compatibility contract.
+Foundation uses one atomic `manual-slot.ron`. It supports colony, active
+dungeon, extracted, and defeated states. Save/content version checks are
+enforced; development saves are not a permanent cross-version compatibility
+contract.
 
 ## Logs
 

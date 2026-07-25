@@ -52,6 +52,39 @@ pub enum TerminalLayout {
     TooSmall,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TitleInput {
+    Begin,
+    Load,
+    Quit,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum GameOverInput {
+    Restart,
+    Save,
+    Load,
+    Quit,
+}
+
+pub fn title_input(bindings: &CommandBindings, key: &KeyCode) -> TitleInput {
+    match bindings.command_for_key_in(key, GameMode::Title, InteractionMode::Normal) {
+        Some(UiCommand::Load) => TitleInput::Load,
+        Some(UiCommand::Quit) => TitleInput::Quit,
+        _ => TitleInput::Begin,
+    }
+}
+
+pub fn game_over_input(bindings: &CommandBindings, key: &KeyCode) -> Option<GameOverInput> {
+    match bindings.command_for_key_in(key, GameMode::GameOver, InteractionMode::GameOver) {
+        Some(UiCommand::Restart) => Some(GameOverInput::Restart),
+        Some(UiCommand::Save) => Some(GameOverInput::Save),
+        Some(UiCommand::Load) => Some(GameOverInput::Load),
+        Some(UiCommand::Quit) => Some(GameOverInput::Quit),
+        _ => None,
+    }
+}
+
 pub fn terminal_layout(width: u16, height: u16) -> TerminalLayout {
     if width < MIN_TERMINAL_WIDTH || height < MIN_TERMINAL_HEIGHT {
         TerminalLayout::TooSmall
@@ -253,7 +286,13 @@ fn command_order(mode: GameMode, interaction: InteractionMode) -> &'static [UiCo
         UiCommand::Build,
         UiCommand::Quit,
     ];
-    const GAME_OVER: &[UiCommand] = &[UiCommand::Restart, UiCommand::Quit];
+    const GAME_OVER: &[UiCommand] = &[
+        UiCommand::Restart,
+        UiCommand::Save,
+        UiCommand::Load,
+        UiCommand::Quit,
+    ];
+    const TITLE: &[UiCommand] = &[UiCommand::Load, UiCommand::Quit];
     const COLONY: &[UiCommand] = &[
         UiCommand::MoveNorth,
         UiCommand::MoveSouth,
@@ -300,6 +339,7 @@ fn command_order(mode: GameMode, interaction: InteractionMode) -> &'static [UiCo
         InteractionMode::Build => BUILD,
         InteractionMode::GameOver => GAME_OVER,
         InteractionMode::Normal => match mode {
+            GameMode::Title => TITLE,
             GameMode::Outpost => COLONY,
             GameMode::Tactical => DUNGEON,
             _ => GLOBAL,

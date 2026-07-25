@@ -9,13 +9,9 @@ use std::{collections::HashMap, path::Path};
 use bevy_app::{AppExit, PanicHandlerPlugin, ScheduleRunnerPlugin};
 use bevy_ecs::message::MessageWriter;
 use bevy_ecs::schedule::IntoScheduleConfigs;
-use bevy_ecs::system::{Commands, Query, Res, ResMut};
+use bevy_ecs::system::ResMut;
 
-use bd_core::components::{Player, Position};
-use bd_core::factory::spawn_from_blueprint;
 use bd_core::gamelog::{GameLog, LogLevel};
-use bevy_ecs::entity::Entity;
-use bevy_ecs::query::With;
 
 mod config;
 
@@ -89,21 +85,28 @@ fn run_application() -> Result<(), String> {
     app.insert_resource(command_bindings);
     app.insert_resource(application_content.symbols);
     app.insert_resource(application_content.themes);
+    app.insert_resource(ManualSaveDirectory(data_dir.join("saves")));
 
-    app.add_systems(
-        bevy_app::Update,
-        spawn_outpost_player.in_set(bd_core::BdSet::IntentCollection),
-    );
-    app.add_systems(
-        bevy_app::Update,
-        (process_persistence_requests, process_exit_request)
-            .chain()
-            .in_set(bd_core::BdSet::ResultEmission),
-    );
+    configure_application_boundary_systems(&mut app);
 
     app.run();
     tracing::info!("Broken Divinity Kernel exited cleanly");
     Ok(())
+}
+
+#[derive(bevy_ecs::prelude::Resource)]
+struct ManualSaveDirectory(std::path::PathBuf);
+
+fn configure_application_boundary_systems(app: &mut bevy_app::App) {
+    app.init_resource::<bd_tui::commands::ApplicationExitRequest>();
+    app.add_message::<AppExit>();
+    app.add_systems(
+        bevy_app::Update,
+        (process_persistence_requests, process_exit_request)
+            .chain()
+            .after(bd_core::BdSet::ResultEmission)
+            .before(bd_core::BdSet::ViewModelBuild),
+    );
 }
 
 fn process_exit_request(
@@ -119,10 +122,10 @@ fn process_exit_request(
 /// boundary. The kernel owns snapshot contents; the application owns paths
 /// and user-facing success/failure reporting.
 fn process_persistence_requests(world: &mut bevy_ecs::world::World) {
+    let save_dir = world.resource::<ManualSaveDirectory>().0.clone();
     let save_requested = world.resource_mut::<bd_core::save::SaveRequest>().0;
     world.resource_mut::<bd_core::save::SaveRequest>().0 = false;
     if save_requested {
-        let save_dir = config::data_dir().join("saves");
         match bd_core::save::save_manual_slot(world, &save_dir) {
             Ok(path) => world
                 .resource_mut::<GameLog>()
@@ -136,25 +139,43 @@ fn process_persistence_requests(world: &mut bevy_ecs::world::World) {
     let load_requested = world.resource_mut::<bd_core::save::LoadRequest>().0;
     world.resource_mut::<bd_core::save::LoadRequest>().0 = false;
     if load_requested {
-        let save_dir = config::data_dir().join("saves");
         let path = bd_core::save::manual_slot_path(&save_dir);
         match bd_core::save::load_manual_slot(&save_dir).and_then(|snapshot| {
             bd_core::save::restore_snapshot_into(world, &snapshot, &HashMap::new())
                 .map(|_| snapshot)
         }) {
-            Ok(snapshot) => world.resource_mut::<GameLog>().push(
-                format!(
-                    "Loaded save from {} (turn {}).",
-                    path.display(),
-                    snapshot.turn
-                ),
-                LogLevel::Info,
-            ),
+            Ok(snapshot) => {
+                request_screen_for_restored_mode(world);
+                world.resource_mut::<GameLog>().push(
+                    format!(
+                        "Loaded save from {} (turn {}).",
+                        path.display(),
+                        snapshot.turn
+                    ),
+                    LogLevel::Info,
+                );
+            }
             Err(error) => world
                 .resource_mut::<GameLog>()
                 .push(format!("Load failed: {error}"), LogLevel::Warn),
         }
     }
+}
+
+fn request_screen_for_restored_mode(world: &mut bevy_ecs::world::World) {
+    let mode = *world.resource::<bd_core::spatial::GameMode>();
+    let screen_id = match mode {
+        bd_core::spatial::GameMode::Title => "title",
+        bd_core::spatial::GameMode::Outpost => "outpost",
+        bd_core::spatial::GameMode::Tactical => "combat",
+        bd_core::spatial::GameMode::GameOver => "game_over",
+        bd_core::spatial::GameMode::Travel => return,
+    };
+    world
+        .resource_mut::<bevy_ecs::message::Messages<bd_tui::screens::ScreenIntent>>()
+        .write(bd_tui::screens::ScreenIntent {
+            screen_id: screen_id.into(),
+        });
 }
 
 #[derive(Debug)]
@@ -202,57 +223,6 @@ fn load_application_content(content_dir: &Path) -> Result<ApplicationContent, St
     })
 }
 
-/// Spawn the player at the shelter outpost at startup.
-fn spawn_outpost_player(
-    mut commands: Commands,
-    mut game_log: ResMut<GameLog>,
-    mode: Res<bd_core::spatial::GameMode>,
-    content: Res<bd_core::content::FoundationContent>,
-    player: Query<Entity, With<Player>>,
-    bindings: Res<bd_tui::commands::CommandBindings>,
-) {
-    // Only spawn when the game is in Outpost mode (not Title)
-    if *mode != bd_core::spatial::GameMode::Outpost {
-        return;
-    }
-    // Once-only guard — player already spawned
-    if !player.is_empty() {
-        return;
-    }
-
-    // Spawn player in the center of the shelter
-    let player_pos = Position {
-        x: bd_core::colony::shelter::SHELTER_WIDTH / 2,
-        y: bd_core::colony::shelter::SHELTER_HEIGHT / 2,
-    };
-
-    if let Some(bp) = content
-        .blueprints
-        .iter()
-        .find(|bp| bp.id == "blueprint.player")
-    {
-        let entity = spawn_from_blueprint(bp, Some(player_pos), &[], &mut commands);
-        commands.entity(entity).insert((
-            bd_core::spatial::PersistentEntity,
-            bd_core::inventory::Container::default(),
-        ));
-    }
-
-    // Grant initial colony supplies via ColonyResources
-    game_log.push(
-        "You survey the shelter. Survivors are gathering.",
-        LogLevel::Info,
-    );
-    game_log.push(
-        bd_tui::commands::footer_text(
-            &bindings,
-            bd_core::spatial::GameMode::Outpost,
-            bd_tui::commands::InteractionMode::Normal,
-        ),
-        LogLevel::Info,
-    );
-}
-
 /// Run the same content validation used by normal startup without entering
 /// terminal mode.
 fn run_validation() -> Result<(), String> {
@@ -289,6 +259,11 @@ fn content_dir() -> std::path::PathBuf {
 #[cfg(test)]
 mod application_tests {
     use super::*;
+    use bd_core::components::Player;
+    use bd_core::session::RunOutcome;
+    use bevy_ecs::entity::Entity;
+    use bevy_ecs::message::Messages;
+    use bevy_ecs::query::With;
 
     #[test]
     fn invalid_content_returns_readable_application_error() {
@@ -296,5 +271,87 @@ mod application_tests {
         let error = load_application_content(&missing).unwrap_err();
         assert!(error.contains("content error"));
         assert!(error.contains("dungeons/foundation.ron"));
+    }
+
+    #[test]
+    fn restored_dungeon_requests_the_combat_screen() {
+        let mut world = bevy_ecs::world::World::new();
+        world.insert_resource(bd_core::spatial::GameMode::Tactical);
+        world.insert_resource(Messages::<bd_tui::screens::ScreenIntent>::default());
+
+        request_screen_for_restored_mode(&mut world);
+
+        let intents = world
+            .resource_mut::<Messages<bd_tui::screens::ScreenIntent>>()
+            .drain()
+            .collect::<Vec<_>>();
+        assert_eq!(intents.len(), 1);
+        assert_eq!(intents[0].screen_id, "combat");
+    }
+
+    #[test]
+    fn persistence_runs_after_terminal_results_are_committed() {
+        fn request_save(mut request: ResMut<bd_core::save::SaveRequest>) {
+            request.0 = true;
+        }
+
+        fn commit_defeat(
+            mut mode: ResMut<bd_core::spatial::GameMode>,
+            mut session: ResMut<bd_core::session::RunSession>,
+        ) {
+            *mode = bd_core::spatial::GameMode::GameOver;
+            session.mark_defeated();
+        }
+
+        let unique = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let save_dir = std::env::temp_dir().join(format!(
+            "bd-app-result-order-{}-{unique}",
+            std::process::id()
+        ));
+
+        let mut app = bevy_app::App::new();
+        app.add_plugins(bd_core::BdFoundationPlugin);
+        app.insert_resource(ManualSaveDirectory(save_dir.clone()));
+        configure_application_boundary_systems(&mut app);
+        app.add_systems(
+            bevy_app::Update,
+            request_save.in_set(bd_core::BdSet::Mutation),
+        );
+        app.add_systems(
+            bevy_app::Update,
+            commit_defeat.in_set(bd_core::BdSet::ResultEmission),
+        );
+
+        app.update();
+
+        let snapshot = bd_core::save::load_manual_slot(&save_dir).unwrap();
+        assert_eq!(snapshot.session.outcome, RunOutcome::Defeated);
+        assert_eq!(snapshot.session.phase, bd_core::spatial::GameMode::GameOver);
+    }
+
+    #[test]
+    fn application_startup_has_exactly_one_player_authority() {
+        let content = load_application_content(&content_dir()).unwrap();
+        let mut app = bevy_app::App::new();
+        app.add_plugins(bd_core::BdFoundationPlugin);
+        app.insert_resource(content.foundation);
+        *app.world_mut().resource_mut::<bd_core::spatial::GameMode>() =
+            bd_core::spatial::GameMode::Outpost;
+        app.world_mut()
+            .resource_mut::<bd_core::session::RunSession>()
+            .phase = bd_core::spatial::GameMode::Outpost;
+
+        app.update();
+        app.update();
+
+        let player_count = app
+            .world_mut()
+            .query_filtered::<Entity, With<Player>>()
+            .iter(app.world())
+            .count();
+        assert_eq!(player_count, 1);
     }
 }

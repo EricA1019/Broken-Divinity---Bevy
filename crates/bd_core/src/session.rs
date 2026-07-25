@@ -75,6 +75,7 @@ impl RunSession {
         matches!(
             (from, to),
             (GameMode::Title, GameMode::Outpost)
+                | (GameMode::Outpost, GameMode::Title)
                 | (GameMode::Outpost, GameMode::Tactical)
                 | (GameMode::Tactical, GameMode::Outpost)
                 | (GameMode::Tactical, GameMode::GameOver)
@@ -161,6 +162,10 @@ mod tests {
         assert!(RunSession::allows_foundation_transition(
             GameMode::Outpost,
             GameMode::Tactical
+        ));
+        assert!(RunSession::allows_foundation_transition(
+            GameMode::Outpost,
+            GameMode::Title
         ));
         assert!(RunSession::allows_foundation_transition(
             GameMode::Tactical,

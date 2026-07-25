@@ -104,6 +104,20 @@ fn save_load_defeat_preserves_outcome() {
 }
 
 #[test]
+fn restored_dungeon_can_continue_to_defeat() {
+    let mut driver = dungeon_driver();
+    let checkpoint = driver.checkpoint().unwrap();
+    driver.restore_checkpoint(&checkpoint).unwrap();
+    driver
+        .wait_for_player_defeat("restored dungeon defeat")
+        .unwrap();
+
+    let summary = driver.summary();
+    assert_eq!(summary.outcome, RunOutcome::Defeated);
+    assert_eq!(summary.mode, bd_core::spatial::GameMode::GameOver);
+}
+
+#[test]
 fn load_rebuilds_outpost_entity_references() {
     let mut driver = colony_driver();
     let checkpoint = driver.checkpoint().unwrap();

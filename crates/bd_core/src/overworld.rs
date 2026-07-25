@@ -368,12 +368,7 @@ pub fn register_travel(app: &mut bevy_app::App) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{
-        colony::production::ColonyResources,
-        gamelog::GameLog,
-        map::SmokeMap,
-        spatial::{GameMode, TransitionIntent},
-    };
+    use crate::{colony::production::ColonyResources, map::SmokeMap, spatial::GameMode};
     use bevy_app::App;
 
     fn test_app() -> App {

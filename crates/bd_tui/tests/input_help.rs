@@ -1,7 +1,8 @@
 use bd_core::spatial::GameMode;
 use bd_tui::commands::{
-    ActionAvailability, CommandBindings, InteractionMode, TerminalLayout, UiCommand, action_panel,
-    footer_text, help_entries, terminal_layout,
+    ActionAvailability, CommandBindings, GameOverInput, InteractionMode, TerminalLayout,
+    TitleInput, UiCommand, action_panel, footer_text, game_over_input, help_entries,
+    terminal_layout, title_input,
 };
 use crossterm::event::KeyCode;
 
@@ -106,6 +107,58 @@ fn save_and_load_are_discoverable() {
 
     assert!(help.iter().any(|entry| entry.command == UiCommand::Save));
     assert!(help.iter().any(|entry| entry.command == UiCommand::Load));
+}
+
+#[test]
+fn title_load_binding_requests_load_instead_of_starting_a_new_run() {
+    let bindings = CommandBindings::default();
+
+    assert_eq!(title_input(&bindings, &KeyCode::F(9)), TitleInput::Load);
+    assert_eq!(
+        title_input(&bindings, &KeyCode::Char('x')),
+        TitleInput::Begin
+    );
+}
+
+#[test]
+fn title_footer_advertises_only_actions_that_work_on_title() {
+    let footer = footer_text(
+        &CommandBindings::default(),
+        GameMode::Title,
+        InteractionMode::Normal,
+    );
+
+    assert!(footer.contains("Load:F9"));
+    assert!(footer.contains("Quit:q"));
+    assert!(!footer.contains("Save:"));
+    assert!(!footer.contains("Help:"));
+}
+
+#[test]
+fn game_over_save_and_load_bindings_request_persistence_actions() {
+    let bindings = CommandBindings::default();
+
+    assert_eq!(
+        game_over_input(&bindings, &KeyCode::F(5)),
+        Some(GameOverInput::Save)
+    );
+    assert_eq!(
+        game_over_input(&bindings, &KeyCode::F(9)),
+        Some(GameOverInput::Load)
+    );
+}
+
+#[test]
+fn game_over_footer_advertises_persistence_and_exit_controls() {
+    let footer = footer_text(
+        &CommandBindings::default(),
+        GameMode::GameOver,
+        InteractionMode::GameOver,
+    );
+
+    for required in ["Restart:", "Save:F5", "Load:F9", "Quit:q"] {
+        assert!(footer.contains(required), "missing {required} in {footer}");
+    }
 }
 
 #[test]

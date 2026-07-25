@@ -544,7 +544,7 @@ mod tests {
         app.world_mut()
             .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
         app.world_mut()
-            .resource_scope(|world, mut map: Mut<SmokeMap>| {
+            .resource_scope(|_world, mut map: Mut<SmokeMap>| {
                 map.set(6, 5, Tile::Wall);
             });
         let p = app
