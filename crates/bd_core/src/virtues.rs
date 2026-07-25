@@ -34,13 +34,17 @@ pub const ALL_VIRTUES: &[PoolKind] = &[
 pub fn process_virtue_gains(
     mut defeated: bevy_ecs::message::MessageReader<EntityDefeated>,
     player: Query<Entity, With<Player>>,
+    enemies: Query<(), With<crate::relationships::FactionMember>>,
     mut pool_deltas: bevy_ecs::message::MessageWriter<PoolDeltaRequested>,
 ) {
     let Ok(player_entity) = player.single() else {
         return;
     };
     // Award Fortitude for any enemy defeated
-    for _ in defeated.read() {
+    for result in defeated.read() {
+        if enemies.get(result.entity).is_err() {
+            continue;
+        }
         pool_deltas.write(PoolDeltaRequested {
             source: None,
             target: player_entity,
@@ -52,33 +56,11 @@ pub fn process_virtue_gains(
     }
 }
 
-/// Award Kleos for notable achievements: boss kills, major story beats.
-pub fn process_kleos_gains(
-    mut defeated: bevy_ecs::message::MessageReader<crate::signals::EntityDefeated>,
-    player: Query<Entity, With<Player>>,
-    mut delta_writer: bevy_ecs::message::MessageWriter<crate::signals::PoolDeltaRequested>,
-) {
-    let Ok(player_entity) = player.single() else {
-        return;
-    };
-    // Award Kleos for boss kills (any EntityDefeated)
-    for _ in defeated.read() {
-        delta_writer.write(crate::signals::PoolDeltaRequested {
-            source: None,
-            target: player_entity,
-            kind: PoolKind::Kleos,
-            amount: KLEOS_BOSS_KILL_GAIN,
-            tags: vec![],
-            reason: "boss kill".into(),
-        });
-    }
-}
-
 /// Register virtue gain systems.
 pub fn register_virtues(app: &mut bevy_app::App) {
     app.add_systems(
         bevy_app::Update,
-        (process_virtue_gains, process_kleos_gains).in_set(BdSet::ResultEmission),
+        process_virtue_gains.in_set(BdSet::ResultEmission),
     );
 }
 
@@ -99,7 +81,7 @@ mod tests {
     }
 
     #[test]
-    fn kleos_increases_on_boss_kill() {
+    fn generic_defeat_does_not_increase_kleos() {
         let mut app = test_app();
         let player = app
             .world_mut()
@@ -126,11 +108,7 @@ mod tests {
 
         let pools = app.world().get::<crate::pools::Pools>(player).unwrap();
         let kleos = pools.get(PoolKind::Kleos).unwrap();
-        assert!(
-            kleos.current > 0,
-            "Kleos should increase on boss kill (current={})",
-            kleos.current
-        );
+        assert_eq!(kleos.current, 0);
     }
 
     #[test]
@@ -152,7 +130,10 @@ mod tests {
         // Spawn a separate enemy entity to be defeated
         let enemy = app
             .world_mut()
-            .spawn((crate::components::Name("Enemy".into()),))
+            .spawn((
+                crate::components::Name("Enemy".into()),
+                crate::relationships::FactionMember("faction.placeholder_a".into()),
+            ))
             .id();
 
         // Fire an EntityDefeated message for the enemy (not the player)

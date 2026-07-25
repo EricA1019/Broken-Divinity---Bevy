@@ -8,6 +8,25 @@ use serde::{Deserialize, Serialize};
 use crate::BdSet;
 use crate::signals::{PoolDeltaApplied, PoolKind};
 
+pub fn foundation_disposition(
+    content: &crate::content::FoundationContent,
+    faction_id: &str,
+) -> Option<crate::content::FoundationDisposition> {
+    content
+        .factions
+        .iter()
+        .find(|faction| faction.id == faction_id)
+        .map(|faction| faction.disposition)
+}
+
+pub fn foundation_is_hostile(
+    content: &crate::content::FoundationContent,
+    faction_id: &str,
+) -> bool {
+    foundation_disposition(content, faction_id)
+        == Some(crate::content::FoundationDisposition::Hostile)
+}
+
 pub const REPUTATION_MAX: i32 = 100;
 pub const REPUTATION_HOSTILE_THRESHOLD: i32 = 25;
 pub const REPUTATION_ALLIED_THRESHOLD: i32 = 75;

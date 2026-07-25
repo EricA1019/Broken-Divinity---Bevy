@@ -324,6 +324,7 @@ struct ActionValidationQueries<'w, 's> {
             Entity,
             &'static Position,
             Option<&'static Player>,
+            Option<&'static crate::relationships::FactionMember>,
             Option<&'static crate::spatial::EntityScope>,
         ),
     >,
@@ -383,6 +384,7 @@ fn validate_action_intents(
     registry: Res<ActionRegistry>,
     map: Res<SmokeMap>,
     mode: Res<crate::spatial::GameMode>,
+    content: Option<Res<crate::content::FoundationContent>>,
     foundation: Option<Res<crate::session::FoundationRuntime>>,
     mut messages: bevy_ecs::message::MessageReader<ActionIntent>,
     mut denied_writer: bevy_ecs::message::MessageWriter<ActionDenied>,
@@ -392,13 +394,18 @@ fn validate_action_intents(
     queries: ActionValidationQueries,
 ) {
     let foundation_runtime = foundation.is_some();
-    let target_positions: Vec<(Entity, &Position, Option<&Player>)> = queries
+    let target_positions: Vec<(
+        Entity,
+        &Position,
+        Option<&Player>,
+        Option<&crate::relationships::FactionMember>,
+    )> = queries
         .targets
         .iter()
-        .filter(|(_, _, _, scope)| {
+        .filter(|(_, _, _, _, scope)| {
             crate::spatial::entity_is_active(*scope, *mode, foundation_runtime)
         })
-        .map(|(entity, position, player, _)| (entity, position, player))
+        .map(|(entity, position, player, faction, _)| (entity, position, player, faction))
         .collect();
 
     for intent in messages.read() {
@@ -485,9 +492,17 @@ fn validate_action_intents(
                         break;
                     };
                     // Hostile = not Player, not same entity
-                    let is_hostile = target_positions
-                        .iter()
-                        .any(|(e, _, p)| *e == t && p.is_none() && *e != intent.actor);
+                    let is_hostile = target_positions.iter().any(|(e, _, p, faction)| {
+                        *e == t
+                            && p.is_none()
+                            && *e != intent.actor
+                            && (!foundation_runtime
+                                || faction.is_some_and(|faction| {
+                                    content.as_ref().is_some_and(|content| {
+                                        crate::factions::foundation_is_hostile(content, &faction.0)
+                                    })
+                                }))
+                    });
                     if !is_hostile {
                         denied = Some(DenialReason::InvalidTarget);
                         break;
@@ -498,7 +513,7 @@ fn validate_action_intents(
                         denied = Some(DenialReason::NoTarget);
                         break;
                     };
-                    let in_range = target_positions.iter().any(|(e, tpos, _)| {
+                    let in_range = target_positions.iter().any(|(e, tpos, _, _)| {
                         *e == t
                             && (actor_pos.x - tpos.x).unsigned_abs()
                                 + (actor_pos.y - tpos.y).unsigned_abs()
@@ -611,8 +626,8 @@ fn validate_action_intents(
                     let target_pos = intent.target.and_then(|t| {
                         target_positions
                             .iter()
-                            .find(|(e, _, _)| *e == t)
-                            .map(|(_, p, _)| *p)
+                            .find(|(e, _, _, _)| *e == t)
+                            .map(|(_, p, _, _)| *p)
                     });
                     match (player_pos, target_pos) {
                         (Some(pp), Some(tp)) => {

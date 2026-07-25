@@ -75,13 +75,19 @@ fn enemy_melee_action() -> ActionDefinition {
 #[allow(clippy::type_complexity)] // Query types are inherently complex in ECS
 fn process_enemy_turns(
     enemies: Query<
-        (Entity, &Position, Option<&crate::spatial::EntityScope>),
+        (
+            Entity,
+            &Position,
+            Option<&crate::relationships::FactionMember>,
+            Option<&crate::spatial::EntityScope>,
+        ),
         (With<BlocksMovement>, Without<Player>),
     >,
     player: Query<(Entity, &Position, Option<&crate::spatial::EntityScope>), With<Player>>,
     map: Res<SmokeMap>,
     mode: Res<crate::spatial::GameMode>,
     foundation: Option<Res<crate::session::FoundationRuntime>>,
+    content: Option<Res<crate::content::FoundationContent>>,
     mut turn: ResMut<crate::time::ShouldAdvanceTime>,
     blockers: Query<
         (&Position, Option<&crate::spatial::EntityScope>),
@@ -102,8 +108,17 @@ fn process_enemy_turns(
         return; // No player alive — enemies idle
     };
 
-    for (entity, pos, scope) in &enemies {
+    for (entity, pos, faction, scope) in &enemies {
         if !crate::spatial::entity_is_active(scope, *mode, foundation_runtime) {
+            continue;
+        }
+        if foundation_runtime
+            && !faction.is_some_and(|faction| {
+                content.as_ref().is_some_and(|content| {
+                    crate::factions::foundation_is_hostile(content, &faction.0)
+                })
+            })
+        {
             continue;
         }
         let dx = player_pos.x - pos.x;
@@ -215,6 +230,46 @@ mod tests {
                 ]),
             ))
             .id()
+    }
+
+    #[test]
+    fn neutral_faction_does_not_drive_enemy_ai() {
+        let mut app = App::new();
+        app.add_plugins(crate::BdFoundationPlugin);
+        app.insert_resource(crate::content::FoundationContent {
+            factions: vec![crate::content::FactionDefinition {
+                id: "faction.neutral".into(),
+                label: "Neutral".into(),
+                identity_key: "neutral".into(),
+                disposition: crate::content::FoundationDisposition::Neutral,
+            }],
+            ..Default::default()
+        });
+        app.world_mut()
+            .insert_resource(crate::spatial::GameMode::Tactical);
+        app.world_mut().spawn((
+            Player,
+            Position { x: 10, y: 10 },
+            crate::spatial::EntityScope::RunPersistent,
+        ));
+        let enemy = app
+            .world_mut()
+            .spawn((
+                BlocksMovement,
+                Position { x: 10, y: 7 },
+                crate::relationships::FactionMember("faction.neutral".into()),
+                crate::spatial::EntityScope::DungeonTransient,
+            ))
+            .id();
+        app.world_mut()
+            .resource_mut::<crate::time::ShouldAdvanceTime>()
+            .1 = true;
+        app.update();
+
+        assert_eq!(
+            app.world().get::<Position>(enemy),
+            Some(&Position { x: 10, y: 7 })
+        );
     }
 
     #[test]

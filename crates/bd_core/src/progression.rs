@@ -80,6 +80,7 @@ fn apply_action_progression(
     content: Option<Res<FoundationContent>>,
     mut action_deltas: MessageWriter<PoolDeltaRequested>,
     mut players: Query<&mut SkillProgression>,
+    mut game_log: ResMut<crate::gamelog::GameLog>,
 ) {
     let Some(content) = content else {
         return;
@@ -113,6 +114,14 @@ fn apply_action_progression(
             after = skill_id.value(&progression),
             "skill progression applied"
         );
+        game_log.push(
+            format!(
+                "{:?} skill improves to {}.",
+                skill_id,
+                skill_id.value(&progression)
+            ),
+            crate::gamelog::LogLevel::Info,
+        );
 
         let Some(virtue_name) = metadata.virtue_expression.as_deref() else {
             continue;
@@ -128,6 +137,10 @@ fn apply_action_progression(
             tags: vec![],
             reason: format!("{} expression", virtue_name),
         });
+        game_log.push(
+            format!("You express {}.", virtue_name),
+            crate::gamelog::LogLevel::Info,
+        );
     }
 }
 
@@ -184,6 +197,12 @@ mod tests {
                 governing_virtue: "virtue.thumos".into(),
                 progression_rate: 1,
             }],
+            factions: vec![crate::content::FactionDefinition {
+                id: "faction.test_hostile".into(),
+                label: "Test Hostile".into(),
+                identity_key: "test_hostile".into(),
+                disposition: crate::content::FoundationDisposition::Hostile,
+            }],
             ..Default::default()
         });
         app.world_mut()
@@ -217,6 +236,7 @@ mod tests {
             .world_mut()
             .spawn((
                 BlocksMovement,
+                crate::relationships::FactionMember("faction.test_hostile".into()),
                 crate::spatial::EntityScope::DungeonTransient,
                 Position { x: 6, y: 5 },
                 Pools::new(vec![Pool::new(PoolKind::Health, 20, 0, 20)]),

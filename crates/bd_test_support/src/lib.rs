@@ -94,6 +94,7 @@ pub struct FoundationSummary {
     pub storage_items: u32,
     pub extracted_loot: u32,
     pub melee_skill: i32,
+    pub medicine_skill: i32,
     pub replay_intents: Vec<bd_core::session::ActionReplayRecord>,
     pub trace_events: Vec<String>,
 }
@@ -803,6 +804,9 @@ impl FoundationDriver {
         let melee_skill = player
             .and_then(|player| world.get::<SkillProgression>(player))
             .map_or(0, |progression| progression.melee);
+        let medicine_skill = player
+            .and_then(|player| world.get::<SkillProgression>(player))
+            .map_or(0, |progression| progression.medicine);
         let player_position = player.and_then(|player| world.get::<Position>(player).copied());
         let player_health = player
             .and_then(|player| world.get::<Pools>(player))
@@ -835,6 +839,7 @@ impl FoundationDriver {
             storage_items,
             extracted_loot: session.extracted_loot,
             melee_skill,
+            medicine_skill,
             replay_intents: session.replay_intents.clone(),
             trace_events,
         }

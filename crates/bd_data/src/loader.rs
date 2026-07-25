@@ -298,7 +298,7 @@ mod tests {
             id: "faction.placeholder_c".into(),
             label: "The Third Placeholder".into(),
             identity_key: "placeholder_c".into(),
-            hostility: "neutral".into(),
+            disposition: bd_core::content::FoundationDisposition::Neutral,
         });
         validate_foundation_content(&content).unwrap();
     }

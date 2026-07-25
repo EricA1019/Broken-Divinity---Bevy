@@ -54,7 +54,13 @@ pub struct FactionDefinition {
     pub id: String,
     pub label: String,
     pub identity_key: String,
-    pub hostility: String,
+    pub disposition: FoundationDisposition,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FoundationDisposition {
+    Hostile,
+    Neutral,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
