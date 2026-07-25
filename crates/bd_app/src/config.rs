@@ -2,7 +2,7 @@
 //!
 //! Phase 16: Uses `directories::ProjectDirs` for platform-correct paths,
 //! Serde + TOML for user-editable config files.
-//! The `HelpLine` resource bridges config to the TUI footer.
+//! Validated bindings are converted into semantic TUI commands at startup.
 
 use std::{
     fs,
@@ -119,6 +119,7 @@ fn default_extract_key() -> String {
 ///
 /// Each field is a single-key string (e.g. `"w"`, `"i"`).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(default)]
 pub struct KeyBindingConfig {
     pub move_north: String,
     pub move_south: String,
@@ -128,11 +129,17 @@ pub struct KeyBindingConfig {
     pub attack: String,
     pub guard: String,
     pub inventory: String,
-    #[serde(default = "default_pickup_key")]
     pub pickup: String,
-    #[serde(default = "default_extract_key")]
     pub extract: String,
+    pub use_item: String,
     pub combat_screen: String,
+    pub help: String,
+    pub travel: String,
+    pub build: String,
+    pub assign_task: String,
+    pub assign_station: String,
+    pub save: String,
+    pub load: String,
     pub quit: String,
 }
 
@@ -149,41 +156,85 @@ impl Default for KeyBindingConfig {
             inventory: "i".into(),
             pickup: default_pickup_key(),
             extract: default_extract_key(),
+            use_item: "u".into(),
             combat_screen: "z".into(),
+            help: "?".into(),
+            travel: "t".into(),
+            build: "b".into(),
+            assign_task: "c".into(),
+            assign_station: "e".into(),
+            save: "F5".into(),
+            load: "F9".into(),
             quit: "q".into(),
         }
     }
 }
 
 impl KeyBindingConfig {
-    /// Return a list of (action_label, key_string) pairs for the help line.
-    pub fn help_entries(&self) -> Vec<(String, String)> {
-        vec![
-            (
-                "Move".into(),
-                format!(
-                    "{}↑{}↓{}←{}→",
-                    self.move_north, self.move_south, self.move_west, self.move_east
-                ),
-            ),
-            ("Wait".into(), self.wait.clone()),
-            ("Attack".into(), self.attack.clone()),
-            ("Guard".into(), self.guard.clone()),
-            ("Inventory".into(), self.inventory.clone()),
-            ("Pickup".into(), self.pickup.clone()),
-            ("Extract".into(), self.extract.clone()),
-            ("Combat".into(), self.combat_screen.clone()),
-            ("Quit".into(), self.quit.clone()),
-        ]
-    }
+    pub fn command_bindings(&self) -> Result<bd_tui::commands::CommandBindings, ConfigError> {
+        use bd_tui::commands::UiCommand;
 
-    /// Build a help-line string suitable for the TUI footer.
-    pub fn help_line(&self) -> String {
-        self.help_entries()
-            .iter()
-            .map(|(label, key)| format!("{label}:{key}"))
-            .collect::<Vec<_>>()
-            .join(" | ")
+        let mut bindings = bd_tui::commands::CommandBindings::default();
+        for (command, configured) in [
+            (UiCommand::MoveNorth, self.move_north.as_str()),
+            (UiCommand::MoveSouth, self.move_south.as_str()),
+            (UiCommand::MoveEast, self.move_east.as_str()),
+            (UiCommand::MoveWest, self.move_west.as_str()),
+            (UiCommand::Wait, self.wait.as_str()),
+            (UiCommand::Attack, self.attack.as_str()),
+            (UiCommand::Guard, self.guard.as_str()),
+            (UiCommand::Inventory, self.inventory.as_str()),
+            (UiCommand::Pickup, self.pickup.as_str()),
+            (UiCommand::Extract, self.extract.as_str()),
+            (UiCommand::UseItem, self.use_item.as_str()),
+            (UiCommand::CombatScreen, self.combat_screen.as_str()),
+            (UiCommand::Help, self.help.as_str()),
+            (UiCommand::Travel, self.travel.as_str()),
+            (UiCommand::Build, self.build.as_str()),
+            (UiCommand::AssignTask, self.assign_task.as_str()),
+            (UiCommand::AssignStation, self.assign_station.as_str()),
+            (UiCommand::Save, self.save.as_str()),
+            (UiCommand::Load, self.load.as_str()),
+            (UiCommand::Quit, self.quit.as_str()),
+        ] {
+            let key = parse_key_code(configured).ok_or_else(|| {
+                ConfigError::Validation(vec![format!(
+                    "unsupported key binding `{configured}` for {command:?}"
+                )])
+            })?;
+            bindings.bind(command, key);
+        }
+        let conflicts = bindings
+            .conflicts()
+            .into_iter()
+            .map(|(left, right, key)| {
+                format!("key `{key}` is assigned to both {left:?} and {right:?}")
+            })
+            .collect::<Vec<_>>();
+        if !conflicts.is_empty() {
+            return Err(ConfigError::Validation(conflicts));
+        }
+        Ok(bindings)
+    }
+}
+
+fn parse_key_code(value: &str) -> Option<crossterm::event::KeyCode> {
+    use crossterm::event::KeyCode;
+
+    let trimmed = value.trim();
+    let mut chars = trimmed.chars();
+    if let (Some(character), None) = (chars.next(), chars.next()) {
+        return Some(KeyCode::Char(character));
+    }
+    match trimmed.to_ascii_lowercase().as_str() {
+        "esc" | "escape" => Some(KeyCode::Esc),
+        "enter" | "return" => Some(KeyCode::Enter),
+        "up" => Some(KeyCode::Up),
+        "down" => Some(KeyCode::Down),
+        "left" => Some(KeyCode::Left),
+        "right" => Some(KeyCode::Right),
+        value if value.starts_with('f') => value[1..].parse().ok().map(KeyCode::F),
+        _ => None,
     }
 }
 
@@ -261,10 +312,6 @@ pub fn load_config() -> LoadedConfig {
             }
         }
     } else {
-        warnings.push(format!(
-            "No config found at {}. Using built-in defaults.",
-            config_path.display()
-        ));
         ConfigSource::Defaults
     };
 
@@ -297,45 +344,7 @@ fn merge_configs(base: &mut AppConfig, user: AppConfig, _warnings: &mut Vec<Stri
         base.debug_flags = user.debug_flags;
     }
 
-    // Merge key bindings: any key that differs from default is accepted.
-    let default_kb = KeyBindingConfig::default();
-    let user_kb = &user.keybindings;
-    if user_kb.move_north != default_kb.move_north {
-        base.keybindings.move_north = user_kb.move_north.clone();
-    }
-    if user_kb.move_south != default_kb.move_south {
-        base.keybindings.move_south = user_kb.move_south.clone();
-    }
-    if user_kb.move_east != default_kb.move_east {
-        base.keybindings.move_east = user_kb.move_east.clone();
-    }
-    if user_kb.move_west != default_kb.move_west {
-        base.keybindings.move_west = user_kb.move_west.clone();
-    }
-    if user_kb.wait != default_kb.wait {
-        base.keybindings.wait = user_kb.wait.clone();
-    }
-    if user_kb.attack != default_kb.attack {
-        base.keybindings.attack = user_kb.attack.clone();
-    }
-    if user_kb.guard != default_kb.guard {
-        base.keybindings.guard = user_kb.guard.clone();
-    }
-    if user_kb.inventory != default_kb.inventory {
-        base.keybindings.inventory = user_kb.inventory.clone();
-    }
-    if user_kb.pickup != default_kb.pickup {
-        base.keybindings.pickup = user_kb.pickup.clone();
-    }
-    if user_kb.extract != default_kb.extract {
-        base.keybindings.extract = user_kb.extract.clone();
-    }
-    if user_kb.combat_screen != default_kb.combat_screen {
-        base.keybindings.combat_screen = user_kb.combat_screen.clone();
-    }
-    if user_kb.quit != default_kb.quit {
-        base.keybindings.quit = user_kb.quit.clone();
-    }
+    base.keybindings = user.keybindings;
 }
 
 /// Validate config and return a list of errors.
@@ -350,6 +359,9 @@ pub fn validate_config(config: &AppConfig) -> Result<(), ConfigError> {
     }
     if config.keybindings.quit.is_empty() {
         errors.push("quit key must not be empty".into());
+    }
+    if let Err(ConfigError::Validation(binding_errors)) = config.keybindings.command_bindings() {
+        errors.extend(binding_errors);
     }
 
     if errors.is_empty() {
@@ -386,6 +398,14 @@ mod tests {
         assert_eq!(config.theme_id, "bd_default");
         assert_eq!(config.keybindings.move_north, "w");
         assert_eq!(config.keybindings.quit, "q");
+    }
+
+    #[test]
+    fn shipped_default_config_parses_and_validates() {
+        let config: AppConfig =
+            toml::from_str(include_str!("../../../config/default.toml")).unwrap();
+        validate_config(&config).unwrap();
+        config.keybindings.command_bindings().unwrap();
     }
 
     #[test]
@@ -432,18 +452,20 @@ mod tests {
     }
 
     #[test]
-    fn help_line_derives_from_bindings() {
+    fn semantic_bindings_derive_from_config() {
+        use bd_tui::commands::UiCommand;
+        use crossterm::event::KeyCode;
+
         let kb = KeyBindingConfig::default();
-        let line = kb.help_line();
-        // Should contain the quit binding
-        assert!(line.contains("Quit:q"));
-        assert!(line.contains("Move:w"));
-        assert!(line.contains("Attack:f"));
-        assert!(line.contains("Pickup:p"));
-        assert!(line.contains("Extract:r"));
-        // Should be a non-empty string with pipe separators
-        assert!(line.contains('|'));
-        assert!(line.len() > 10);
+        let bindings = kb.command_bindings().unwrap();
+        assert_eq!(
+            bindings.command_for_key(&KeyCode::Char('f')),
+            Some(UiCommand::Attack)
+        );
+        assert_eq!(
+            bindings.command_for_key(&KeyCode::F(5)),
+            Some(UiCommand::Save)
+        );
     }
 
     #[test]
@@ -461,14 +483,23 @@ mod tests {
     }
 
     #[test]
-    fn custom_keybinding_reflected_in_help_line() {
+    fn custom_keybinding_reaches_semantic_commands() {
+        use bd_tui::commands::UiCommand;
+        use crossterm::event::KeyCode;
+
         let kb = KeyBindingConfig {
             quit: "x".into(),
             ..KeyBindingConfig::default()
         };
-        let line = kb.help_line();
-        assert!(line.contains("Quit:x"));
-        assert!(!line.contains("Quit:q"));
+        let bindings = kb.command_bindings().unwrap();
+        assert_eq!(
+            bindings.command_for_key(&KeyCode::Char('x')),
+            Some(UiCommand::Quit)
+        );
+        assert_ne!(
+            bindings.command_for_key(&KeyCode::Char('q')),
+            Some(UiCommand::Quit)
+        );
     }
 
     #[test]
@@ -481,5 +512,33 @@ mod tests {
         assert!(result.is_err());
         let err = result.unwrap_err().to_string();
         assert!(err.contains("theme_id"));
+    }
+
+    #[test]
+    fn validate_config_rejects_contextual_binding_conflicts() {
+        let config = AppConfig {
+            keybindings: KeyBindingConfig {
+                attack: "w".into(),
+                ..KeyBindingConfig::default()
+            },
+            ..AppConfig::default()
+        };
+        let error = validate_config(&config).unwrap_err().to_string();
+        assert!(error.contains("MoveNorth"));
+        assert!(error.contains("Attack"));
+    }
+
+    #[test]
+    fn validate_config_rejects_unknown_key_names() {
+        let config = AppConfig {
+            keybindings: KeyBindingConfig {
+                save: "banana".into(),
+                ..KeyBindingConfig::default()
+            },
+            ..AppConfig::default()
+        };
+        let error = validate_config(&config).unwrap_err().to_string();
+        assert!(error.contains("unsupported key binding"));
+        assert!(error.contains("banana"));
     }
 }

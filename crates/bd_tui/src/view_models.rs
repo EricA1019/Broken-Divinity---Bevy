@@ -124,24 +124,7 @@ pub struct HelpViewModel {
 
 impl Default for HelpViewModel {
     fn default() -> Self {
-        Self {
-            keys: vec![
-                ("WASD".into(), "Move".into()),
-                (".".into(), "Wait (restore 1 AP)".into()),
-                ("f".into(), "Attack nearest enemy".into()),
-                ("g".into(), "Guard (reduce damage)".into()),
-                ("t".into(), "Travel to dungeon".into()),
-                ("r".into(), "Return to outpost".into()),
-                ("i".into(), "Toggle inventory".into()),
-                ("p".into(), "Pick up item".into()),
-                ("u".into(), "Use carried item".into()),
-                ("b".into(), "Build / cycle station".into()),
-                ("a".into(), "Assign survivor task".into()),
-                ("e".into(), "Assign survivor to station".into()),
-                ("?".into(), "Toggle help".into()),
-                ("Esc / q".into(), "Cancel build / Quit".into()),
-            ],
-        }
+        Self { keys: Vec::new() }
     }
 }
 
@@ -172,6 +155,7 @@ pub(crate) fn register_view_models(app: &mut App) {
             build_container_vm,
             build_party_vm,
             build_event_vm,
+            build_help_vm,
         )
             .in_set(BdSet::ViewModelBuild),
     );
@@ -270,18 +254,49 @@ fn build_log_vm(log: Res<GameLog>, mut vm: ResMut<LogViewModel>) {
 }
 
 fn build_action_list_vm(
-    player: Query<(&Position, &Pools, Option<&bd_core::spatial::EntityScope>), With<Player>>,
+    player: Query<
+        (
+            Entity,
+            &Position,
+            &Pools,
+            Option<&bd_core::spatial::EntityScope>,
+        ),
+        With<Player>,
+    >,
     enemies: Query<
         (&Position, Option<&bd_core::spatial::EntityScope>),
         (With<BlocksMovement>, Without<Player>),
     >,
     mode: Res<bd_core::spatial::GameMode>,
     map: Res<SmokeMap>,
+    outpost: Res<bd_core::spatial::OutpostState>,
+    items: Query<
+        (
+            Option<&Position>,
+            Option<&bd_core::inventory::Usable>,
+            Option<&ContainedIn>,
+            Option<&bd_core::spatial::EntityScope>,
+        ),
+        With<Item>,
+    >,
+    survivors: Query<
+        (
+            &bd_core::colony::survivors::SurvivorTask,
+            Option<&bd_core::spatial::EntityScope>,
+        ),
+        With<bd_core::colony::survivors::Survivor>,
+    >,
+    stations: Query<
+        Option<&bd_core::spatial::EntityScope>,
+        With<bd_core::colony::stations::Station>,
+    >,
+    colony_resources: Res<bd_core::colony::production::ColonyResources>,
+    bindings: Res<crate::commands::CommandBindings>,
     mut vm: ResMut<ActionListViewModel>,
 ) {
-    let Some((pp, pools, _)) = player
+    let Some((player_entity, pp, pools, _)) = player
         .iter()
-        .find(|(_, _, scope)| scope_active(*scope, *mode))
+        .find(|(_, _, _, scope)| scope_active(*scope, *mode))
     else {
         vm.actions.clear();
         return;
@@ -294,46 +309,98 @@ fn build_action_list_vm(
         .any(|(position, _)| {
             (position.x - pp.x).unsigned_abs() + (position.y - pp.y).unsigned_abs() <= 1
         });
-    let can_move = map.is_walkable(pp.x + 1, pp.y);
+    let active_map = if *mode == bd_core::spatial::GameMode::Outpost {
+        &outpost.map
+    } else {
+        &map
+    };
+    let can_move = [
+        (pp.x, pp.y - 1),
+        (pp.x, pp.y + 1),
+        (pp.x - 1, pp.y),
+        (pp.x + 1, pp.y),
+    ]
+    .into_iter()
+    .any(|(x, y)| {
+        active_map.is_walkable(x, y)
+            && !enemies.iter().any(|(position, scope)| {
+                scope_active(scope, *mode) && position.x == x && position.y == y
+            })
+    });
+    let item_here = items.iter().any(|(position, _, _, scope)| {
+        scope_active(scope, *mode) && position.is_some_and(|position| *position == *pp)
+    });
+    let usable_item = items.iter().any(|(_, usable, contained, scope)| {
+        scope_active(scope, *mode)
+            && usable.is_some()
+            && contained.is_some_and(|container| container.0 == player_entity)
+    });
+    let survivor_available = survivors
+        .iter()
+        .any(|(_, scope)| scope_active(scope, *mode));
+    let idle_survivor_available = survivors.iter().any(|(task, scope)| {
+        scope_active(scope, *mode) && matches!(task, bd_core::colony::survivors::SurvivorTask::Idle)
+    });
+    let station_available = stations.iter().any(|scope| scope_active(scope, *mode));
+    let minimum_build_cost = bd_core::colony::stations::default_station_blueprints()
+        .iter()
+        .map(|blueprint| blueprint.build_cost_supplies)
+        .min()
+        .unwrap_or_default();
+    let supplies = colony_resources
+        .pools
+        .get(PoolKind::Supplies)
+        .map_or(0, |pool| pool.current);
+    let availability = crate::commands::ActionAvailability {
+        mode: *mode,
+        has_ap,
+        enemy_in_range: enemy_near,
+        can_move,
+        item_here,
+        usable_item,
+        can_build: supplies >= minimum_build_cost,
+        survivor_available,
+        station_available,
+    };
+    let mut projections = crate::commands::action_panel(&bindings, availability);
+    if let Some(staff) = projections
+        .iter_mut()
+        .find(|action| action.command == crate::commands::UiCommand::AssignStation)
+        && !idle_survivor_available
+    {
+        staff.enabled = false;
+        staff.denial_reason = Some("No idle survivor");
+    }
 
-    vm.actions = vec![
-        ActionItemVm {
-            label: "Move".into(),
-            key_hint: "WASD".into(),
-            enabled: has_ap && can_move,
-            denial_reason: if !has_ap {
-                Some("No AP".into())
-            } else if !can_move {
-                Some("Blocked".into())
-            } else {
-                None
-            },
-        },
-        ActionItemVm {
-            label: "Wait".into(),
-            key_hint: ".".into(),
-            enabled: true,
-            denial_reason: None,
-        },
-        ActionItemVm {
-            label: "Attack".into(),
-            key_hint: "f".into(),
-            enabled: has_ap && enemy_near,
-            denial_reason: if !has_ap {
-                Some("No AP".into())
-            } else if !enemy_near {
-                Some("Range".into())
-            } else {
-                None
-            },
-        },
-        ActionItemVm {
-            label: "Guard".into(),
-            key_hint: "g".into(),
-            enabled: has_ap,
-            denial_reason: if !has_ap { Some("No AP".into()) } else { None },
-        },
-    ];
+    vm.actions = projections
+        .into_iter()
+        .map(|action| ActionItemVm {
+            label: action.label.into(),
+            key_hint: action.key,
+            enabled: action.enabled,
+            denial_reason: action.denial_reason.map(str::to_owned),
+        })
+        .collect();
+}
+
+fn build_help_vm(
+    bindings: Res<crate::commands::CommandBindings>,
+    mode: Res<bd_core::spatial::GameMode>,
+    build_ghost: Res<bd_core::colony::stations::BuildGhostState>,
+    build_menu: Res<bd_core::colony::stations::BuildMenuState>,
+    mut vm: ResMut<HelpViewModel>,
+) {
+    let interaction = if *mode == bd_core::spatial::GameMode::GameOver {
+        crate::commands::InteractionMode::GameOver
+    } else if build_ghost.active || build_menu.active {
+        crate::commands::InteractionMode::Build
+    } else {
+        crate::commands::InteractionMode::Normal
+    };
+    vm.keys = crate::commands::help_entries(&bindings, *mode, interaction)
+        .into_iter()
+        .map(|entry| (entry.key, entry.description.into()))
+        .collect();
 }
 
 fn build_map_vm(
@@ -600,6 +667,9 @@ mod tests {
         // Minimal plugins needed for schedule execution
         app.add_plugins(bd_core::BdCorePlugin);
         app.insert_resource(bd_core::colony::production::ColonyResources::default());
+        app.insert_resource(crate::commands::CommandBindings::default());
+        *app.world_mut().resource_mut::<bd_core::spatial::GameMode>() =
+            bd_core::spatial::GameMode::Tactical;
         // Insert all view model resources
         app.insert_resource(StatsViewModel::default());
         app.insert_resource(ActionListViewModel::default());
@@ -685,7 +755,7 @@ mod tests {
             .insert_resource(SmokeMap::default_smoke_map());
         app.update();
         let vm = app.world().resource::<MapViewModel>();
-        // GameMode defaults to Title, so map stays at default 20x12
+        // Tactical mode projects the active dungeon map.
         assert_eq!(vm.width, 20);
         assert_eq!(vm.player_pos, Some(Position { x: 5, y: 5 }));
     }

@@ -194,6 +194,7 @@ dependencies = [
  "bevy_ecs",
  "bevy_ratatui",
  "color-eyre",
+ "crossterm",
  "directories",
  "ron",
  "serde",

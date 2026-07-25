@@ -6,11 +6,11 @@
 use std::time::Duration;
 use std::{collections::HashMap, path::Path};
 
-use bevy_app::{PanicHandlerPlugin, ScheduleRunnerPlugin, Startup};
+use bevy_app::{AppExit, PanicHandlerPlugin, ScheduleRunnerPlugin, Startup};
+use bevy_ecs::message::MessageWriter;
 use bevy_ecs::schedule::IntoScheduleConfigs;
 use bevy_ecs::system::{Commands, Query, Res, ResMut};
 
-use bd_core::HelpLine;
 use bd_core::components::{Player, Position};
 use bd_core::factory::spawn_from_blueprint;
 use bd_core::gamelog::{GameLog, LogLevel};
@@ -77,9 +77,17 @@ fn main() {
     app.add_plugins(bd_core::BdFoundationPlugin);
     app.add_plugins(bd_tui::BdTuiPlugin);
 
-    // Override HelpLine with config-derived value
-    let help_line = HelpLine(loaded.config.keybindings.help_line());
-    app.insert_resource(help_line);
+    // One validated binding resource drives terminal input and every guidance
+    // projection. Invalid user bindings fall back as one complete set.
+    let command_bindings = loaded
+        .config
+        .keybindings
+        .command_bindings()
+        .unwrap_or_else(|error| {
+            tracing::warn!("Invalid keybindings: {error}. Using built-in defaults.");
+            bd_tui::commands::CommandBindings::default()
+        });
+    app.insert_resource(command_bindings);
 
     // Override defaults with RON content at startup
     app.add_systems(Startup, apply_ron_content);
@@ -92,11 +100,22 @@ fn main() {
     );
     app.add_systems(
         bevy_app::Update,
-        process_persistence_requests.in_set(bd_core::BdSet::ResultEmission),
+        (process_persistence_requests, process_exit_request)
+            .chain()
+            .in_set(bd_core::BdSet::ResultEmission),
     );
 
     app.run();
     tracing::info!("Broken Divinity Kernel exited cleanly");
+}
+
+fn process_exit_request(
+    mut request: ResMut<bd_tui::commands::ApplicationExitRequest>,
+    mut exits: MessageWriter<AppExit>,
+) {
+    if std::mem::take(&mut request.0) {
+        exits.write(AppExit::Success);
+    }
 }
 
 /// Execute persistence requests emitted by the TUI at the application
@@ -206,6 +225,7 @@ fn spawn_outpost_player(
     mode: Res<bd_core::spatial::GameMode>,
     content: Res<bd_core::content::FoundationContent>,
     player: Query<Entity, With<Player>>,
+    bindings: Res<bd_tui::commands::CommandBindings>,
 ) {
     // Only spawn when the game is in Outpost mode (not Title)
     if *mode != bd_core::spatial::GameMode::Outpost {
@@ -240,7 +260,11 @@ fn spawn_outpost_player(
         LogLevel::Info,
     );
     game_log.push(
-        "b: build | a: assign | t: travel | i: inventory | p: pickup | r: extract",
+        bd_tui::commands::footer_text(
+            &bindings,
+            bd_core::spatial::GameMode::Outpost,
+            bd_tui::commands::InteractionMode::Normal,
+        ),
         LogLevel::Info,
     );
 }

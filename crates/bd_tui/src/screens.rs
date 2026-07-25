@@ -114,7 +114,6 @@ pub struct WidgetRenderContext<'a> {
     pub help: &'a HelpViewModel,
     pub symbols: &'a SymbolRegistry,
     pub theme: &'a ThemeRegistry,
-    pub travel_ctx: Option<&'a bd_core::overworld::TravelContext>,
 }
 
 /// A registered widget knows its view-model dependency and how to render.
@@ -244,7 +243,7 @@ pub fn default_screen_registry() -> ScreenRegistry {
             },
             PanelDefinition {
                 id: "actions".into(),
-                layout: PanelLayout::Bottom { height_pct: 12 },
+                layout: PanelLayout::Bottom { height_pct: 30 },
                 view_model: "ActionListViewModel".into(),
             },
             PanelDefinition {
@@ -304,9 +303,9 @@ pub fn default_screen_registry() -> ScreenRegistry {
                 view_model: "LogViewModel".into(),
             },
             PanelDefinition {
-                id: "outpost_travel".into(),
-                layout: PanelLayout::Bottom { height_pct: 20 },
-                view_model: "ContainerViewModel".into(),
+                id: "actions".into(),
+                layout: PanelLayout::Bottom { height_pct: 30 },
+                view_model: "ActionListViewModel".into(),
             },
             PanelDefinition {
                 id: "map".into(),
@@ -545,11 +544,6 @@ pub fn default_widget_registry() -> WidgetRegistry {
         panel_id: "outpost_party".into(),
         view_model: "ContainerViewModel".into(),
         render: Box::new(render_outpost_party_widget),
-    });
-    reg.register(WidgetBinding {
-        panel_id: "outpost_travel".into(),
-        view_model: "ContainerViewModel".into(),
-        render: Box::new(render_outpost_travel_widget),
     });
     reg.register(WidgetBinding {
         panel_id: "debug_trace".into(),
@@ -1024,7 +1018,8 @@ fn render_actions_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContex
         })
         .collect();
 
-    let para = ratatui::widgets::Paragraph::new(ratatui::text::Line::from(spans));
+    let para = ratatui::widgets::Paragraph::new(ratatui::text::Line::from(spans))
+        .wrap(ratatui::widgets::Wrap { trim: false });
     frame.render_widget(para, inner);
 }
 
@@ -1216,94 +1211,6 @@ fn render_outpost_party_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRender
     frame.render_widget(para, inner);
 }
 
-fn render_outpost_travel_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
-    let block = ratatui::widgets::Block::default()
-        .title(" Travel ")
-        .borders(ratatui::widgets::Borders::ALL)
-        .style(ratatui::style::Style::default().fg(ratatui::style::Color::Gray));
-
-    let inner = block.inner(area);
-    frame.render_widget(block, area);
-
-    let Some(travel_ctx) = ctx.travel_ctx else {
-        let text = ratatui::text::Line::styled(
-            " Fixed dungeon: press t to enter ",
-            ratatui::style::Style::default().fg(MUTED_COLOR),
-        );
-        frame.render_widget(ratatui::widgets::Paragraph::new(text), inner);
-        return;
-    };
-    let ow = &travel_ctx.overworld;
-    let is_traveling = ow.turns_remaining > 0;
-
-    let text: Vec<ratatui::text::Line> = if is_traveling {
-        // Travel in progress — show destination, turns, weather
-        let dest = ow.current_node.as_deref().unwrap_or("unknown");
-        let weather_icon = match ow.weather {
-            bd_core::overworld::Weather::Clear => "☀ Clear",
-            bd_core::overworld::Weather::Rain => "🌧 Rain",
-            bd_core::overworld::Weather::Storm => "⛈ Storm",
-            bd_core::overworld::Weather::AnomalyStorm => "⚠ Anomaly Storm",
-        };
-        let weather_color = match ow.weather {
-            bd_core::overworld::Weather::Clear => ratatui::style::Color::Green,
-            bd_core::overworld::Weather::Rain => ratatui::style::Color::Cyan,
-            bd_core::overworld::Weather::Storm => ratatui::style::Color::Yellow,
-            bd_core::overworld::Weather::AnomalyStorm => ratatui::style::Color::Red,
-        };
-        vec![
-            ratatui::text::Line::styled(
-                format!(" Traveling to: {}", dest),
-                ratatui::style::Style::default().fg(ACCENT_COLOR),
-            ),
-            ratatui::text::Line::styled(
-                format!(" Turns remaining: {}", ow.turns_remaining),
-                ratatui::style::Style::default().fg(ratatui::style::Color::White),
-            ),
-            ratatui::text::Line::styled(
-                format!(" Weather: {}", weather_icon),
-                ratatui::style::Style::default().fg(weather_color),
-            ),
-        ]
-    } else if travel_ctx.travel_map.nodes.is_empty() {
-        vec![
-            ratatui::text::Line::from(""),
-            ratatui::text::Line::styled(
-                " Press 't' to travel to a dungeon.",
-                ratatui::style::Style::default().fg(ACCENT_COLOR),
-            ),
-            ratatui::text::Line::from(""),
-            ratatui::text::Line::styled(
-                " Press 'i' to view inventory.",
-                ratatui::style::Style::default().fg(MUTED_COLOR),
-            ),
-        ]
-    } else {
-        let mut lines = vec![
-            ratatui::text::Line::styled(
-                " Reachable locations:",
-                ratatui::style::Style::default().fg(ACCENT_COLOR),
-            ),
-            ratatui::text::Line::from(""),
-        ];
-        for node in &travel_ctx.travel_map.nodes {
-            lines.push(ratatui::text::Line::styled(
-                format!("  {} ({} turns)", node.name, node.travel_time),
-                ratatui::style::Style::default().fg(ratatui::style::Color::White),
-            ));
-        }
-        lines.push(ratatui::text::Line::from(""));
-        lines.push(ratatui::text::Line::styled(
-            " Press 't' to travel | 'i' inventory",
-            ratatui::style::Style::default().fg(MUTED_COLOR),
-        ));
-        lines
-    };
-
-    let para = ratatui::widgets::Paragraph::new(text);
-    frame.render_widget(para, inner);
-}
-
 // ---------------------------------------------------------------------------
 // Debug widget renderers
 // ---------------------------------------------------------------------------
@@ -1432,20 +1339,15 @@ mod tests {
     use super::*;
 
     #[test]
-    fn travel_panel_shows_hint_when_empty() {
-        // Verify the travel panel uses TravelMap nodes, not hardcoded locations
+    fn outpost_has_contextual_action_panel() {
         let registry = default_screen_registry();
         let has_panel = registry
             .get("outpost")
             .unwrap()
             .panels
             .iter()
-            .any(|p| p.id == "outpost_travel");
-        // The panel exists; rendering logic is verified in render tests
-        assert!(
-            has_panel,
-            "Travel panel should be registered in combat screen"
-        );
+            .any(|p| p.id == "actions");
+        assert!(has_panel, "Outpost should expose contextual actions");
     }
 
     #[test]

@@ -24,7 +24,7 @@ fn dungeon_driver() -> FoundationDriver {
 #[test]
 fn terminal_attack_maps_to_quick_attack() {
     assert_eq!(
-        bd_tui::canonical_action_id_for_key('f'),
+        bd_tui::commands::command_action_id(bd_tui::commands::UiCommand::Attack),
         Some("ability.quick_attack")
     );
 }
