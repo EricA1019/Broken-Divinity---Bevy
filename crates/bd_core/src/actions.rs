@@ -771,10 +771,12 @@ fn resolve_action_effects(
         // than a combat turn.
         if player_flag.is_some() && is_turn_action(&pending.action_id) {
             should_advance.0 = true;
-            should_advance.1 = true;
-            commands
-                .entity(entity)
-                .insert(crate::time::AwaitingEnemyPhase);
+            if *location.mode == crate::spatial::GameMode::Tactical {
+                should_advance.1 = true;
+                commands
+                    .entity(entity)
+                    .insert(crate::time::AwaitingEnemyPhase);
+            }
         }
         let Some(def) = registry.get(&pending.action_id) else {
             commands.entity(entity).remove::<PendingAction>();

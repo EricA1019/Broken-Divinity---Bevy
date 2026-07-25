@@ -5,15 +5,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::actions::{ActionDefinition, Effect, Requirement};
 use crate::signals::{DeltaTag, PoolKind};
-use rand::SeedableRng;
-use rand::rngs::StdRng;
 
 // ── Combat RNG ──
 
 /// Seeded RNG for d100 combat rolls. Deterministic fallback when absent (for tests).
-#[derive(Resource, Debug)]
+#[derive(Resource, Debug, Clone, Serialize, Deserialize)]
 pub struct CombatRng {
-    rng: StdRng,
+    seed: u64,
+    state: u64,
 }
 
 impl Default for CombatRng {
@@ -25,17 +24,34 @@ impl Default for CombatRng {
 impl CombatRng {
     /// Create a new CombatRng seeded from a global seed.
     pub fn from_seed(seed: u64) -> Self {
+        let state = seed ^ 0x9E37_79B9_7F4A_7C15;
         Self {
-            rng: StdRng::seed_from_u64(seed),
+            seed,
+            state: if state == 0 {
+                0xA076_1D64_78BD_642F
+            } else {
+                state
+            },
         }
+    }
+
+    pub fn seed(&self) -> u64 {
+        self.seed
+    }
+
+    fn next_u32(&mut self) -> u32 {
+        let mut value = self.state;
+        value ^= value >> 12;
+        value ^= value << 25;
+        value ^= value >> 27;
+        self.state = value;
+        (value.wrapping_mul(0x2545_F491_4F6C_DD1D) >> 32) as u32
     }
 
     /// Roll 1d100. Returns None when CombatRng resource is absent (test fallback).
     pub fn d100(rng: Option<&mut CombatRng>) -> Option<i32> {
         rng.map(|r| {
-            // Use <StdRng as rand::Rng>::gen via the SeedableRng + Rng combination
-            // We use the method call syntax with a raw identifier for the  keyword
-            let v: u32 = <_ as rand::Rng>::next_u32(&mut r.rng);
+            let v = r.next_u32();
             (v % 100 + 1) as i32
         })
     }
@@ -190,8 +206,6 @@ pub fn register_take_cover_action() -> ActionDefinition {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use rand::SeedableRng;
-    use rand::rngs::StdRng;
 
     #[test]
     fn aimed_attack_costs_two_ap() {
@@ -208,9 +222,7 @@ mod tests {
 
     #[test]
     fn d100_roll_in_range() {
-        let mut rng = CombatRng {
-            rng: StdRng::seed_from_u64(42),
-        };
+        let mut rng = CombatRng::from_seed(42);
         for _ in 0..100 {
             let roll = CombatRng::d100(Some(&mut rng));
             assert!(roll.is_some());
@@ -242,9 +254,7 @@ mod tests {
         let mut high_result = false;
         let mut low_result = false;
         for seed in 0..100 {
-            let mut rng = CombatRng {
-                rng: StdRng::seed_from_u64(seed),
-            };
+            let mut rng = CombatRng::from_seed(seed);
             let result = CombatRng::apply_damage_variance(-10, Some(&mut rng));
             if result < -10 {
                 high_result = true;
@@ -256,10 +266,9 @@ mod tests {
             // So result < -10 means high roll, result > -10 means low roll
             // But result == -10 means middle roll
         }
+        assert!(high_result && low_result);
         // At least one seed should produce a non-middle roll
-        let mut rng = CombatRng {
-            rng: StdRng::seed_from_u64(42),
-        };
+        let mut rng = CombatRng::from_seed(42);
         let result = CombatRng::apply_damage_variance(-10, Some(&mut rng));
         // Just verify the result is a valid modified amount
         assert!(

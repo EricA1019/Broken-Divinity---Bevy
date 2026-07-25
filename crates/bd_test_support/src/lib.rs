@@ -22,7 +22,7 @@ use bd_core::{
     save::{RunSnapshot, SaveError},
     session::{RunOutcome, RunSession},
     signals::{ActionDenied, ActionIntent, AssignToStation, PoolKind},
-    spatial::{EntityScope, GameMode, TransitionComplete, TransitionIntent},
+    spatial::{EntityScope, GameMode, OutpostState, TransitionComplete, TransitionIntent},
     trace::SignalTrace,
 };
 use bevy_app::{App, Update};
@@ -462,6 +462,56 @@ impl FoundationDriver {
             &HashMap::new(),
         )?;
         Ok(())
+    }
+
+    pub fn checkpoint_with_missing_relationship(&mut self) -> Option<FoundationCheckpoint> {
+        let mut checkpoint = self.checkpoint().ok()?;
+        let missing = checkpoint
+            .snapshot
+            .entities
+            .iter()
+            .find_map(|entity| entity.contains.first().copied())?;
+        checkpoint
+            .snapshot
+            .entities
+            .retain(|entity| entity.save_id != missing);
+        Some(checkpoint)
+    }
+
+    pub fn save_manual_slot(
+        &mut self,
+        save_dir: &std::path::Path,
+    ) -> Result<std::path::PathBuf, ScenarioError> {
+        Ok(bd_core::save::save_manual_slot(
+            self.app.world_mut(),
+            save_dir,
+        )?)
+    }
+
+    pub fn load_manual_slot(&mut self, save_dir: &std::path::Path) -> Result<(), ScenarioError> {
+        let snapshot = bd_core::save::load_manual_slot(save_dir)?;
+        bd_core::save::restore_snapshot_into(self.app.world_mut(), &snapshot, &HashMap::new())?;
+        Ok(())
+    }
+
+    pub fn outpost_party_references_are_valid(&self) -> bool {
+        self.app
+            .world()
+            .get_resource::<OutpostState>()
+            .is_some_and(|outpost| {
+                !outpost.party.is_empty()
+                    && outpost.party.iter().all(|entity| {
+                        self.app.world().entities().contains(*entity)
+                            && self.app.world().entity(*entity).contains::<Survivor>()
+                    })
+            })
+    }
+
+    pub fn first_hostile_health(&mut self) -> Option<i32> {
+        self.first_hostile()
+            .and_then(|hostile| self.app.world().get::<Pools>(hostile))
+            .and_then(|pools| pools.get(PoolKind::Health))
+            .map(|health| health.current)
     }
 
     pub fn advance_idle(&mut self) {

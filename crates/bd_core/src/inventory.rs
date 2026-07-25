@@ -182,10 +182,12 @@ fn process_pickup(
             .insert(ContainedIn(intent.actor));
         if player.is_some() {
             should_advance.0 = true;
-            should_advance.1 = true;
-            commands
-                .entity(intent.actor)
-                .insert(crate::time::AwaitingEnemyPhase);
+            if *mode == crate::spatial::GameMode::Tactical {
+                should_advance.1 = true;
+                commands
+                    .entity(intent.actor)
+                    .insert(crate::time::AwaitingEnemyPhase);
+            }
         }
         game_log.push(format!("Picked up {}.", item_name.0), LogLevel::Info);
     }

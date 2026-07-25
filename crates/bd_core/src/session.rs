@@ -121,14 +121,9 @@ pub(crate) fn register_session(app: &mut bevy_app::App, foundation: bool) {
     }
 }
 
-fn synchronize_rng(
-    session: Res<RunSession>,
-    mut combat_rng: ResMut<crate::combat::CombatRng>,
-    mut last_seed: Local<Option<u64>>,
-) {
-    if *last_seed != Some(session.seed) {
+fn synchronize_rng(session: Res<RunSession>, mut combat_rng: ResMut<crate::combat::CombatRng>) {
+    if combat_rng.seed() != session.seed {
         *combat_rng = crate::combat::CombatRng::from_seed(session.seed);
-        *last_seed = Some(session.seed);
     }
 }
 

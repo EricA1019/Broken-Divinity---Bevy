@@ -106,11 +106,8 @@ fn process_persistence_requests(world: &mut bevy_ecs::world::World) {
     let save_requested = world.resource_mut::<bd_core::save::SaveRequest>().0;
     world.resource_mut::<bd_core::save::SaveRequest>().0 = false;
     if save_requested {
-        let session = world.resource::<bd_core::session::RunSession>();
-        let seed = session.seed;
-        let turn = session.turn;
         let save_dir = config::data_dir().join("saves");
-        match bd_core::save::save_world(world, seed, turn, &save_dir) {
+        match bd_core::save::save_manual_slot(world, &save_dir) {
             Ok(path) => world
                 .resource_mut::<GameLog>()
                 .push(format!("Game saved to {}.", path.display()), LogLevel::Info),
@@ -124,30 +121,8 @@ fn process_persistence_requests(world: &mut bevy_ecs::world::World) {
     world.resource_mut::<bd_core::save::LoadRequest>().0 = false;
     if load_requested {
         let save_dir = config::data_dir().join("saves");
-        let latest = std::fs::read_dir(&save_dir).ok().and_then(|entries| {
-            entries
-                .filter_map(Result::ok)
-                .filter_map(|entry| {
-                    let path = entry.path();
-                    let turn = path
-                        .file_stem()?
-                        .to_str()?
-                        .strip_prefix("save-turn-")?
-                        .parse::<u64>()
-                        .ok()?;
-                    Some((turn, path))
-                })
-                .max_by_key(|(turn, _)| *turn)
-                .map(|(_, path)| path)
-        });
-        let Some(path) = latest else {
-            world.resource_mut::<GameLog>().push(
-                "Load failed: no save file exists.".to_string(),
-                LogLevel::Warn,
-            );
-            return;
-        };
-        match bd_core::save::load_snapshot(&path).and_then(|snapshot| {
+        let path = bd_core::save::manual_slot_path(&save_dir);
+        match bd_core::save::load_manual_slot(&save_dir).and_then(|snapshot| {
             bd_core::save::restore_snapshot_into(world, &snapshot, &HashMap::new())
                 .map(|_| snapshot)
         }) {

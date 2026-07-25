@@ -9,13 +9,20 @@
 
 use std::collections::HashMap;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use bevy_ecs::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    components::{BlocksMovement, ContentIdentity, Name, Player, Position, Tile},
+    colony::{
+        stations::{Station, StationType},
+        survivors::{Survivor, SurvivorTask},
+    },
+    combat::CombatRng,
+    components::{
+        BlocksMovement, ContentIdentity, ExitTile, Name, Player, Position, ResourceNode, Tile,
+    },
     factory::EntityBlueprint,
     gamelog::GameLog,
     inventory::{Container, EquipmentSlot, Item, SlotKind, Usable, UseEffect},
@@ -23,6 +30,7 @@ use crate::{
     pools::{Pool, Pools},
     relationships::{ContainedIn, EquippedBy, FactionMember, LocationOwned, OwnedBy, SummonedBy},
     signals::PoolKind,
+    spatial::{EntityScope, OutpostState, PersistentEntity, TransientEntity},
     statuses::{StatusInstance, Statuses},
 };
 
@@ -31,7 +39,7 @@ use crate::{
 // ---------------------------------------------------------------------------
 
 /// Current save format version. Bump on breaking changes.
-pub const SAVE_VERSION: u32 = 3;
+pub const SAVE_VERSION: u32 = 4;
 
 /// Content version — corresponds to the content pack hash/date.
 pub const CONTENT_VERSION: &str = "foundation-2026-07-24";
@@ -83,6 +91,20 @@ pub struct EntityData {
     pub usable: bool,
     pub usable_consume: bool,
     pub usable_effects: Vec<UseEffect>,
+    pub scope: Option<EntityScope>,
+    pub survivor_task: Option<SurvivorTaskSnapshot>,
+    pub station_type: Option<StationType>,
+    pub resource_node: Option<ResourceNode>,
+    pub exit_tile: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum SurvivorTaskSnapshot {
+    Idle,
+    Gathering,
+    Defending,
+    AssignedTo(SaveId),
+    Resting,
 }
 
 /// Serializable pool data.
@@ -124,7 +146,12 @@ pub struct RunSnapshot {
     pub colony_storage: crate::colony::production::ColonyStorage,
     #[serde(default)]
     pub colony_resources: Vec<PoolSnapshot>,
+    pub outpost_party: Vec<SaveId>,
+    pub combat_rng: CombatRng,
 }
+
+pub const MANUAL_SLOT_FILE: &str = "manual-slot.ron";
+const MANUAL_SLOT_TEMP_FILE: &str = "manual-slot.ron.tmp";
 
 // ---------------------------------------------------------------------------
 // Save/load operations
@@ -193,19 +220,53 @@ pub fn save_world(
     save_dir: &PathBuf,
 ) -> Result<PathBuf, SaveError> {
     let snapshot = build_snapshot(world, seed, turn);
-    let path = save_dir.join(format!("save-turn-{turn}.ron"));
+    write_manual_snapshot(&snapshot, save_dir)
+}
+
+pub fn manual_slot_path(save_dir: &Path) -> PathBuf {
+    save_dir.join(MANUAL_SLOT_FILE)
+}
+
+/// Replace the single Foundation manual slot atomically.
+///
+/// The temporary file is serialized, parsed, and validated before it replaces
+/// the prior slot. A failed write or validation therefore leaves the prior
+/// slot available.
+pub fn save_manual_slot(world: &mut World, save_dir: &Path) -> Result<PathBuf, SaveError> {
+    let session = world
+        .get_resource::<crate::session::RunSession>()
+        .cloned()
+        .ok_or_else(|| SaveError::Corrupt("RunSession resource is missing".into()))?;
+    let snapshot = build_snapshot(world, session.seed, session.turn);
+    write_manual_snapshot(&snapshot, save_dir)
+}
+
+fn write_manual_snapshot(snapshot: &RunSnapshot, save_dir: &Path) -> Result<PathBuf, SaveError> {
+    validate_snapshot(snapshot)?;
 
     fs::create_dir_all(save_dir).map_err(SaveError::Io)?;
+    let final_path = manual_slot_path(save_dir);
+    let temporary_path = save_dir.join(MANUAL_SLOT_TEMP_FILE);
     let content = ron::ser::to_string_pretty(&snapshot, ron::ser::PrettyConfig::default())
-        .map_err(|e| SaveError::Corrupt(format!("Serialization: {e}")))?;
-    fs::write(&path, content).map_err(SaveError::Io)?;
+        .map_err(|error| SaveError::Corrupt(format!("Serialization: {error}")))?;
+    fs::write(&temporary_path, content).map_err(SaveError::Io)?;
 
+    let staged = load_snapshot(&temporary_path);
+    if let Err(error) = staged {
+        let _ = fs::remove_file(&temporary_path);
+        return Err(error);
+    }
+    fs::rename(&temporary_path, &final_path).map_err(SaveError::Io)?;
     tracing::info!(
         "Saved {} entities to {}",
         snapshot.entities.len(),
-        path.display()
+        final_path.display()
     );
-    Ok(path)
+    Ok(final_path)
+}
+
+pub fn load_manual_slot(save_dir: &Path) -> Result<RunSnapshot, SaveError> {
+    load_snapshot(&manual_slot_path(save_dir))
 }
 
 /// Deserialize a save file into a validated snapshot.
@@ -214,6 +275,11 @@ pub fn load_snapshot(path: &PathBuf) -> Result<RunSnapshot, SaveError> {
     let snapshot: RunSnapshot = ron::de::from_str(&content)
         .map_err(|e| SaveError::Corrupt(format!("Deserialization: {e}")))?;
 
+    validate_snapshot(&snapshot)?;
+    Ok(snapshot)
+}
+
+fn validate_snapshot(snapshot: &RunSnapshot) -> Result<(), SaveError> {
     if snapshot.save_version != SAVE_VERSION {
         return Err(SaveError::VersionMismatch {
             expected: SAVE_VERSION,
@@ -223,7 +289,7 @@ pub fn load_snapshot(path: &PathBuf) -> Result<RunSnapshot, SaveError> {
     if snapshot.content_version != CONTENT_VERSION {
         return Err(SaveError::ContentMismatch {
             expected: CONTENT_VERSION.into(),
-            found: snapshot.content_version,
+            found: snapshot.content_version.clone(),
         });
     }
     if snapshot.map_width <= 0
@@ -234,7 +300,68 @@ pub fn load_snapshot(path: &PathBuf) -> Result<RunSnapshot, SaveError> {
             "invalid map dimensions or tile count".into(),
         ));
     }
-    Ok(snapshot)
+
+    let entities: HashMap<SaveId, &EntityData> = snapshot
+        .entities
+        .iter()
+        .map(|entity| (entity.save_id, entity))
+        .collect();
+    if entities.len() != snapshot.entities.len() {
+        return Err(SaveError::Corrupt("duplicate entity save ID".into()));
+    }
+
+    let require = |owner: SaveId, target: SaveId, relationship: &str| {
+        if entities.contains_key(&target) {
+            Ok(())
+        } else {
+            Err(SaveError::Corrupt(format!(
+                "entity {owner:?} references missing {relationship} {target:?}"
+            )))
+        }
+    };
+    for entity in &snapshot.entities {
+        for target in &entity.contains {
+            require(entity.save_id, *target, "container")?;
+        }
+        for (target, relationship) in [
+            (entity.equipped_by, "equipment owner"),
+            (entity.owned_by, "owner"),
+            (entity.summoned_by, "summoner"),
+        ] {
+            if let Some(target) = target {
+                require(entity.save_id, target, relationship)?;
+            }
+        }
+        for status in &entity.statuses {
+            if let Some(source) = status.source_id {
+                require(entity.save_id, source, "status source")?;
+            }
+        }
+        if let Some(SurvivorTaskSnapshot::AssignedTo(station)) = entity.survivor_task {
+            require(entity.save_id, station, "assigned station")?;
+            if entities
+                .get(&station)
+                .is_none_or(|station| station.station_type.is_none())
+            {
+                return Err(SaveError::Corrupt(format!(
+                    "survivor {:?} assignment target {:?} is not a station",
+                    entity.save_id, station
+                )));
+            }
+        }
+    }
+    for party_member in &snapshot.outpost_party {
+        require(*party_member, *party_member, "outpost party member")?;
+        if entities
+            .get(party_member)
+            .is_none_or(|entity| entity.survivor_task.is_none())
+        {
+            return Err(SaveError::Corrupt(format!(
+                "outpost party reference {party_member:?} is not a survivor"
+            )));
+        }
+    }
+    Ok(())
 }
 
 /// Deserialize a save file and restore the world.
@@ -321,6 +448,27 @@ fn build_snapshot(world: &mut World, seed: u64, turn: u64) -> RunSnapshot {
                 .get::<Usable>()
                 .map(|u| u.effects.clone())
                 .unwrap_or_default(),
+            scope: world.entity(entity).get::<EntityScope>().copied(),
+            survivor_task: world
+                .entity(entity)
+                .get::<SurvivorTask>()
+                .and_then(|task| match task {
+                    SurvivorTask::Idle => Some(SurvivorTaskSnapshot::Idle),
+                    SurvivorTask::Gathering => Some(SurvivorTaskSnapshot::Gathering),
+                    SurvivorTask::Defending => Some(SurvivorTaskSnapshot::Defending),
+                    SurvivorTask::AssignedTo(station_bits) => {
+                        Some(SurvivorTaskSnapshot::AssignedTo(
+                            entity_to_save_id
+                                .get(&Entity::from_bits(*station_bits))
+                                .copied()
+                                .unwrap_or(SaveId(u64::MAX)),
+                        ))
+                    }
+                    SurvivorTask::Resting => Some(SurvivorTaskSnapshot::Resting),
+                }),
+            station_type: world.entity(entity).get::<StationType>().copied(),
+            resource_node: world.entity(entity).get::<ResourceNode>().cloned(),
+            exit_tile: world.entity(entity).contains::<ExitTile>(),
         };
 
         // Pools
@@ -410,6 +558,20 @@ fn build_snapshot(world: &mut World, seed: u64, turn: u64) -> RunSnapshot {
     // serialized authority whenever the runtime provides one.
     session.seed = seed;
     session.turn = turn;
+    let outpost_party = world
+        .get_resource::<OutpostState>()
+        .map(|outpost| {
+            outpost
+                .party
+                .iter()
+                .filter_map(|entity| entity_to_save_id.get(entity).copied())
+                .collect()
+        })
+        .unwrap_or_default();
+    let combat_rng = world
+        .get_resource::<CombatRng>()
+        .cloned()
+        .unwrap_or_else(|| CombatRng::from_seed(seed));
 
     RunSnapshot {
         save_version: SAVE_VERSION,
@@ -424,6 +586,8 @@ fn build_snapshot(world: &mut World, seed: u64, turn: u64) -> RunSnapshot {
         log_entries,
         colony_storage,
         colony_resources,
+        outpost_party,
+        combat_rng,
     }
 }
 
@@ -444,6 +608,8 @@ pub fn restore_snapshot_into(
     snapshot: &RunSnapshot,
     _blueprints: &HashMap<String, EntityBlueprint>,
 ) -> Result<HashMap<SaveId, Entity>, SaveError> {
+    // Validate every reference before mutating the live application world.
+    validate_snapshot(snapshot)?;
     world.clear_entities();
 
     // Restore map
@@ -477,6 +643,7 @@ pub fn restore_snapshot_into(
         pools: colony_pools,
     });
     world.insert_resource(snapshot.colony_storage.clone());
+    world.insert_resource(snapshot.combat_rng.clone());
 
     // First pass: spawn all entities (empty)
     let mut save_id_to_entity: HashMap<SaveId, Entity> = HashMap::new();
@@ -516,6 +683,38 @@ pub fn restore_snapshot_into(
         }
         if let Some(progression) = ed.skill_progression.clone() {
             world.entity_mut(entity).insert(progression);
+        }
+        if let Some(scope) = ed.scope {
+            world.entity_mut(entity).insert(scope);
+            match scope {
+                EntityScope::RunPersistent | EntityScope::ColonyPersistent => {
+                    world.entity_mut(entity).insert(PersistentEntity);
+                }
+                EntityScope::DungeonTransient => {
+                    world.entity_mut(entity).insert(TransientEntity);
+                }
+            }
+        }
+        if let Some(task) = &ed.survivor_task {
+            let task = match task {
+                SurvivorTaskSnapshot::Idle => SurvivorTask::Idle,
+                SurvivorTaskSnapshot::Gathering => SurvivorTask::Gathering,
+                SurvivorTaskSnapshot::Defending => SurvivorTask::Defending,
+                SurvivorTaskSnapshot::AssignedTo(station) => {
+                    SurvivorTask::AssignedTo(save_id_to_entity[station].to_bits())
+                }
+                SurvivorTaskSnapshot::Resting => SurvivorTask::Resting,
+            };
+            world.entity_mut(entity).insert((Survivor, task));
+        }
+        if let Some(station_type) = ed.station_type {
+            world.entity_mut(entity).insert((Station, station_type));
+        }
+        if let Some(resource_node) = ed.resource_node.clone() {
+            world.entity_mut(entity).insert(resource_node);
+        }
+        if ed.exit_tile {
+            world.entity_mut(entity).insert(ExitTile);
         }
 
         // Pools
@@ -631,6 +830,16 @@ pub fn restore_snapshot_into(
         }
     }
 
+    let party = snapshot
+        .outpost_party
+        .iter()
+        .map(|save_id| save_id_to_entity[save_id])
+        .collect();
+    world.insert_resource(OutpostState {
+        party,
+        map: crate::colony::shelter::create_shelter_map(),
+    });
+
     Ok(save_id_to_entity)
 }
 
@@ -682,6 +891,8 @@ mod tests {
             log_entries: vec![],
             colony_storage: crate::colony::production::ColonyStorage::default(),
             colony_resources: Vec::new(),
+            outpost_party: Vec::new(),
+            combat_rng: CombatRng::from_seed(42),
         }
     }
 
