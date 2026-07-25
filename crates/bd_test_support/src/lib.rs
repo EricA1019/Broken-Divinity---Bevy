@@ -21,7 +21,7 @@ use bd_core::{
     relationships::{ContainedIn, FactionMember},
     save::{RunSnapshot, SaveError},
     session::{RunOutcome, RunSession},
-    signals::{ActionDenied, ActionIntent, AssignToStation, PoolKind},
+    signals::{ActionDenied, ActionIntent, PoolKind},
     spatial::{EntityScope, GameMode, OutpostState, TransitionComplete, TransitionIntent},
     trace::SignalTrace,
 };
@@ -94,7 +94,7 @@ pub struct FoundationSummary {
     pub storage_items: u32,
     pub extracted_loot: u32,
     pub melee_skill: i32,
-    pub replay_intents: Vec<String>,
+    pub replay_intents: Vec<bd_core::session::ActionReplayRecord>,
     pub trace_events: Vec<String>,
 }
 
@@ -269,6 +269,36 @@ impl FoundationDriver {
         Ok(())
     }
 
+    pub fn expect_denied_action(
+        &mut self,
+        step: &str,
+        actor: Entity,
+        action_id: &str,
+        direction: Option<Direction>,
+        target: Option<Entity>,
+    ) -> Result<bd_core::signals::DenialReason, ScenarioError> {
+        self.clear_observations();
+        self.app
+            .world_mut()
+            .resource_mut::<Messages<ActionIntent>>()
+            .write(ActionIntent {
+                actor,
+                action_id: action_id.to_owned(),
+                direction,
+                target,
+            });
+        self.app.update();
+
+        self.app
+            .world()
+            .resource::<ScenarioObservations>()
+            .denied
+            .iter()
+            .find(|denial| denial.actor == actor && denial.action_id == action_id)
+            .map(|denial| denial.reason.clone())
+            .ok_or_else(|| ScenarioError::new(step, "action did not emit a typed denial"))
+    }
+
     pub fn expect_station_assignment_action(
         &mut self,
         step: &str,
@@ -386,7 +416,16 @@ impl FoundationDriver {
         let map = self.app.world().resource::<SmokeMap>();
         let path = AStarPathfinder
             .find_path(map, start, destination, &HashSet::new())
-            .ok_or_else(|| ScenarioError::new(step, "destination is unreachable"))?;
+            .ok_or_else(|| {
+                ScenarioError::new(
+                    step,
+                    format!(
+                        "destination is unreachable; start={start:?}, destination={destination:?}, start_tile={:?}, destination_tile={:?}",
+                        map.get(start.x, start.y),
+                        map.get(destination.x, destination.y)
+                    ),
+                )
+            })?;
 
         for positions in path.windows(2) {
             let direction = direction_between(positions[0], positions[1])
@@ -527,11 +566,15 @@ impl FoundationDriver {
         survivor: Entity,
         station: Entity,
     ) -> Result<(), ScenarioError> {
-        self.app
-            .world_mut()
-            .resource_mut::<Messages<AssignToStation>>()
-            .write(AssignToStation { survivor, station });
-        self.app.update();
+        let player = self
+            .player()
+            .ok_or_else(|| ScenarioError::new("scope fixture assignment", "player unavailable"))?;
+        self.expect_station_assignment_action(
+            "scope fixture assignment",
+            player,
+            survivor,
+            station,
+        )?;
         match self.app.world().get::<SurvivorTask>(survivor) {
             Some(SurvivorTask::AssignedTo(station_bits)) if *station_bits == station.to_bits() => {
                 Ok(())
@@ -552,15 +595,13 @@ impl FoundationDriver {
         let player = self
             .player()
             .ok_or_else(|| ScenarioError::new("scope fixture pickup", "player is unavailable"))?;
-        self.app
-            .world_mut()
-            .resource_mut::<Messages<bd_core::inventory::PickupIntent>>()
-            .write(bd_core::inventory::PickupIntent {
-                actor: player,
-                item,
-            });
-        self.app.update();
-        self.app.update();
+        self.expect_action(
+            "scope fixture pickup",
+            player,
+            "ability.pickup",
+            None,
+            Some(item),
+        )?;
         match self.app.world().get::<ContainedIn>(item) {
             Some(contained) if contained.0 == player => Ok(()),
             _ => Err(ScenarioError::new(
@@ -617,6 +658,10 @@ impl FoundationDriver {
             .find(|entity| self.app.world().entity(*entity).contains::<Survivor>())
     }
 
+    pub fn survivor_task(&self, survivor: Entity) -> Option<SurvivorTask> {
+        self.app.world().get::<SurvivorTask>(survivor).cloned()
+    }
+
     pub fn first_station(&mut self) -> Option<Entity> {
         let entities = self.entity_ids();
         entities
@@ -650,12 +695,15 @@ impl FoundationDriver {
 
     pub fn exit_position(&mut self) -> Option<Position> {
         let entities = self.entity_ids();
+        let mode = *self.app.world().resource::<GameMode>();
         entities.into_iter().find_map(|entity| {
             let entity = self.app.world().entity(entity);
-            entity
-                .contains::<bd_core::components::ExitTile>()
-                .then(|| entity.get::<Position>().copied())
-                .flatten()
+            (entity.contains::<bd_core::components::ExitTile>()
+                && entity
+                    .get::<EntityScope>()
+                    .is_some_and(|scope| scope.is_active(mode)))
+            .then(|| entity.get::<Position>().copied())
+            .flatten()
         })
     }
 

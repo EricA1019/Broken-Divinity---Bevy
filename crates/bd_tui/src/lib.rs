@@ -112,6 +112,19 @@ fn sync_event_screen(
 }
 
 /// Map keyboard input to ActionIntent messages.
+pub fn canonical_action_id_for_key(key: char) -> Option<&'static str> {
+    match key {
+        'f' => Some("ability.quick_attack"),
+        '.' => Some("ability.wait"),
+        'g' => Some("ability.guard"),
+        'p' => Some("ability.pickup"),
+        'u' => Some("ability.use_item"),
+        'r' => Some("ability.extract"),
+        'e' => Some("ability.assign_station"),
+        _ => None,
+    }
+}
+
 #[derive(SystemParam)]
 struct InputQueries<'w, 's> {
     player: Query<
@@ -180,8 +193,6 @@ fn map_input_to_intents(
     mut messages: MessageReader<KeyMessage>,
     input: InputQueries,
     mut action_writer: MessageWriter<ActionIntent>,
-    mut pickup_writer: MessageWriter<bd_core::inventory::PickupIntent>,
-    mut assign_writer: MessageWriter<bd_core::signals::AssignToStation>,
     screen_state: Res<ScreenState>,
     mut screen_writer: MessageWriter<ScreenIntent>,
     mut transition_writer: MessageWriter<TransitionIntent>,
@@ -416,7 +427,7 @@ fn map_input_to_intents(
                 if let Some(nearest) = find_nearest_enemy(Some(player_pos), &input.enemies, *mode) {
                     action_writer.write(ActionIntent {
                         actor: player_entity,
-                        action_id: "ability.attack".into(),
+                        action_id: canonical_action_id_for_key('f').unwrap().into(),
                         direction: None,
                         target: Some(nearest),
                     });
@@ -445,9 +456,11 @@ fn map_input_to_intents(
                     .filter(|(_, _, _, _, scope)| scope_is_active(*scope, *mode))
                     .find(|(_, pos, _, _, _)| pos.is_some_and(|pos| *pos == *player_pos))
                 {
-                    pickup_writer.write(bd_core::inventory::PickupIntent {
+                    action_writer.write(ActionIntent {
                         actor: player_entity,
-                        item,
+                        action_id: canonical_action_id_for_key('p').unwrap().into(),
+                        direction: None,
+                        target: Some(item),
                     });
                 } else {
                     game_log.push("There is nothing to pick up here.", LogLevel::Warn);
@@ -539,12 +552,14 @@ fn map_input_to_intents(
                         .min_by_key(|(_, sp, _)| {
                             ((player_pos.x - sp.x).abs() + (player_pos.y - sp.y).abs()) as u32
                         });
-                    if let (Some((survivor_entity, _, _, _)), Some((station_entity, _, _))) =
+                    if let (Some((survivor_entity, _, _, _)), Some((_station_entity, _, _))) =
                         (nearest_survivor, nearest_station)
                     {
-                        assign_writer.write(bd_core::signals::AssignToStation {
-                            survivor: survivor_entity,
-                            station: station_entity,
+                        action_writer.write(ActionIntent {
+                            actor: player_entity,
+                            action_id: canonical_action_id_for_key('e').unwrap().into(),
+                            direction: None,
+                            target: Some(survivor_entity),
                         });
                     } else {
                         game_log.push(

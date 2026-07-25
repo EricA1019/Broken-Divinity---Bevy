@@ -102,7 +102,7 @@ pub(crate) fn register_inventory(app: &mut App) {
     app.add_systems(
         bevy_app::Update,
         (
-            process_pickup,
+            process_pickup.after(crate::actions::resolve_action_effects),
             process_drop,
             process_equip,
             process_unequip,
@@ -119,11 +119,9 @@ fn process_pickup(
     mut commands: Commands,
     mut messages: bevy_ecs::message::MessageReader<PickupIntent>,
     mut game_log: ResMut<GameLog>,
-    mut should_advance: ResMut<crate::time::ShouldAdvanceTime>,
     actors: Query<(
         &Position,
         Option<&crate::components::Player>,
-        Option<&crate::time::AwaitingEnemyPhase>,
         Option<&crate::spatial::EntityScope>,
     )>,
     containers: Query<&Container>,
@@ -141,9 +139,7 @@ fn process_pickup(
 ) {
     let foundation_runtime = foundation.is_some();
     for intent in messages.read() {
-        let Ok((actor_position, player, awaiting_enemy_phase, actor_scope)) =
-            actors.get(intent.actor)
-        else {
+        let Ok((actor_position, _player, actor_scope)) = actors.get(intent.actor) else {
             game_log.push(
                 "You cannot pick up an item without a position.",
                 LogLevel::Warn,
@@ -151,13 +147,6 @@ fn process_pickup(
             continue;
         };
         if !crate::spatial::entity_is_active(actor_scope, *mode, foundation_runtime) {
-            continue;
-        }
-        if player.is_some() && awaiting_enemy_phase.is_some() {
-            game_log.push(
-                "Enemy phase is resolving; wait for the next turn.",
-                LogLevel::Warn,
-            );
             continue;
         }
         if !containers.contains(intent.actor) {
@@ -180,15 +169,6 @@ fn process_pickup(
         commands
             .entity(intent.item)
             .insert(ContainedIn(intent.actor));
-        if player.is_some() {
-            should_advance.0 = true;
-            if *mode == crate::spatial::GameMode::Tactical {
-                should_advance.1 = true;
-                commands
-                    .entity(intent.actor)
-                    .insert(crate::time::AwaitingEnemyPhase);
-            }
-        }
         game_log.push(format!("Picked up {}.", item_name.0), LogLevel::Info);
     }
 }
@@ -327,7 +307,7 @@ mod tests {
     }
 
     #[test]
-    fn pickup_moves_item_into_container() {
+    fn pickup_mutation_adapter_does_not_own_turn_advancement() {
         let mut app = test_app();
         let player = app
             .world_mut()
@@ -346,7 +326,7 @@ mod tests {
         app.update();
         assert!(app.world().get::<ContainedIn>(potion).is_some());
         assert!(app.world().get::<Position>(potion).is_none());
-        assert_eq!(app.world().resource::<crate::time::GameTime>().turn, 1);
+        assert_eq!(app.world().resource::<crate::time::GameTime>().turn, 0);
     }
 
     #[test]

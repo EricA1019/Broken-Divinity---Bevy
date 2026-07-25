@@ -75,10 +75,9 @@ pub fn register_assign_gathering_action() -> ActionDefinition {
     ActionDefinition {
         id: "ability.assign_gathering".into(),
         label: "Assign Gathering".into(),
-        requirements: vec![
-            Requirement::TargetHasComponent("bd_core::colony::survivors::Survivor"),
-            Requirement::PlayerHasEntityInRange(2),
-        ],
+        requirements: vec![Requirement::TargetHasComponent(
+            "bd_core::colony::survivors::Survivor",
+        )],
         cost_effects: vec![],
         effects: vec![
             Effect::SetSurvivorTask("Gathering".into()),
@@ -94,10 +93,9 @@ pub fn register_assign_defending_action() -> ActionDefinition {
     ActionDefinition {
         id: "ability.assign_defending".into(),
         label: "Assign Defending".into(),
-        requirements: vec![
-            Requirement::TargetHasComponent("bd_core::colony::survivors::Survivor"),
-            Requirement::PlayerHasEntityInRange(2),
-        ],
+        requirements: vec![Requirement::TargetHasComponent(
+            "bd_core::colony::survivors::Survivor",
+        )],
         cost_effects: vec![],
         effects: vec![
             Effect::SetSurvivorTask("Defending".into()),
@@ -113,10 +111,9 @@ pub fn register_assign_resting_action() -> ActionDefinition {
     ActionDefinition {
         id: "ability.assign_resting".into(),
         label: "Assign Resting".into(),
-        requirements: vec![
-            Requirement::TargetHasComponent("bd_core::colony::survivors::Survivor"),
-            Requirement::PlayerHasEntityInRange(2),
-        ],
+        requirements: vec![Requirement::TargetHasComponent(
+            "bd_core::colony::survivors::Survivor",
+        )],
         cost_effects: vec![],
         effects: vec![
             Effect::SetSurvivorTask("Resting".into()),
@@ -132,10 +129,9 @@ pub fn register_assign_idle_action() -> ActionDefinition {
     ActionDefinition {
         id: "ability.assign_idle".into(),
         label: "Assign Idle".into(),
-        requirements: vec![
-            Requirement::TargetHasComponent("bd_core::colony::survivors::Survivor"),
-            Requirement::PlayerHasEntityInRange(2),
-        ],
+        requirements: vec![Requirement::TargetHasComponent(
+            "bd_core::colony::survivors::Survivor",
+        )],
         cost_effects: vec![],
         effects: vec![
             Effect::SetSurvivorTask("Idle".into()),
@@ -152,10 +148,9 @@ pub fn register_unassign_task_action() -> ActionDefinition {
     ActionDefinition {
         id: "ability.unassign_task".into(),
         label: "Unassign Task".into(),
-        requirements: vec![
-            Requirement::TargetHasComponent("bd_core::colony::survivors::Survivor"),
-            Requirement::PlayerHasEntityInRange(2),
-        ],
+        requirements: vec![Requirement::TargetHasComponent(
+            "bd_core::colony::survivors::Survivor",
+        )],
         cost_effects: vec![],
         effects: vec![
             Effect::SetSurvivorTask("Idle".into()),

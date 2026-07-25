@@ -9,6 +9,14 @@ use serde::{Deserialize, Serialize};
 
 use crate::spatial::GameMode;
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ActionReplayRecord {
+    pub actor: u64,
+    pub action_id: String,
+    pub direction: Option<crate::direction::Direction>,
+    pub target: Option<u64>,
+}
+
 /// Marker resource identifying the foundation runtime profile.
 #[derive(Resource, Debug, Default, Clone, Copy)]
 pub struct FoundationRuntime;
@@ -38,7 +46,7 @@ pub struct RunSession {
     pub extraction_applied: bool,
     pub extracted_loot: u32,
     pub outcome: RunOutcome,
-    pub replay_intents: Vec<String>,
+    pub replay_intents: Vec<ActionReplayRecord>,
 }
 
 impl Default for RunSession {
@@ -74,8 +82,19 @@ impl RunSession {
         )
     }
 
-    pub fn record_intent(&mut self, action_id: impl Into<String>) {
-        self.replay_intents.push(action_id.into());
+    pub fn record_intent(
+        &mut self,
+        actor: Entity,
+        action_id: impl Into<String>,
+        direction: Option<crate::direction::Direction>,
+        target: Option<Entity>,
+    ) {
+        self.replay_intents.push(ActionReplayRecord {
+            actor: actor.to_bits(),
+            action_id: action_id.into(),
+            direction,
+            target: target.map(Entity::to_bits),
+        });
     }
 
     pub fn begin_dungeon(&mut self, dungeon_id: impl Into<String>) {
@@ -166,7 +185,12 @@ mod tests {
     fn session_serializes_seed_and_phase() {
         let mut session = RunSession::new(42);
         session.begin_dungeon("foundation.dungeon");
-        session.record_intent("ability.move");
+        session.record_intent(
+            Entity::from_raw_u32(1).unwrap(),
+            "ability.move",
+            Some(crate::direction::Direction::East),
+            None,
+        );
 
         let encoded = ron::ser::to_string(&session).unwrap();
         let restored: RunSession = ron::de::from_str(&encoded).unwrap();
@@ -174,7 +198,11 @@ mod tests {
         assert_eq!(restored.seed, 42);
         assert_eq!(restored.phase, GameMode::Tactical);
         assert_eq!(restored.dungeon_id.as_deref(), Some("foundation.dungeon"));
-        assert_eq!(restored.replay_intents, vec!["ability.move"]);
+        assert_eq!(restored.replay_intents[0].action_id, "ability.move");
+        assert_eq!(
+            restored.replay_intents[0].direction,
+            Some(crate::direction::Direction::East)
+        );
     }
 
     #[test]

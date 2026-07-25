@@ -67,6 +67,10 @@ pub enum Requirement {
     TileVacant,
     /// Actor must be standing on an extraction/exit tile.
     AtExit,
+    /// Actor must own an inventory container.
+    ActorHasContainer,
+    /// At least one active station must exist for assignment.
+    ActiveStationExists,
 }
 
 /// An effect produced by a successful action.
@@ -95,6 +99,10 @@ pub enum Effect {
     RequestTransition(crate::spatial::GameMode),
     /// Request the inventory pipeline to use the pending target item.
     RequestUseItem,
+    /// Request the inventory pipeline to pick up the pending target item.
+    RequestPickup,
+    /// Assign the pending survivor target to the nearest active station.
+    AssignTargetToStation,
 }
 
 /// Definition of an action: what it costs, requires, and produces.
@@ -124,8 +132,8 @@ impl ActionRegistry {
         self.definitions.push(def);
     }
 
-    /// Create the default Phase 3 action set.
-    pub fn phase3_defaults() -> Self {
+    /// Create the built-in Foundation action set.
+    pub fn foundation_defaults() -> Self {
         Self {
             definitions: vec![
                 ActionDefinition {
@@ -239,6 +247,30 @@ impl ActionRegistry {
                     }],
                     effects: vec![Effect::RequestUseItem],
                 },
+                ActionDefinition {
+                    id: "ability.pickup".into(),
+                    label: "Pick Up".into(),
+                    requirements: vec![
+                        Requirement::EntityAlive,
+                        Requirement::TargetExists,
+                        Requirement::TargetHasComponent("Item"),
+                        Requirement::TargetInRange(0),
+                        Requirement::ActorHasContainer,
+                    ],
+                    cost_effects: vec![],
+                    effects: vec![Effect::RequestPickup],
+                },
+                ActionDefinition {
+                    id: "ability.assign_station".into(),
+                    label: "Assign to Station".into(),
+                    requirements: vec![
+                        Requirement::TargetExists,
+                        Requirement::TargetHasComponent("Survivor"),
+                        Requirement::ActiveStationExists,
+                    ],
+                    cost_effects: vec![],
+                    effects: vec![Effect::AssignTargetToStation],
+                },
             ],
         }
     }
@@ -250,7 +282,7 @@ pub(crate) fn register_actions(app: &mut App) {
     app.add_message::<ActionIntent>();
     app.add_message::<ActionDenied>();
 
-    app.insert_resource(ActionRegistry::phase3_defaults());
+    app.insert_resource(ActionRegistry::foundation_defaults());
 
     app.add_systems(
         bevy_app::Update,
@@ -304,6 +336,14 @@ struct ActionValidationQueries<'w, 's> {
             &'static crate::relationships::ContainedIn,
             Option<&'static crate::spatial::EntityScope>,
         ),
+    >,
+    containers: Query<'w, 's, Entity, With<crate::inventory::Container>>,
+    items: Query<'w, 's, Entity, With<crate::inventory::Item>>,
+    stations: Query<
+        'w,
+        's,
+        (Entity, Option<&'static crate::spatial::EntityScope>),
+        With<crate::colony::stations::Station>,
     >,
     survivors: Query<
         'w,
@@ -424,8 +464,14 @@ fn validate_action_intents(
                         denied = Some(DenialReason::BlockedTile);
                         break;
                     }
-                    // Also check for blocking entities
-                    // (we'll do this at effect time for now)
+                    if queries.blocked_positions.iter().any(|(position, scope)| {
+                        crate::spatial::entity_is_active(scope, *mode, foundation_runtime)
+                            && position.x == tx
+                            && position.y == ty
+                    }) {
+                        denied = Some(DenialReason::BlockedTile);
+                        break;
+                    }
                 }
                 Requirement::TargetExists => {
                     if intent.target.is_none() {
@@ -483,14 +529,18 @@ fn validate_action_intents(
                 }
                 Requirement::TargetHasComponent(component_name) => {
                     let has_component = intent.target.map_or(false, |t| match *component_name {
-                        "Survivor" => queries.survivors.iter().any(|(e, _, scope)| {
-                            e == t
-                                && crate::spatial::entity_is_active(
-                                    scope,
-                                    *mode,
-                                    foundation_runtime,
-                                )
-                        }),
+                        name if name.ends_with("Survivor") => {
+                            queries.survivors.iter().any(|(e, _, scope)| {
+                                e == t
+                                    && crate::spatial::entity_is_active(
+                                        scope,
+                                        *mode,
+                                        foundation_runtime,
+                                    )
+                            })
+                        }
+                        name if name.ends_with("Item") => queries.items.contains(t),
+                        name if name.ends_with("Station") => queries.stations.get(t).is_ok(),
                         _ => queries.all_entities.iter().any(|(e, scope)| {
                             e == t
                                 && crate::spatial::entity_is_active(
@@ -621,6 +671,20 @@ fn validate_action_intents(
                         break;
                     }
                 }
+                Requirement::ActorHasContainer => {
+                    if !queries.containers.contains(intent.actor) {
+                        denied = Some(DenialReason::InvalidTarget);
+                        break;
+                    }
+                }
+                Requirement::ActiveStationExists => {
+                    if !queries.stations.iter().any(|(_, scope)| {
+                        crate::spatial::entity_is_active(scope, *mode, foundation_runtime)
+                    }) {
+                        denied = Some(DenialReason::NoTarget);
+                        break;
+                    }
+                }
             }
         }
 
@@ -703,7 +767,7 @@ fn compile_action_costs(
 // ── Effect resolution ──
 
 #[derive(SystemParam)]
-struct ActionResolutionLocation<'w, 's> {
+pub(crate) struct ActionResolutionLocation<'w, 's> {
     mode: Res<'w, crate::spatial::GameMode>,
     foundation: Option<Res<'w, crate::session::FoundationRuntime>>,
     actors: Query<
@@ -726,11 +790,27 @@ struct ActionResolutionLocation<'w, 's> {
         ),
         With<BlocksMovement>,
     >,
+    stations: Query<
+        'w,
+        's,
+        (
+            Entity,
+            &'static Position,
+            Option<&'static crate::spatial::EntityScope>,
+        ),
+        With<crate::colony::stations::Station>,
+    >,
+}
+
+#[derive(SystemParam)]
+pub(crate) struct FoundationEffectWriters<'w> {
+    pickup: bevy_ecs::message::MessageWriter<'w, crate::inventory::PickupIntent>,
+    station: bevy_ecs::message::MessageWriter<'w, crate::signals::AssignToStation>,
 }
 
 /// Resolve action effects: move entities, apply pool deltas (via messages), log, etc.
 #[allow(clippy::too_many_arguments)]
-fn resolve_action_effects(
+pub(crate) fn resolve_action_effects(
     mut commands: Commands,
     registry: Res<ActionRegistry>,
     map: Res<SmokeMap>,
@@ -742,6 +822,7 @@ fn resolve_action_effects(
     mut transition_writer: bevy_ecs::message::MessageWriter<crate::spatial::TransitionIntent>,
     mut action_result_writer: bevy_ecs::message::MessageWriter<crate::progression::ActionResolved>,
     mut use_item_writer: bevy_ecs::message::MessageWriter<crate::inventory::UseItemIntent>,
+    mut foundation_effects: FoundationEffectWriters,
     mut pending_station: ResMut<crate::colony::stations::PendingStationBuild>,
     mut should_advance: ResMut<crate::time::ShouldAdvanceTime>,
     mut session: ResMut<crate::session::RunSession>,
@@ -938,12 +1019,51 @@ fn resolve_action_effects(
                         });
                     }
                 }
+                Effect::RequestPickup => {
+                    if let Some(item) = pending.target {
+                        foundation_effects
+                            .pickup
+                            .write(crate::inventory::PickupIntent {
+                                actor: entity,
+                                item,
+                            });
+                    }
+                }
+                Effect::AssignTargetToStation => {
+                    if let Some(survivor) = pending.target {
+                        let station = location
+                            .stations
+                            .iter()
+                            .filter(|(_, _, scope)| {
+                                crate::spatial::entity_is_active(
+                                    *scope,
+                                    *location.mode,
+                                    foundation_runtime,
+                                )
+                            })
+                            .min_by_key(|(_, station_position, _)| {
+                                (station_position.x - pos.x).unsigned_abs()
+                                    + (station_position.y - pos.y).unsigned_abs()
+                            })
+                            .map(|(station, _, _)| station);
+                        if let Some(station) = station {
+                            foundation_effects
+                                .station
+                                .write(crate::signals::AssignToStation { survivor, station });
+                        }
+                    }
+                }
             }
         }
 
         // Record only actions that reached effect resolution. Denied intents
         // never enter the run replay, keeping the replay stream meaningful.
-        session.record_intent(pending.action_id.as_str());
+        session.record_intent(
+            entity,
+            pending.action_id.as_str(),
+            pending.direction,
+            pending.target,
+        );
         action_result_writer.write(crate::progression::ActionResolved {
             actor: entity,
             action_id: pending.action_id.clone(),
@@ -963,6 +1083,13 @@ fn is_turn_action(action_id: &str) -> bool {
             | "ability.guard"
             | "ability.repair"
             | "ability.use_item"
+            | "ability.pickup"
+            | "ability.assign_station"
+            | "ability.assign_gathering"
+            | "ability.assign_defending"
+            | "ability.assign_resting"
+            | "ability.assign_idle"
+            | "ability.unassign_task"
     )
 }
 

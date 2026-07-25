@@ -224,7 +224,9 @@ fn register_foundation(app: &mut App, foundation: bool) {
     // Register station assignment system (reads AssignToStation messages)
     app.add_systems(
         bevy_app::Update,
-        crate::colony::survivors::process_station_assignments.in_set(BdSet::Mutation),
+        crate::colony::survivors::process_station_assignments
+            .after(crate::actions::resolve_action_effects)
+            .in_set(BdSet::Mutation),
     );
 
     // Register combat actions
