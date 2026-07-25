@@ -187,6 +187,7 @@ version = "0.1.0"
 dependencies = [
  "bd_core",
  "bd_data",
+ "bd_test_support",
  "bd_tui",
  "bevy",
  "bevy_app",

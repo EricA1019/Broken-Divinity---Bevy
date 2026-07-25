@@ -1,7 +1,14 @@
-//! MVP integration tests for the BD Kernel.
+//! Legacy kernel regression tests.
 //!
-//! Phase 18: Validates the full tactical loop — procgen, spawning, combat,
-//! inventory, save/load, and exit/reach conditions.
+//! This target is not Foundation MVP acceptance evidence:
+//!
+//! - `legacy_fixture_*` tests retain useful factory, UI, validation, and
+//!   persistence regression coverage.
+//! - `deferred_procgen_*` tests protect preserved post-Foundation procgen.
+//! - `invalid_direct_mutation_*` tests document old manufactured outcomes and
+//!   must never be cited as proof of player-visible combat, loot, or defeat.
+//!
+//! Canonical acceptance lives in `foundation_scenario.rs`.
 
 use std::collections::{HashMap, HashSet};
 
@@ -20,7 +27,7 @@ use bd_core::{
 };
 
 #[test]
-fn mvp_run_can_start() {
+fn legacy_fixture_run_can_start() {
     let registry = BlueprintRegistry::phase18_defaults();
     assert!(registry.get("blueprint.player").is_some());
     assert!(registry.get("blueprint.rat").is_some());
@@ -30,7 +37,7 @@ fn mvp_run_can_start() {
 }
 
 #[test]
-fn mvp_location_generates() {
+fn deferred_procgen_location_generates() {
     let template = LocationTemplate::ruin();
     let plan = generate_location(&template, 42);
     let validation = validate_plan(&plan);
@@ -44,7 +51,7 @@ fn mvp_location_generates() {
 }
 
 #[test]
-fn player_can_kill_enemy() {
+fn invalid_direct_mutation_player_can_kill_enemy() {
     let mut world = bevy_ecs::world::World::new();
     world.insert_resource(SmokeMap::new(10, 10, Tile::Floor));
     world.insert_resource(GameLog::default());
@@ -101,7 +108,7 @@ fn player_can_kill_enemy() {
 }
 
 #[test]
-fn enemy_can_kill_player() {
+fn invalid_direct_mutation_enemy_can_kill_player() {
     let mut world = bevy_ecs::world::World::new();
     world.insert_resource(SmokeMap::new(10, 10, Tile::Floor));
     world.insert_resource(GameLog::default());
@@ -135,7 +142,7 @@ fn enemy_can_kill_player() {
 }
 
 #[test]
-fn player_can_pick_up_loot() {
+fn invalid_direct_mutation_player_can_pick_up_loot() {
     let mut world = bevy_ecs::world::World::new();
     world.insert_resource(SmokeMap::new(10, 10, Tile::Floor));
     world.insert_resource(GameLog::default());
@@ -154,7 +161,7 @@ fn player_can_pick_up_loot() {
 }
 
 #[test]
-fn player_can_reach_exit() {
+fn deferred_procgen_player_can_reach_exit() {
     let template = LocationTemplate::ruin();
     let plan = generate_location(&template, 42);
     let validation = validate_plan(&plan);
@@ -177,7 +184,7 @@ fn player_can_reach_exit() {
 }
 
 #[test]
-fn debug_overlay_reads_only() {
+fn legacy_fixture_debug_overlay_reads_only() {
     // Debug screen is purely a UI concern — it reads view models and trace data.
     // It must not mutate gameplay components. This test verifies the debug screen
     // exists and can be switched to without affecting world state.
@@ -195,7 +202,7 @@ fn debug_overlay_reads_only() {
 }
 
 #[test]
-fn validator_catches_missing_reference() {
+fn legacy_fixture_validator_catches_missing_reference() {
     // Verify that the content validation detects issues with empty IDs
     let registry = bd_core::factory::BlueprintRegistry::phase18_defaults();
     for bp in &registry.blueprints {
@@ -209,7 +216,7 @@ fn validator_catches_missing_reference() {
 }
 
 #[test]
-fn procgen_preview_uses_seed() {
+fn deferred_procgen_preview_uses_seed() {
     // Verify seed determinism for preview
     let template = bd_core::procgen::LocationTemplate::ruin();
     let a = bd_core::procgen::generate_location(&template, 42);
@@ -223,7 +230,7 @@ fn procgen_preview_uses_seed() {
 }
 
 #[test]
-fn panic_path_restores_terminal() {
+fn legacy_fixture_panic_path_restores_terminal() {
     // The app uses color-eyre and PanicHandlerPlugin which handle terminal cleanup.
     // This test verifies the panic handler is registered.
     // Actual terminal restoration is verified by manual smoke test.
@@ -232,7 +239,7 @@ fn panic_path_restores_terminal() {
 }
 
 #[test]
-fn mvp_save_load_roundtrip() {
+fn legacy_fixture_save_load_roundtrip() {
     let mut world = bevy_ecs::world::World::new();
     world.insert_resource(SmokeMap::new(5, 5, Tile::Floor));
     world.insert_resource(GameLog::default());
@@ -275,7 +282,7 @@ fn mvp_save_load_roundtrip() {
 
 #[test]
 #[ignore = "requires a real terminal device; use manual Ratatui smoke test"]
-fn first_keypress_in_outpost_is_move_not_build() {
+fn legacy_terminal_first_keypress_in_outpost_is_move_not_build() {
     use bevy_app::App;
     use bevy_ecs::message::Messages;
     use bevy_ratatui::crossterm::event::{KeyCode, KeyEvent, KeyModifiers};
@@ -317,7 +324,7 @@ fn first_keypress_in_outpost_is_move_not_build() {
 }
 
 #[test]
-fn first_foundation_action_in_outpost_is_move_not_build() {
+fn legacy_action_first_foundation_action_in_outpost_is_move_not_build() {
     use bevy_app::App;
     use bevy_ecs::message::Messages;
 

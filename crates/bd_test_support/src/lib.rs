@@ -3,9 +3,40 @@
 //! Provides deterministic RNG, minimal app builders, and snapshot helpers.
 
 use bd_core::content::FoundationContent;
-use bevy_app::App;
+use bd_core::{
+    BdSet,
+    colony::{
+        production::ColonyStorage,
+        stations::Station,
+        survivors::{Survivor, SurvivorTask},
+    },
+    components::{Player, Position, ResourceNode},
+    direction::Direction,
+    inventory::Item,
+    map::SmokeMap,
+    pathfinding::{AStarPathfinder, Pathfinder},
+    pools::Pools,
+    progression::{ActionResolved, SkillProgression},
+    relationships::{ContainedIn, FactionMember},
+    save::{RunSnapshot, SaveError},
+    session::{RunOutcome, RunSession},
+    signals::{ActionDenied, ActionIntent, PoolKind},
+    spatial::{GameMode, TransitionComplete, TransitionIntent},
+    trace::SignalTrace,
+};
+use bevy_app::{App, Update};
+use bevy_ecs::{
+    entity::Entity,
+    message::{MessageReader, Messages},
+    prelude::{IntoScheduleConfigs, ResMut, Resource},
+};
 use rand::SeedableRng;
 use rand_chacha::ChaCha8Rng;
+use std::{
+    collections::{HashMap, HashSet},
+    fmt,
+    sync::atomic::{AtomicU64, Ordering},
+};
 
 /// Create a deterministic RNG from a fixed seed for reproducible tests.
 pub fn seeded_rng(seed: u64) -> ChaCha8Rng {
@@ -38,6 +69,614 @@ pub fn foundation_content() -> FoundationContent {
         .join("content");
     bd_data::loader::load_foundation_content(&content_dir)
         .expect("foundation content must validate for headless tests")
+}
+
+/// Read-only, entity-ID-independent state used by Foundation assertions.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FoundationSummary {
+    pub mode: GameMode,
+    pub session_phase: GameMode,
+    pub outcome: RunOutcome,
+    pub dungeon_id: Option<String>,
+    pub day: u64,
+    pub turn: u64,
+    pub map_size: (i32, i32),
+    pub player_position: Option<Position>,
+    pub player_health: Option<i32>,
+    pub survivors: usize,
+    pub assigned_survivors: usize,
+    pub stations: usize,
+    pub resource_nodes: usize,
+    pub hostiles: usize,
+    pub loose_items: usize,
+    pub carried_items: usize,
+    pub storage_items: u32,
+    pub extracted_loot: u32,
+    pub melee_skill: i32,
+    pub replay_intents: Vec<String>,
+    pub trace_events: Vec<String>,
+}
+
+/// Production save data captured by the Foundation driver.
+#[derive(Debug, Clone)]
+pub struct FoundationCheckpoint {
+    snapshot: RunSnapshot,
+}
+
+/// A scenario failure that identifies the unsupported canonical step.
+#[derive(Debug)]
+pub struct ScenarioError {
+    step: String,
+    detail: String,
+}
+
+impl ScenarioError {
+    fn new(step: impl Into<String>, detail: impl Into<String>) -> Self {
+        Self {
+            step: step.into(),
+            detail: detail.into(),
+        }
+    }
+}
+
+impl fmt::Display for ScenarioError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "{}: {}", self.step, self.detail)
+    }
+}
+
+impl std::error::Error for ScenarioError {}
+
+impl From<SaveError> for ScenarioError {
+    fn from(error: SaveError) -> Self {
+        Self::new("persistence", error.to_string())
+    }
+}
+
+#[derive(Resource, Default)]
+struct ScenarioObservations {
+    resolved: Vec<ActionResolved>,
+    denied: Vec<ActionDenied>,
+    transitions: Vec<TransitionComplete>,
+}
+
+fn observe_scenario_results(
+    mut resolved: MessageReader<ActionResolved>,
+    mut denied: MessageReader<ActionDenied>,
+    mut transitions: MessageReader<TransitionComplete>,
+    mut observations: ResMut<ScenarioObservations>,
+) {
+    observations.resolved.extend(resolved.read().cloned());
+    observations.denied.extend(denied.read().cloned());
+    observations.transitions.extend(transitions.read().cloned());
+}
+
+/// Headless production-path driver for the canonical Foundation scenario.
+///
+/// The driver may submit production intents, advance schedules, invoke the
+/// production persistence boundary, and read summaries. It deliberately does
+/// not expose mutable world access or add alternate gameplay resolvers.
+pub struct FoundationDriver {
+    app: App,
+}
+
+impl FoundationDriver {
+    pub fn new(seed: u64) -> Self {
+        let mut app = foundation_app();
+        app.insert_resource(RunSession::new(seed));
+        app.init_resource::<ScenarioObservations>();
+        app.add_systems(
+            Update,
+            observe_scenario_results.in_set(BdSet::ViewModelBuild),
+        );
+        Self { app }
+    }
+
+    pub fn from_checkpoint(checkpoint: &FoundationCheckpoint) -> Result<Self, ScenarioError> {
+        let mut driver = Self::new(checkpoint.snapshot.seed);
+        driver.restore_checkpoint(checkpoint)?;
+        Ok(driver)
+    }
+
+    pub fn start_colony(&mut self) -> Result<(), ScenarioError> {
+        self.request_transition("clean launch → colony", GameMode::Outpost, None)
+    }
+
+    pub fn enter_dungeon(&mut self, dungeon_id: &str) -> Result<(), ScenarioError> {
+        self.request_transition(
+            "colony → fixed dungeon",
+            GameMode::Tactical,
+            Some(dungeon_id),
+        )
+    }
+
+    pub fn return_to_colony(&mut self, step: &str) -> Result<(), ScenarioError> {
+        self.request_transition(step, GameMode::Outpost, None)
+    }
+
+    pub fn request_transition(
+        &mut self,
+        step: &str,
+        target: GameMode,
+        node_id: Option<&str>,
+    ) -> Result<(), ScenarioError> {
+        self.clear_observations();
+        self.app
+            .world_mut()
+            .resource_mut::<Messages<TransitionIntent>>()
+            .write(TransitionIntent {
+                target,
+                node_id: node_id.map(str::to_owned),
+            });
+        self.app.update();
+
+        let actual = *self.app.world().resource::<GameMode>();
+        if actual != target {
+            return Err(ScenarioError::new(
+                step,
+                format!("transition rejected; expected {target:?}, found {actual:?}"),
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn expect_action(
+        &mut self,
+        step: &str,
+        actor: Entity,
+        action_id: &str,
+        direction: Option<Direction>,
+        target: Option<Entity>,
+    ) -> Result<(), ScenarioError> {
+        self.clear_observations();
+        self.app
+            .world_mut()
+            .resource_mut::<Messages<ActionIntent>>()
+            .write(ActionIntent {
+                actor,
+                action_id: action_id.to_owned(),
+                direction,
+                target,
+            });
+        self.app.update();
+
+        let observation = self.app.world().resource::<ScenarioObservations>();
+        if let Some(denial) = observation
+            .denied
+            .iter()
+            .find(|denial| denial.actor == actor && denial.action_id == action_id)
+        {
+            return Err(ScenarioError::new(
+                step,
+                format!("action {action_id} denied: {:?}", denial.reason),
+            ));
+        }
+        if !observation
+            .resolved
+            .iter()
+            .any(|result| result.actor == actor && result.action_id == action_id)
+        {
+            return Err(ScenarioError::new(
+                step,
+                format!("action {action_id} produced no typed result"),
+            ));
+        }
+
+        // Resolve the one permitted enemy phase and any next-frame result
+        // messages before returning a stable state summary.
+        self.app.update();
+        Ok(())
+    }
+
+    pub fn expect_station_assignment_action(
+        &mut self,
+        step: &str,
+        player: Entity,
+        survivor: Entity,
+        station: Entity,
+    ) -> Result<(), ScenarioError> {
+        self.expect_action(step, player, "ability.assign_station", None, Some(survivor))?;
+        match self.app.world().get::<SurvivorTask>(survivor) {
+            Some(SurvivorTask::AssignedTo(station_bits)) if *station_bits == station.to_bits() => {
+                Ok(())
+            }
+            task => Err(ScenarioError::new(
+                step,
+                format!("action did not assign survivor to station; task={task:?}"),
+            )),
+        }
+    }
+
+    pub fn approach_and_attack_first_hostile(&mut self, step: &str) -> Result<(), ScenarioError> {
+        let hostile = self
+            .first_hostile()
+            .ok_or_else(|| ScenarioError::new(step, "no hostile exists"))?;
+        self.approach_hostile(step, hostile)?;
+        let player = self
+            .player()
+            .ok_or_else(|| ScenarioError::new(step, "player was defeated before attacking"))?;
+        self.expect_action(step, player, "ability.quick_attack", None, Some(hostile))
+    }
+
+    pub fn approach_and_defeat_first_hostile(&mut self, step: &str) -> Result<(), ScenarioError> {
+        let hostile = self
+            .first_hostile()
+            .ok_or_else(|| ScenarioError::new(step, "no hostile exists"))?;
+        self.approach_and_defeat(step, hostile)
+    }
+
+    pub fn approach_and_defeat(
+        &mut self,
+        step: &str,
+        hostile: Entity,
+    ) -> Result<(), ScenarioError> {
+        for _ in 0..16 {
+            if !self.app.world().entities().contains(hostile) {
+                return Ok(());
+            }
+            self.approach_hostile(step, hostile)?;
+            let player = self
+                .player()
+                .ok_or_else(|| ScenarioError::new(step, "player was defeated"))?;
+            self.expect_action(step, player, "ability.quick_attack", None, Some(hostile))?;
+        }
+        Err(ScenarioError::new(
+            step,
+            "hostile remained after 16 canonical combat actions",
+        ))
+    }
+
+    fn approach_hostile(&mut self, step: &str, hostile: Entity) -> Result<(), ScenarioError> {
+        for _ in 0..12 {
+            let player = self
+                .player()
+                .ok_or_else(|| ScenarioError::new(step, "player was defeated"))?;
+            let player_pos = self
+                .position(player)
+                .ok_or_else(|| ScenarioError::new(step, "player has no position"))?;
+            let hostile_pos = self
+                .position(hostile)
+                .ok_or_else(|| ScenarioError::new(step, "hostile has no position"))?;
+            let distance =
+                (player_pos.x - hostile_pos.x).abs() + (player_pos.y - hostile_pos.y).abs();
+            if distance <= 1 {
+                return Ok(());
+            }
+            self.expect_action(step, player, "ability.wait", None, None)?;
+        }
+        Err(ScenarioError::new(
+            step,
+            "hostile did not approach within 12 wait actions",
+        ))
+    }
+
+    pub fn approach_and_pick_up(&mut self, step: &str) -> Result<(), ScenarioError> {
+        let item = self
+            .first_loose_item()
+            .ok_or_else(|| ScenarioError::new(step, "no loose item exists"))?;
+        let item_position = self
+            .position(item)
+            .ok_or_else(|| ScenarioError::new(step, "item has no position"))?;
+        self.move_player_to(step, item_position)?;
+        let player = self
+            .player()
+            .ok_or_else(|| ScenarioError::new(step, "player is unavailable"))?;
+        self.expect_action(step, player, "ability.pickup", None, Some(item))
+    }
+
+    pub fn move_player_to_exit(&mut self, step: &str) -> Result<(), ScenarioError> {
+        let exit = self
+            .exit_position()
+            .ok_or_else(|| ScenarioError::new(step, "dungeon has no exit"))?;
+        self.move_player_to(step, exit)
+    }
+
+    pub fn move_player_to(
+        &mut self,
+        step: &str,
+        destination: Position,
+    ) -> Result<(), ScenarioError> {
+        let player = self
+            .player()
+            .ok_or_else(|| ScenarioError::new(step, "player is unavailable"))?;
+        let start = self
+            .position(player)
+            .ok_or_else(|| ScenarioError::new(step, "player has no position"))?;
+        let map = self.app.world().resource::<SmokeMap>();
+        let path = AStarPathfinder
+            .find_path(map, start, destination, &HashSet::new())
+            .ok_or_else(|| ScenarioError::new(step, "destination is unreachable"))?;
+
+        for positions in path.windows(2) {
+            let direction = direction_between(positions[0], positions[1])
+                .ok_or_else(|| ScenarioError::new(step, "path contains a non-cardinal movement"))?;
+            self.expect_action(step, player, "ability.move", Some(direction), None)?;
+        }
+        let actual = self
+            .position(player)
+            .ok_or_else(|| ScenarioError::new(step, "player disappeared during movement"))?;
+        if actual != destination {
+            return Err(ScenarioError::new(
+                step,
+                format!("expected player at {destination:?}, found {actual:?}"),
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn extract(&mut self, step: &str) -> Result<(), ScenarioError> {
+        let player = self
+            .player()
+            .ok_or_else(|| ScenarioError::new(step, "player is unavailable"))?;
+        self.expect_action(step, player, "ability.extract", None, None)?;
+        self.app.update();
+        if self.summary().mode != GameMode::Outpost {
+            return Err(ScenarioError::new(
+                step,
+                "accepted extraction did not return to the colony",
+            ));
+        }
+        Ok(())
+    }
+
+    pub fn wait_for_player_defeat(&mut self, step: &str) -> Result<(), ScenarioError> {
+        for _ in 0..24 {
+            if self.summary().mode == GameMode::GameOver {
+                return Ok(());
+            }
+            let player = self.player().ok_or_else(|| {
+                ScenarioError::new(step, "player disappeared before defeat result")
+            })?;
+            self.expect_action(step, player, "ability.wait", None, None)?;
+        }
+        Err(ScenarioError::new(
+            step,
+            "player was not defeated within 24 normal combat turns",
+        ))
+    }
+
+    pub fn checkpoint(&mut self) -> Result<FoundationCheckpoint, ScenarioError> {
+        static CHECKPOINT_COUNTER: AtomicU64 = AtomicU64::new(0);
+        let sequence = CHECKPOINT_COUNTER.fetch_add(1, Ordering::Relaxed);
+        let save_dir = std::env::temp_dir().join(format!(
+            "bd-foundation-scenario-{}-{sequence}",
+            std::process::id()
+        ));
+        let session = self.app.world().resource::<RunSession>().clone();
+        let path =
+            bd_core::save::save_world(self.app.world_mut(), session.seed, session.turn, &save_dir)?;
+        let snapshot = bd_core::save::load_snapshot(&path)?;
+        let _ = std::fs::remove_file(path);
+        let _ = std::fs::remove_dir(save_dir);
+        Ok(FoundationCheckpoint { snapshot })
+    }
+
+    pub fn restore_checkpoint(
+        &mut self,
+        checkpoint: &FoundationCheckpoint,
+    ) -> Result<(), ScenarioError> {
+        bd_core::save::restore_snapshot_into(
+            self.app.world_mut(),
+            &checkpoint.snapshot,
+            &HashMap::new(),
+        )?;
+        Ok(())
+    }
+
+    pub fn advance_idle(&mut self) {
+        self.app.update();
+    }
+
+    pub fn player(&mut self) -> Option<Entity> {
+        let entities = self.entity_ids();
+        entities
+            .into_iter()
+            .find(|entity| self.app.world().entity(*entity).contains::<Player>())
+    }
+
+    pub fn first_survivor(&mut self) -> Option<Entity> {
+        let entities = self.entity_ids();
+        entities
+            .into_iter()
+            .find(|entity| self.app.world().entity(*entity).contains::<Survivor>())
+    }
+
+    pub fn first_station(&mut self) -> Option<Entity> {
+        let entities = self.entity_ids();
+        entities
+            .into_iter()
+            .find(|entity| self.app.world().entity(*entity).contains::<Station>())
+    }
+
+    pub fn first_hostile(&mut self) -> Option<Entity> {
+        let entities = self.entity_ids();
+        entities.into_iter().find(|entity| {
+            let entity = self.app.world().entity(*entity);
+            entity.contains::<FactionMember>()
+                && entity
+                    .get::<Pools>()
+                    .and_then(|pools| pools.get(PoolKind::Health))
+                    .is_some_and(|health| health.current > health.min)
+        })
+    }
+
+    pub fn first_loose_item(&mut self) -> Option<Entity> {
+        let entities = self.entity_ids();
+        entities.into_iter().find(|entity| {
+            let entity = self.app.world().entity(*entity);
+            entity.contains::<Item>() && !entity.contains::<ContainedIn>()
+        })
+    }
+
+    pub fn position(&self, entity: Entity) -> Option<Position> {
+        self.app.world().get::<Position>(entity).copied()
+    }
+
+    pub fn exit_position(&mut self) -> Option<Position> {
+        let entities = self.entity_ids();
+        entities.into_iter().find_map(|entity| {
+            let entity = self.app.world().entity(entity);
+            entity
+                .contains::<bd_core::components::ExitTile>()
+                .then(|| entity.get::<Position>().copied())
+                .flatten()
+        })
+    }
+
+    pub fn pool_current(&mut self, kind: PoolKind) -> Option<i32> {
+        self.player()
+            .and_then(|player| self.app.world().get::<Pools>(player))
+            .and_then(|pools| pools.get(kind))
+            .map(|pool| pool.current)
+    }
+
+    pub fn deferred_resources_present(&self) -> Vec<&'static str> {
+        let world = self.app.world();
+        let mut present = Vec::new();
+        if world
+            .get_resource::<bd_core::events::EventRegistry>()
+            .is_some()
+        {
+            present.push("events");
+        }
+        if world
+            .get_resource::<bd_core::factions::FactionReputation>()
+            .is_some()
+        {
+            present.push("reputation");
+        }
+        if world
+            .get_resource::<bd_core::overworld::OverworldState>()
+            .is_some()
+        {
+            present.push("overworld");
+        }
+        if world.get_resource::<bd_core::party::PartyState>().is_some() {
+            present.push("party");
+        }
+        if world
+            .get_resource::<bd_core::colony::raids::RaidState>()
+            .is_some()
+        {
+            present.push("raids");
+        }
+        if world
+            .get_resource::<bd_core::gabriel::GabrielState>()
+            .is_some()
+        {
+            present.push("gabriel");
+        }
+        present
+    }
+
+    pub fn summary(&mut self) -> FoundationSummary {
+        let entity_ids = self.entity_ids();
+        let world = self.app.world();
+        let session = world.resource::<RunSession>().clone();
+        let mode = *world.resource::<GameMode>();
+        let map = world.resource::<SmokeMap>();
+        let player = entity_ids
+            .iter()
+            .copied()
+            .find(|entity| world.entity(*entity).contains::<Player>());
+
+        let mut survivors = 0;
+        let mut assigned_survivors = 0;
+        let mut stations = 0;
+        let mut resource_nodes = 0;
+        let mut hostiles = 0;
+        let mut loose_items = 0;
+        let mut carried_items = 0;
+        for entity_id in entity_ids {
+            let entity = world.entity(entity_id);
+            if entity.contains::<Survivor>() {
+                survivors += 1;
+                if matches!(
+                    entity.get::<SurvivorTask>(),
+                    Some(SurvivorTask::AssignedTo(_))
+                ) {
+                    assigned_survivors += 1;
+                }
+            }
+            stations += usize::from(entity.contains::<Station>());
+            resource_nodes += usize::from(entity.contains::<ResourceNode>());
+            hostiles += usize::from(entity.contains::<FactionMember>());
+            if entity.contains::<Item>() {
+                match (player, entity.get::<ContainedIn>()) {
+                    (Some(player), Some(container)) if container.0 == player => carried_items += 1,
+                    (_, None) => loose_items += 1,
+                    _ => {}
+                }
+            }
+        }
+
+        let storage_items = world
+            .resource::<ColonyStorage>()
+            .items
+            .values()
+            .copied()
+            .sum();
+        let melee_skill = player
+            .and_then(|player| world.get::<SkillProgression>(player))
+            .map_or(0, |progression| progression.melee);
+        let player_position = player.and_then(|player| world.get::<Position>(player).copied());
+        let player_health = player
+            .and_then(|player| world.get::<Pools>(player))
+            .and_then(|pools| pools.get(PoolKind::Health))
+            .map(|health| health.current);
+        let trace_events = world
+            .resource::<SignalTrace>()
+            .entries
+            .iter()
+            .map(|entry| format!("{}:{}:{}", entry.stage, entry.signal_type, entry.summary))
+            .collect();
+
+        FoundationSummary {
+            mode,
+            session_phase: session.phase,
+            outcome: session.outcome,
+            dungeon_id: session.dungeon_id.clone(),
+            day: session.day,
+            turn: session.turn,
+            map_size: (map.width, map.height),
+            player_position,
+            player_health,
+            survivors,
+            assigned_survivors,
+            stations,
+            resource_nodes,
+            hostiles,
+            loose_items,
+            carried_items,
+            storage_items,
+            extracted_loot: session.extracted_loot,
+            melee_skill,
+            replay_intents: session.replay_intents.clone(),
+            trace_events,
+        }
+    }
+
+    fn entity_ids(&mut self) -> Vec<Entity> {
+        let mut query = self.app.world_mut().query::<Entity>();
+        query.iter(self.app.world()).collect()
+    }
+
+    fn clear_observations(&mut self) {
+        let mut observations = self.app.world_mut().resource_mut::<ScenarioObservations>();
+        observations.resolved.clear();
+        observations.denied.clear();
+        observations.transitions.clear();
+    }
+}
+
+fn direction_between(from: Position, to: Position) -> Option<Direction> {
+    match (to.x - from.x, to.y - from.y) {
+        (1, 0) => Some(Direction::East),
+        (-1, 0) => Some(Direction::West),
+        (0, 1) => Some(Direction::South),
+        (0, -1) => Some(Direction::North),
+        _ => None,
+    }
 }
 
 #[cfg(test)]
@@ -160,7 +799,10 @@ mod tests {
     }
 
     #[test]
-    fn foundation_colony_dungeon_round_trip_preserves_colony_state() {
+    /// Legacy fixture regression only. This test deliberately manufactures
+    /// carried loot and exit position, so it is not Foundation acceptance
+    /// evidence; `bd_app/tests/foundation_scenario.rs` owns that proof.
+    fn legacy_direct_mutation_round_trip_fixture_regression() {
         let mut app = foundation_app();
 
         app.world_mut()
