@@ -6,7 +6,7 @@
 use std::time::Duration;
 use std::{collections::HashMap, path::Path};
 
-use bevy_app::{AppExit, PanicHandlerPlugin, ScheduleRunnerPlugin, Startup};
+use bevy_app::{AppExit, PanicHandlerPlugin, ScheduleRunnerPlugin};
 use bevy_ecs::message::MessageWriter;
 use bevy_ecs::schedule::IntoScheduleConfigs;
 use bevy_ecs::system::{Commands, Query, Res, ResMut};
@@ -20,11 +20,9 @@ use bevy_ecs::query::With;
 mod config;
 
 fn main() {
-    // Parse CLI args
     let args: Vec<String> = std::env::args().collect();
     let validate_only = args.iter().any(|a| a == "--validate" || a == "-v");
 
-    // Initialize tracing — write to stderr so TUI stdout stays clean
     tracing_subscriber::fmt()
         .with_writer(std::io::stderr)
         .with_env_filter(
@@ -33,16 +31,20 @@ fn main() {
         )
         .init();
 
-    if validate_only {
-        if !run_validation() {
-            std::process::exit(1);
-        }
-        return;
+    let result = if validate_only {
+        run_validation()
+    } else {
+        run_application()
+    };
+    if let Err(error) = result {
+        tracing::error!("Broken Divinity could not start: {error}");
+        std::process::exit(1);
     }
+}
 
+fn run_application() -> Result<(), String> {
     tracing::info!("Broken Divinity Kernel starting");
 
-    // Create data and log directories
     let data_dir = config::data_dir();
     let log_dir = data_dir.join("logs");
     if let Err(e) = std::fs::create_dir_all(&log_dir) {
@@ -52,8 +54,7 @@ fn main() {
         tracing::warn!("Failed to create data directory {data_dir:?}: {e}");
     }
 
-    // Load config
-    let loaded = config::load_config();
+    let loaded = config::load_config().map_err(|error| format!("configuration error: {error}"))?;
     for warn in &loaded.warnings {
         tracing::warn!("{warn}");
     }
@@ -64,36 +65,31 @@ fn main() {
             config::ConfigSource::File(p) => p.to_str().unwrap_or("unknown"),
         }
     );
-
-    let frame_time = Duration::from_secs_f32(1.0 / 60.0);
-
-    let mut app = bevy_app::App::new();
-
-    app.add_plugins(ScheduleRunnerPlugin::run_loop(frame_time));
-    app.add_plugins(PanicHandlerPlugin);
-    app.add_plugins(bevy_ratatui::RatatuiPlugins::default());
-
-    // Core + TUI plugins (register default registries)
-    app.add_plugins(bd_core::BdFoundationPlugin);
-    app.add_plugins(bd_tui::BdTuiPlugin);
-
-    // One validated binding resource drives terminal input and every guidance
-    // projection. Invalid user bindings fall back as one complete set.
     let command_bindings = loaded
         .config
         .keybindings
         .command_bindings()
-        .unwrap_or_else(|error| {
-            tracing::warn!("Invalid keybindings: {error}. Using built-in defaults.");
-            bd_tui::commands::CommandBindings::default()
-        });
+        .map_err(|error| format!("configuration error: {error}"))?;
+    let application_content = load_application_content(&content_dir())?;
+
+    let frame_time = Duration::from_secs_f32(1.0 / 60.0);
+    let mut app = bevy_app::App::new();
+    app.add_plugins(ScheduleRunnerPlugin::run_loop(frame_time));
+    app.add_plugins(PanicHandlerPlugin);
+    app.add_plugins(bevy_ratatui::RatatuiPlugins::default());
+
+    app.add_plugins(bd_core::BdFoundationPlugin);
+    bd_data::loader::validate_runtime_action_links(&application_content.foundation, |action_id| {
+        bd_core::foundation_action_is_registered(app.world(), action_id)
+    })
+    .map_err(|error| format!("content error: {error}"))?;
+    app.insert_resource(application_content.foundation);
+
+    app.add_plugins(bd_tui::BdTuiPlugin);
     app.insert_resource(command_bindings);
+    app.insert_resource(application_content.symbols);
+    app.insert_resource(application_content.themes);
 
-    // Override defaults with RON content at startup
-    app.add_systems(Startup, apply_ron_content);
-    app.add_systems(Startup, load_foundation_content);
-
-    // Spawn player when entering outpost mode (Startup + transitions)
     app.add_systems(
         bevy_app::Update,
         spawn_outpost_player.in_set(bd_core::BdSet::IntentCollection),
@@ -107,6 +103,7 @@ fn main() {
 
     app.run();
     tracing::info!("Broken Divinity Kernel exited cleanly");
+    Ok(())
 }
 
 fn process_exit_request(
@@ -160,62 +157,49 @@ fn process_persistence_requests(world: &mut bevy_ecs::world::World) {
     }
 }
 
-/// Load RON symbol/theme files and override the registries.
-fn apply_ron_content(
-    mut symbols: bevy_ecs::system::ResMut<bd_tui::visual::SymbolRegistry>,
-    mut themes: bevy_ecs::system::ResMut<bd_tui::theme::ThemeRegistry>,
-) {
-    use bd_data::loader::load_ron;
-
-    let content_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .unwrap()
-        .parent()
-        .unwrap()
-        .join("content");
-
-    // Load symbols
-    let sym_path = content_dir.join("symbols/default.ron");
-    if sym_path.exists() {
-        match load_ron::<bd_tui::visual::SymbolDef>(&sym_path) {
-            Ok(file) => {
-                tracing::info!("Loaded {} symbols from {}", file.items.len(), file.path);
-                *symbols = bd_tui::visual::SymbolRegistry::new(file.items);
-            }
-            Err(e) => tracing::warn!("Failed to load symbols: {e}"),
-        }
-    }
-
-    // Load themes
-    let theme_path = content_dir.join("themes/default.ron");
-    if theme_path.exists() {
-        match load_ron::<bd_tui::theme::ThemeDef>(&theme_path) {
-            Ok(file) => {
-                tracing::info!("Loaded {} themes from {}", file.items.len(), file.path);
-                *themes = bd_tui::theme::ThemeRegistry::from_defs(file.items);
-            }
-            Err(e) => tracing::warn!("Failed to load themes: {e}"),
-        }
-    }
+#[derive(Debug)]
+struct ApplicationContent {
+    foundation: bd_core::content::FoundationContent,
+    symbols: bd_tui::visual::SymbolRegistry,
+    themes: bd_tui::theme::ThemeRegistry,
 }
 
-/// Load the required foundation bundle. A runtime without its foundation
-/// content is invalid and must not silently fall back to Rust fixtures.
-fn load_foundation_content(mut commands: Commands) {
-    let content_dir = content_dir();
-    match bd_data::loader::load_foundation_content(&content_dir) {
-        Ok(content) => {
-            tracing::info!(
-                "Loaded foundation content: {} dungeons, {} items, {} skills, {} factions",
-                content.dungeons.len(),
-                content.items.len(),
-                content.skills.len(),
-                content.factions.len()
-            );
-            commands.insert_resource(content);
-        }
-        Err(error) => panic!("Foundation content failed validation: {error}"),
+fn load_application_content(content_dir: &Path) -> Result<ApplicationContent, String> {
+    use bd_data::loader::load_ron;
+
+    let foundation = bd_data::loader::load_foundation_content(content_dir)
+        .map_err(|error| format!("content error: {error}"))?;
+    let sym_path = content_dir.join("symbols/default.ron");
+    let symbol_file = load_ron::<bd_tui::visual::SymbolDef>(&sym_path)
+        .map_err(|error| format!("content error: {error}"))?;
+    let symbols = bd_tui::visual::SymbolRegistry::new(symbol_file.items);
+    let symbol_errors = symbols.validate();
+    if !symbol_errors.is_empty() {
+        return Err(format!(
+            "content error in {}: {}",
+            sym_path.display(),
+            symbol_errors.join("; ")
+        ));
     }
+
+    let theme_path = content_dir.join("themes/default.ron");
+    let theme_file = load_ron::<bd_tui::theme::ThemeDef>(&theme_path)
+        .map_err(|error| format!("content error: {error}"))?;
+    let themes = bd_tui::theme::ThemeRegistry::from_defs(theme_file.items);
+    let theme_errors = themes.validate();
+    if !theme_errors.is_empty() {
+        return Err(format!(
+            "content error in {}: {}",
+            theme_path.display(),
+            theme_errors.join("; ")
+        ));
+    }
+
+    Ok(ApplicationContent {
+        foundation,
+        symbols,
+        themes,
+    })
 }
 
 /// Spawn the player at the shelter outpost at startup.
@@ -269,68 +253,28 @@ fn spawn_outpost_player(
     );
 }
 
-/// Run content validation and exit.
-fn run_validation() -> bool {
-    use bd_data::loader::load_ron;
-
+/// Run the same content validation used by normal startup without entering
+/// terminal mode.
+fn run_validation() -> Result<(), String> {
     let content_dir = content_dir();
-    let mut errors = 0;
-
-    // Validate symbols
-    let sym_path = content_dir.join("symbols/default.ron");
-    if sym_path.exists() {
-        match load_ron::<bd_tui::visual::SymbolDef>(&sym_path) {
-            Ok(file) => {
-                tracing::info!("Symbols: {} items loaded", file.items.len());
-            }
-            Err(e) => {
-                tracing::error!("Symbol validation: {e}");
-                errors += 1;
-            }
-        }
-    } else {
-        tracing::warn!("No symbols file found at {}", sym_path.display());
-    }
-
-    // Validate themes
-    let theme_path = content_dir.join("themes/default.ron");
-    if theme_path.exists() {
-        match load_ron::<bd_tui::theme::ThemeDef>(&theme_path) {
-            Ok(file) => {
-                tracing::info!("Themes: {} items loaded", file.items.len());
-            }
-            Err(e) => {
-                tracing::error!("Theme validation: {e}");
-                errors += 1;
-            }
-        }
-    } else {
-        tracing::warn!("No themes file found at {}", theme_path.display());
-    }
-
-    match bd_data::loader::load_foundation_content(&content_dir) {
-        Ok(bundle) => tracing::info!(
-            "Foundation: {} dungeons, {} items, {} skills, {} factions, {} actions, {} blueprints",
-            bundle.dungeons.len(),
-            bundle.items.len(),
-            bundle.skills.len(),
-            bundle.factions.len(),
-            bundle.actions.len(),
-            bundle.blueprints.len()
-        ),
-        Err(error) => {
-            tracing::error!("Foundation validation: {error}");
-            errors += 1;
-        }
-    }
-
-    if errors == 0 {
-        tracing::info!("Content validation PASSED");
-        true
-    } else {
-        tracing::error!("Content validation FAILED with {errors} error(s)");
-        false
-    }
+    let content = load_application_content(&content_dir)?;
+    let mut app = bevy_app::App::new();
+    app.add_plugins(bd_core::BdFoundationPlugin);
+    bd_data::loader::validate_runtime_action_links(&content.foundation, |action_id| {
+        bd_core::foundation_action_is_registered(app.world(), action_id)
+    })
+    .map_err(|error| format!("content error: {error}"))?;
+    tracing::info!(
+        "Foundation: {} dungeons, {} items, {} skills, {} factions, {} actions, {} blueprints",
+        content.foundation.dungeons.len(),
+        content.foundation.items.len(),
+        content.foundation.skills.len(),
+        content.foundation.factions.len(),
+        content.foundation.actions.len(),
+        content.foundation.blueprints.len()
+    );
+    tracing::info!("Content validation PASSED");
+    Ok(())
 }
 
 fn content_dir() -> std::path::PathBuf {
@@ -340,4 +284,17 @@ fn content_dir() -> std::path::PathBuf {
         .parent()
         .unwrap()
         .join("content")
+}
+
+#[cfg(test)]
+mod application_tests {
+    use super::*;
+
+    #[test]
+    fn invalid_content_returns_readable_application_error() {
+        let missing = std::env::temp_dir().join("bd-missing-foundation-content");
+        let error = load_application_content(&missing).unwrap_err();
+        assert!(error.contains("content error"));
+        assert!(error.contains("dungeons/foundation.ron"));
+    }
 }

@@ -70,7 +70,18 @@ impl SymbolRegistry {
     /// Validate that all expected tokens have definitions.
     #[allow(dead_code)]
     pub fn validate(&self) -> Vec<String> {
+        use std::collections::HashSet;
+
         let mut errors = Vec::new();
+        let mut seen = HashSet::new();
+        for symbol in &self.symbols {
+            if !seen.insert(symbol.visual_token) {
+                errors.push(format!(
+                    "Duplicate symbol definition for {:?}",
+                    symbol.visual_token
+                ));
+            }
+        }
         let all_tokens = [
             VisualToken::Player,
             VisualToken::Enemy,

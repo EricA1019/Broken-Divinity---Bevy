@@ -282,55 +282,35 @@ pub enum ConfigSource {
 }
 
 /// Load config: start with defaults, then try to merge a user config file.
-pub fn load_config() -> LoadedConfig {
-    let mut warnings = Vec::new();
+pub fn load_config() -> Result<LoadedConfig, ConfigError> {
+    load_config_from(&config_dir().join("config.toml"))
+}
+
+pub fn load_config_from(config_path: &Path) -> Result<LoadedConfig, ConfigError> {
+    let warnings = Vec::new();
     let mut config = AppConfig::default();
 
-    let config_path = config_dir().join("config.toml");
     let source = if config_path.exists() {
-        match fs::read_to_string(&config_path) {
-            Ok(content) => match toml::from_str::<AppConfig>(&content) {
-                Ok(user_config) => {
-                    // Merge: user config overrides defaults
-                    merge_configs(&mut config, user_config, &mut warnings);
-                    ConfigSource::File(config_path.clone())
-                }
-                Err(e) => {
-                    warnings.push(format!(
-                        "Failed to parse config at {}: {e}. Using defaults.",
-                        config_path.display()
-                    ));
-                    ConfigSource::Defaults
-                }
-            },
-            Err(e) => {
-                warnings.push(format!(
-                    "Failed to read config at {}: {e}. Using defaults.",
-                    config_path.display()
-                ));
-                ConfigSource::Defaults
-            }
-        }
+        let content = fs::read_to_string(config_path).map_err(ConfigError::Io)?;
+        let user_config = toml::from_str::<AppConfig>(&content)
+            .map_err(|error| ConfigError::Parse(format!("{}: {error}", config_path.display())))?;
+        merge_configs(&mut config, user_config);
+        ConfigSource::File(config_path.to_path_buf())
     } else {
         ConfigSource::Defaults
     };
 
-    // Validate
-    if let Err(ConfigError::Validation(errors)) = validate_config(&config) {
-        for err in &errors {
-            warnings.push(format!("Config validation: {err}"));
-        }
-    }
+    validate_config(&config)?;
 
-    LoadedConfig {
+    Ok(LoadedConfig {
         config,
         source,
         warnings,
-    }
+    })
 }
 
 /// Merge a user config into the default config (field-by-field).
-fn merge_configs(base: &mut AppConfig, user: AppConfig, _warnings: &mut Vec<String>) {
+fn merge_configs(base: &mut AppConfig, user: AppConfig) {
     if user.theme_id != default_theme_id() {
         base.theme_id = user.theme_id;
     }
@@ -410,8 +390,9 @@ mod tests {
 
     #[test]
     fn missing_config_uses_defaults() {
-        // load_config handles missing files gracefully by falling back to defaults
-        let loaded = load_config();
+        let path = std::env::temp_dir().join("bd-missing-config.toml");
+        let _ = std::fs::remove_file(&path);
+        let loaded = load_config_from(&path).unwrap();
         // The source will be Defaults since we don't write a file in this test.
         // We just verify it doesn't panic and returns something valid.
         assert_eq!(loaded.config.keybindings.quit, "q");
@@ -540,5 +521,17 @@ mod tests {
         let error = validate_config(&config).unwrap_err().to_string();
         assert!(error.contains("unsupported key binding"));
         assert!(error.contains("banana"));
+    }
+
+    #[test]
+    fn invalid_config_returns_readable_application_error() {
+        let path = std::env::temp_dir().join("bd-invalid-config.toml");
+        std::fs::write(&path, "[keybindings]\nattack = [").unwrap();
+
+        let error = load_config_from(&path).unwrap_err().to_string();
+        assert!(error.contains("Parse error"));
+        assert!(error.contains("bd-invalid-config.toml"));
+
+        let _ = std::fs::remove_file(path);
     }
 }

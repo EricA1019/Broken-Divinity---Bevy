@@ -28,9 +28,17 @@ mod tests {
 
     #[test]
     fn rejects_duplicate_symbol_id() {
-        let reg = SymbolRegistry::phase5_defaults();
+        let duplicate = SymbolDef {
+            visual_token: VisualToken::Player,
+            glyph: '@',
+            fallback_glyph: '?',
+            layer: 10,
+            style_token: StyleToken::Player,
+            priority: 10,
+        };
+        let reg = SymbolRegistry::new(vec![duplicate.clone(), duplicate]);
         let errors = reg.validate();
-        assert!(errors.is_empty());
+        assert!(errors.iter().any(|error| error.contains("Duplicate")));
     }
 
     #[test]

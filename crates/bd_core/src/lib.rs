@@ -47,16 +47,6 @@ use crate::trace::{SignalTrace, TriggerExecutionGuard};
 use gamelog::GameLog;
 use map::SmokeMap;
 
-/// Help line string derived from key bindings, consumed by the TUI footer.
-#[derive(Resource, Debug, Clone)]
-pub struct HelpLine(pub String);
-
-impl Default for HelpLine {
-    fn default() -> Self {
-        Self("Move:w↑s↓a←d→ | Wait:. (end turn) | Attack:f | Guard:g | Inventory:i | Quit:q".into())
-    }
-}
-
 /// Core system sets defining the execution order for all kernel systems.
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum BdSet {
@@ -88,6 +78,12 @@ pub enum BdSet {
 /// systems in isolation. The application and foundation acceptance tests must
 /// use [`BdFoundationPlugin`] instead.
 pub struct BdCorePlugin;
+
+pub fn foundation_action_is_registered(world: &World, action_id: &str) -> bool {
+    world
+        .get_resource::<actions::ActionRegistry>()
+        .is_some_and(|registry| registry.get(action_id).is_some())
+}
 
 impl Plugin for BdCorePlugin {
     fn build(&self, app: &mut App) {
@@ -138,7 +134,6 @@ fn register_foundation(app: &mut App, foundation: bool) {
     app.insert_resource(GameLog::default());
     app.insert_resource(SignalTrace::default());
     app.insert_resource(TriggerExecutionGuard::default());
-    app.insert_resource(HelpLine::default());
     app.init_resource::<crate::save::SaveRequest>();
     app.init_resource::<crate::save::LoadRequest>();
 

@@ -71,7 +71,18 @@ impl ThemeRegistry {
     }
 
     pub fn validate(&self) -> Vec<String> {
+        use std::collections::HashSet;
+
         let mut errors = Vec::new();
+        let mut seen = HashSet::new();
+        for theme in &self.themes {
+            if !seen.insert(theme.style_token) {
+                errors.push(format!(
+                    "Duplicate theme definition for {:?}",
+                    theme.style_token
+                ));
+            }
+        }
         for token in &[
             StyleToken::Default,
             StyleToken::Player,

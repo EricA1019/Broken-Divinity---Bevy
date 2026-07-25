@@ -64,7 +64,7 @@ pub fn load_foundation_content(
     Ok(bundle)
 }
 
-fn validate_foundation_content(
+pub fn validate_foundation_content(
     content: &bd_core::content::FoundationContent,
 ) -> Result<(), LoadError> {
     use bd_core::ids::ContentId;
@@ -113,6 +113,9 @@ fn validate_foundation_content(
         "skill.medicine",
         "faction.placeholder_a",
         "faction.placeholder_b",
+        "blueprint.player",
+        "blueprint.rat",
+        "blueprint.healing_potion",
     ];
     for id in required {
         if !ids.contains(id) {
@@ -127,8 +130,26 @@ fn validate_foundation_content(
     let item_ids: HashSet<_> = content.items.iter().map(|e| e.id.as_str()).collect();
     let action_ids: HashSet<_> = content.actions.iter().map(|e| e.id.as_str()).collect();
     let faction_ids: HashSet<_> = content.factions.iter().map(|e| e.id.as_str()).collect();
+    const FOUNDATION_VIRTUES: &[&str] = &[
+        "virtue.temperance",
+        "virtue.justice",
+        "virtue.prudence",
+        "virtue.fortitude",
+        "virtue.thumos",
+        "virtue.metis",
+        "virtue.kleos",
+    ];
 
     for skill in &content.skills {
+        if !FOUNDATION_VIRTUES.contains(&skill.governing_virtue.as_str()) {
+            return Err(LoadError::Validation {
+                file: "skills/foundation.ron".into(),
+                message: format!(
+                    "record '{}' references unknown governing virtue '{}'",
+                    skill.id, skill.governing_virtue
+                ),
+            });
+        }
         let Some(action) = content.actions.iter().find(|action| {
             action.id == skill.action_id && action.skill_id.as_deref() == Some(skill.id.as_str())
         }) else {
@@ -141,6 +162,20 @@ fn validate_foundation_content(
             return Err(LoadError::Validation {
                 file: "actions/foundation.ron".into(),
                 message: format!("action '{}' has incomplete progression metadata", action.id),
+            });
+        }
+        if !action
+            .virtue_expression
+            .as_deref()
+            .is_some_and(|virtue| FOUNDATION_VIRTUES.contains(&virtue))
+        {
+            return Err(LoadError::Validation {
+                file: "actions/foundation.ron".into(),
+                message: format!(
+                    "action '{}' references unknown virtue '{}'",
+                    action.id,
+                    action.virtue_expression.as_deref().unwrap_or("<missing>")
+                ),
             });
         }
     }
@@ -207,6 +242,31 @@ fn validate_foundation_content(
                 ),
             });
         }
+        let tile_at = |position: bd_core::components::Position| {
+            dungeon.tiles[(position.y * dungeon.width + position.x) as usize]
+        };
+        if !tile_at(dungeon.entrance).is_walkable() {
+            return Err(LoadError::Validation {
+                file: "dungeons/foundation.ron".into(),
+                message: format!("record '{}' entrance must be walkable", dungeon.id),
+            });
+        }
+        if !tile_at(dungeon.extraction).is_walkable() {
+            return Err(LoadError::Validation {
+                file: "dungeons/foundation.ron".into(),
+                message: format!("record '{}' extraction must be walkable", dungeon.id),
+            });
+        }
+        if !positions_connected(dungeon, dungeon.entrance, dungeon.extraction) {
+            return Err(LoadError::Validation {
+                file: "dungeons/foundation.ron".into(),
+                message: format!(
+                    "record '{}' extraction is not reachable from entrance",
+                    dungeon.id
+                ),
+            });
+        }
+        let mut occupied = HashSet::new();
         for placement in dungeon
             .enemy_placements
             .iter()
@@ -218,6 +278,27 @@ fn validate_foundation_content(
                     message: format!(
                         "record '{}' has out-of-bounds placement '{}'",
                         dungeon.id, placement.content_id
+                    ),
+                });
+            }
+            if !tile_at(placement.position).is_walkable() {
+                return Err(LoadError::Validation {
+                    file: "dungeons/foundation.ron".into(),
+                    message: format!(
+                        "record '{}' placement '{}' must be on a walkable tile",
+                        dungeon.id, placement.content_id
+                    ),
+                });
+            }
+            if placement.position == dungeon.entrance
+                || placement.position == dungeon.extraction
+                || !occupied.insert(placement.position)
+            {
+                return Err(LoadError::Validation {
+                    file: "dungeons/foundation.ron".into(),
+                    message: format!(
+                        "record '{}' has illegal placement overlap at ({}, {})",
+                        dungeon.id, placement.position.x, placement.position.y
                     ),
                 });
             }
@@ -256,13 +337,103 @@ fn validate_foundation_content(
             }
         }
     }
+
+    let Some(player) = content
+        .blueprints
+        .iter()
+        .find(|blueprint| blueprint.id == "blueprint.player" && blueprint.is_player)
+    else {
+        return Err(LoadError::Validation {
+            file: "blueprints/foundation.ron".into(),
+            message: "required player blueprint is missing or not marked as player".into(),
+        });
+    };
+    for virtue in bd_core::virtues::ALL_VIRTUES {
+        if !player.pools.iter().any(|(kind, _, _, _)| kind == virtue) {
+            return Err(LoadError::Validation {
+                file: "blueprints/foundation.ron".into(),
+                message: format!(
+                    "record '{}' is missing required virtue state {virtue:?}",
+                    player.id
+                ),
+            });
+        }
+    }
+    Ok(())
+}
+
+fn positions_connected(
+    dungeon: &bd_core::content::DungeonDefinition,
+    start: bd_core::components::Position,
+    goal: bd_core::components::Position,
+) -> bool {
+    use bd_core::components::Position;
+    use std::collections::{HashSet, VecDeque};
+
+    let mut frontier = VecDeque::from([start]);
+    let mut visited = HashSet::from([start]);
+    while let Some(position) = frontier.pop_front() {
+        if position == goal {
+            return true;
+        }
+        for next in [
+            Position {
+                x: position.x,
+                y: position.y - 1,
+            },
+            Position {
+                x: position.x,
+                y: position.y + 1,
+            },
+            Position {
+                x: position.x - 1,
+                y: position.y,
+            },
+            Position {
+                x: position.x + 1,
+                y: position.y,
+            },
+        ] {
+            let in_bounds =
+                next.x >= 0 && next.x < dungeon.width && next.y >= 0 && next.y < dungeon.height;
+            if !in_bounds || !visited.insert(next) {
+                continue;
+            }
+            let tile = dungeon.tiles[(next.y * dungeon.width + next.x) as usize];
+            if tile.is_walkable() {
+                frontier.push_back(next);
+            }
+        }
+    }
+    false
+}
+
+pub fn validate_runtime_action_links(
+    content: &bd_core::content::FoundationContent,
+    mut is_registered: impl FnMut(&str) -> bool,
+) -> Result<(), LoadError> {
+    for action in &content.actions {
+        if !is_registered(&action.id) {
+            return Err(LoadError::Validation {
+                file: "actions/foundation.ron".into(),
+                message: format!(
+                    "content action '{}' is not registered by the Foundation runtime",
+                    action.id
+                ),
+            });
+        }
+    }
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use bd_core::content::FactionDefinition;
+    use bd_core::{
+        components::{Position, Tile},
+        content::{ActionReference, FactionDefinition},
+        signals::PoolKind,
+    };
 
     fn content_root() -> std::path::PathBuf {
         std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -326,5 +497,129 @@ mod tests {
         let error = load_ron::<bd_core::content::ItemDefinition>(&path).unwrap_err();
         assert!(error.to_string().contains("bd-malformed-foundation.ron"));
         let _ = std::fs::remove_file(path);
+    }
+
+    fn tile_index(dungeon: &bd_core::content::DungeonDefinition, position: Position) -> usize {
+        (position.y * dungeon.width + position.x) as usize
+    }
+
+    #[test]
+    fn dungeon_entrance_must_be_walkable() {
+        let mut content = load_foundation_content(&content_root()).unwrap();
+        let dungeon = &mut content.dungeons[0];
+        let index = tile_index(dungeon, dungeon.entrance);
+        dungeon.tiles[index] = Tile::Wall;
+
+        let error = validate_foundation_content(&content).unwrap_err();
+        assert!(error.to_string().contains("entrance"));
+        assert!(error.to_string().contains("walkable"));
+    }
+
+    #[test]
+    fn dungeon_extraction_must_be_walkable() {
+        let mut content = load_foundation_content(&content_root()).unwrap();
+        let dungeon = &mut content.dungeons[0];
+        let index = tile_index(dungeon, dungeon.extraction);
+        dungeon.tiles[index] = Tile::Wall;
+
+        let error = validate_foundation_content(&content).unwrap_err();
+        assert!(error.to_string().contains("extraction"));
+        assert!(error.to_string().contains("walkable"));
+    }
+
+    #[test]
+    fn dungeon_extraction_must_be_reachable() {
+        let mut content = load_foundation_content(&content_root()).unwrap();
+        let dungeon = &mut content.dungeons[0];
+        for position in [Position { x: 5, y: 4 }, Position { x: 6, y: 3 }] {
+            let index = tile_index(dungeon, position);
+            dungeon.tiles[index] = Tile::Wall;
+        }
+
+        let error = validate_foundation_content(&content).unwrap_err();
+        assert!(error.to_string().contains("not reachable"));
+    }
+
+    #[test]
+    fn placement_must_be_on_walkable_tile() {
+        let mut content = load_foundation_content(&content_root()).unwrap();
+        let dungeon = &mut content.dungeons[0];
+        let position = dungeon.enemy_placements[0].position;
+        let index = tile_index(dungeon, position);
+        dungeon.tiles[index] = Tile::Wall;
+
+        let error = validate_foundation_content(&content).unwrap_err();
+        assert!(error.to_string().contains("placement"));
+        assert!(error.to_string().contains("walkable"));
+    }
+
+    #[test]
+    fn placements_must_not_overlap_illegally() {
+        let mut content = load_foundation_content(&content_root()).unwrap();
+        content.dungeons[0].item_placements[0].position =
+            content.dungeons[0].enemy_placements[0].position;
+
+        let error = validate_foundation_content(&content).unwrap_err();
+        assert!(error.to_string().contains("overlap"));
+    }
+
+    #[test]
+    fn virtue_reference_must_exist() {
+        let mut content = load_foundation_content(&content_root()).unwrap();
+        content.skills[0].governing_virtue = "virtue.unknown".into();
+
+        let error = validate_foundation_content(&content).unwrap_err();
+        assert!(error.to_string().contains("virtue.unknown"));
+    }
+
+    #[test]
+    fn faction_disposition_must_be_valid() {
+        let error = ron::from_str::<FactionDefinition>(
+            r#"FactionDefinition(
+                id: "faction.invalid",
+                label: "Invalid",
+                identity_key: "invalid",
+                disposition: Friendly,
+            )"#,
+        )
+        .unwrap_err();
+        assert!(error.to_string().contains("Friendly"));
+    }
+
+    #[test]
+    fn content_action_must_be_registered() {
+        let mut content = load_foundation_content(&content_root()).unwrap();
+        content.actions.push(ActionReference {
+            id: "ability.unregistered".into(),
+            label: "Unregistered".into(),
+            skill_id: None,
+            skill_gain: 0,
+            virtue_expression: None,
+            virtue_gain: 0,
+        });
+
+        let mut app = bevy_app::App::new();
+        app.add_plugins(bd_core::BdFoundationPlugin);
+        let error = validate_runtime_action_links(&content, |action_id| {
+            bd_core::foundation_action_is_registered(app.world(), action_id)
+        })
+        .unwrap_err();
+        assert!(error.to_string().contains("ability.unregistered"));
+    }
+
+    #[test]
+    fn required_player_virtue_state_is_validated() {
+        let mut content = load_foundation_content(&content_root()).unwrap();
+        let player = content
+            .blueprints
+            .iter_mut()
+            .find(|blueprint| blueprint.id == "blueprint.player")
+            .unwrap();
+        player
+            .pools
+            .retain(|(kind, _, _, _)| *kind != PoolKind::Justice);
+
+        let error = validate_foundation_content(&content).unwrap_err();
+        assert!(error.to_string().contains("Justice"));
     }
 }
