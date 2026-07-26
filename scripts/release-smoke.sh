@@ -4,25 +4,24 @@ set -euo pipefail
 
 echo "=== Release Smoke Test ==="
 
-# Step 1: Fresh checkout build
+# Step 1: Release build
 echo "--- Step 1: Release build ---"
-cargo build -p bd_app --release 2>&1
+cargo build --workspace --release --locked
 echo "✅ Release build succeeded"
 
 # Step 2: Quick smoke run (send q, expect clean exit)
 echo "--- Step 2: Smoke run ---"
-timeout 3 ./target/release/bd </dev/null 2>&1 || true
+if ! command -v script >/dev/null 2>&1; then
+    echo "ERROR: util-linux 'script' is required for the PTY smoke test" >&2
+    exit 1
+fi
+printf 'q' | timeout 5 script -qec "./target/release/bd" /dev/null
 echo "✅ App runs and exits"
 
-# Step 3: Content validation
-echo "--- Step 3: Content validation ---"
-./target/release/bd --validate 2>&1
-echo "✅ Content validation passed"
-
-# Step 4: Run tests
-echo "--- Step 4: Test suite ---"
-cargo test --workspace 2>&1 | tail -5
-echo "✅ All tests passed"
+# Step 3: Canonical development gate
+echo "--- Step 3: Canonical gate ---"
+bash scripts/test-gate.sh
+echo "✅ Canonical gate passed"
 
 echo ""
 echo "=== Release Smoke Test PASSED ==="

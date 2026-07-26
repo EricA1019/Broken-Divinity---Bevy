@@ -1,0 +1,229 @@
+# Broken Divinity Foundation Requirement-to-Test Map
+
+**Status:** Active evidence index; this file is not design authority
+**Authority:** `../GDD.md`, `../docs/DECISIONS-TO-LOCK.md`,
+`../docs/MVP-SCENARIO.md`, and
+`../docs/AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md`
+**Scope:** The locked Foundation only. Product P2/P3 and explicitly deferred
+systems do not create active Foundation acceptance failures.
+
+## Purpose
+
+This map prevents test count from being mistaken for product coverage. Each
+row owns one player outcome or one narrow invariant. A broad scenario may
+support a row, but it does not replace missing atomic evidence.
+
+Status meanings:
+
+- **Green:** the named automated evidence currently passes.
+- **Green unreviewed:** automated evidence passes, but required visual,
+  compact-profile, or PTY review is incomplete.
+- **Partial:** some layers pass, but the player outcome is not fully proved.
+- **Red:** an active test reproduces a confirmed implementation defect.
+- **Open:** the authoritative contract still needs a primary test.
+- **Manual:** the contract requires real-terminal evidence and must not be
+  inferred from a headless test.
+- **Deferred:** excluded from Foundation by the GDD or a locked decision.
+
+## 1. Shell and lifecycle
+
+| Requirement piece | Primary evidence | Status | Missing proof |
+|---|---|---|---|
+| New Game reaches Outpost with one player authority | `foundation_scenario::clean_launch_reaches_colony`; `bd_app::tests::application_startup_has_exactly_one_player_authority` | Green | Production-key/title transition remains supporting evidence rather than the primary owner |
+| Title Load does not start a new run | `input_help::title_load_binding_requests_load_instead_of_starting_a_new_run` | Partial | Full application state diff after F9 on Title |
+| Missing/corrupt save feedback is recoverable | `bd_app::tests::persistence_errors_are_classified_without_internal_diagnostics` | Partial | Rendered Title feedback plus successful subsequent New Game |
+| Quit requests one shutdown | `phase6_input::lifecycle_controls_are_not_starved_by_buffered_gameplay` | Partial | Exactly one production application exit and terminal cleanup |
+| Alternate screen is restored | real PTY gate | Manual | Recorded PTY evidence at both profiles |
+| Cursor is restored | real PTY gate | Manual | Recorded PTY evidence at both profiles |
+| Stable idle UI does not redraw | `runtime_control::idle_unchanged_ui_does_not_draw_again` | Green | None at the invalidation layer |
+| Resize redraws once and leaves no stale cells | no primary contract | Open | 60x20→80x24→60x20 buffer transition and PTY resize |
+
+## 2. Input and controls
+
+| Requirement piece | Primary evidence | Status | Missing proof |
+|---|---|---|---|
+| Configured bindings drive Help, footer, and action projection | `input_help::configured_binding_emits_expected_command`; related binding tests | Green | None at the semantic command layer |
+| Every advertised Foundation control works in its advertised mode | several `input_help` and `phase6_input` tests | Partial | One table-driven production-key matrix for all advertised controls |
+| Unadvertised controls do not mutate gameplay | `input_help::foundation_controls_do_not_advertise_redundant_z_command` | Partial | Production-key state diff for unbound keys in each mode |
+| Press/Repeat/Release policy is explicit | `phase6_input::build_interaction_is_a_paused_press_only_state_machine` | Partial | Normal movement, management, Help, persistence, and lifecycle cases |
+| Buffered input preserves order | `phase6_input::buffered_semantic_commands_resolve_in_input_order` | Green | None for the bounded gameplay queue |
+| Queue overflow is bounded and visible | `phase6_input::buffered_input_is_bounded_and_reports_one_overflow_warning` | Green | None for the current capacity |
+| Modal input never leaks | `phase6_input::management_cancel_is_atomic_and_discards_modal_gameplay_input` | Green | Same-batch routing predicts modal ownership and discards uncommitted input |
+| Footer, Help, action panel, configuration, and runtime agree | `input_help` target | Partial | A generated all-command consistency matrix |
+
+## 3. Build workflow
+
+| Requirement piece | Primary evidence | Status | Missing proof |
+|---|---|---|---|
+| Opening, selection, navigation, and cancellation are paused | `phase6_input::build_interaction_is_a_paused_press_only_state_machine` | Green | Selection-navigation visual transition |
+| Selection shows complete cost/effect/availability | `bd_tui::lib::tests::compact_build_selection_shows_complete_selected_effect`; existing selection layout tests | Green unreviewed | Complete visual evidence and PTY review |
+| Placement retains selected name, cost, and effect | `bd_tui::lib::tests::build_placement_exposes_selected_station_name_cost_and_effect` | Green unreviewed | Automated profile proof passes; final PTY observation remains required |
+| Initial placement preview and confirmation target agree | `phase6_input::entering_build_placement_starts_on_a_visible_adjacent_candidate` | Green | One `BuildInteraction` owns the selected station, visible cursor, validation, and submitted target |
+| Placement does not move the player | no narrow primary contract | Open | Player position diff across valid preview navigation and confirmation |
+| Valid and invalid previews differ semantically | `bd_tui::lib::tests::invalid_build_preview_explains_egress_rejection` | Partial | Semantic token, style, ASCII fallback, and transition evidence |
+| Invalid preview exposes a typed reason | `invalid_build_preview_explains_egress_rejection` | Green unreviewed | Compact profile and PTY review |
+| Invalid confirmation is atomic and remains correctable | `phase6_input::invalid_build_confirmation_keeps_preview_active_and_is_atomic`; `denied_build_resolution_returns_to_correctable_placement` | Green | Preview rejection and later core denial both preserve a correctable `Placing` transaction without payment/time/entity mutation |
+| Accepted build pays and advances exactly once | `foundation_stabilization::construction_deducts_authoritative_colony_supplies_once` | Green | None at the domain/action layer |
+| Accepted placement preserves gate reachability | `colony_spatial_contract::every_accepted_station_placement_preserves_gate_reachability` | Green unreviewed | Existing-station blocker property matrix remains supporting unit evidence |
+
+## 4. Task management and station staffing
+
+| Requirement piece | Primary evidence | Status | Missing proof |
+|---|---|---|---|
+| `c` and `e` open distinct paused modes | `phase6_input::c_opens_paused_task_management_with_task_identity`; `e_opens_paused_station_staffing_with_station_identity` | Green unreviewed | Rendered transition evidence at both profiles |
+| Each mode exposes only choices for its responsibility | `station_staffing_lists_station_assignments_not_gathering_tasks`; `task_management_lists_survivor_tasks_not_station_staffing_choices` | Green | None |
+| Named stable survivor selection | `station_staffing_confirmation_changes_only_the_named_survivor_relationship` | Green | Survivors are ordered by stable unique name |
+| Named stable station selection | same staffing confirmation contract | Green | Stations are ordered by label and physical position rather than entity bits |
+| Open/navigation/confirmation/cancellation are paused | opening tests and existing confirmation test | Partial | Discrete navigation and Repeat/Release tests |
+| Confirmation changes only the intended relationship | `station_staffing_confirmation_changes_only_the_named_survivor_relationship` | Green | Equivalent task-assignment state-diff contract |
+| Cancellation is atomic and does not leak input | `management_cancel_is_atomic_and_discards_modal_gameplay_input` | Green | None |
+| Assignment does not immediately move workers | `survivor_work_contract::new_assignment_does_not_move_during_paused_confirmation` | Green | None |
+| Feedback names survivor, target, and resulting activity | no primary contract | Open | Exact one-message result for task and station confirmation |
+| Modal/footer controls agree at both profiles | no primary contract | Open | Rendered `c`, `e`, Enter, and Escape agreement |
+
+## 5. Viewport and visual language
+
+| Requirement piece | Primary evidence | Status | Missing proof |
+|---|---|---|---|
+| Player remains visible at supported profiles | far-edge viewport tests | Partial | Every shelter position and all four clamp edges |
+| Every layer uses one viewport transform | far-edge tests plus `map_projection_uses_one_semantic_visual_list` | Green unreviewed | One semantic visual list and one viewport projection path are implemented; full layer-by-layer snapshot review remains |
+| Assigned off-screen targets remain discoverable | `bd_tui::lib::tests::assigned_offscreen_target_has_a_directional_edge_indicator` | Green unreviewed | Direction is proven at both profiles; target-name/distance aggregation remains a later polish gap |
+| Active categories have a symbol/style/legend | semantic Help, symbol-registry, station-catalog, and resolved-style tests | Green unreviewed | Invalid-placement resolved-style snapshot remains open |
+| Station/resource categories are distinct | `station_and_resource_cells_have_distinct_resolved_styles` | Green unreviewed | ASCII fallback remains red |
+| Simultaneous categories remain distinct without color | Altar/survivor and Workshop/water tests; loader collision validation | Green unreviewed | Automated monochrome and validation proof passes; PTY review remains |
+| Staffed and unstaffed stations are distinct | `staffed_and_unstaffed_station_have_distinct_ascii_projection` | Green unreviewed | Automated ASCII proof passes; PTY review remains |
+| Worker activities are distinct | no visual primary contract | Open | Idle/EnRoute/Working/Blocked semantic and resolved observations |
+| Player/survivor cannot be hidden by lower layers | no primary contract | Open | Co-location/layer matrix and illegal-overlap guard |
+| Compact decisive text remains complete | compact build and management layout tests | Partial | Full canonical scene matrix and no-mid-word invariant |
+| Rendered Help contains its complete legend | `rendered_outpost_help_contains_every_foundation_legend_at_supported_profiles` | Green unreviewed | Complete no-ellipsis buffers pass at 80x24 and 60x20; PTY review remains |
+| Same state renders deterministically | visible frame fingerprint test | Partial | Full semantic/canvas/style observation equality |
+| Modal close and resize leave no stale cells | no primary contract | Open | Before/after buffer diff |
+
+## 6. Worker movement and physical production
+
+| Requirement piece | Primary evidence | Status | Missing proof |
+|---|---|---|---|
+| Idle workers do not move | `idle_render_frames_do_not_move_assigned_survivors`; `idle_survivor_does_not_move_on_accepted_outpost_turns` | Green | None |
+| Assignment becomes EnRoute without movement | `new_assignment_does_not_move_during_paused_confirmation` | Green | `WorkerActivity::EnRoute` is derived without moving during paused confirmation |
+| One Outpost turn permits one cardinal step | `next_outpost_turn_moves_worker_exactly_one_cardinal_step` | Green | None |
+| Tactical turns do not move colony workers | `tactical_turns_do_not_move_colony_survivors` | Green | None |
+| Workers path around blockers | `worker_uses_pathfinding_around_a_wall_blocker` | Green | Existing A* adapter selects deterministic adjacent work paths |
+| Reservations prevent stacking | `assigned_survivors_never_stack_on_one_tile` | Green | Stable-name movement order reserves each accepted destination |
+| Workers stop adjacent to blocking targets | station/resource occupancy tests | Green | Fixtures remain blocking and workers stop cardinally adjacent |
+| Arrival becomes Working | `station_worker_stops_cardinally_adjacent_to_target`; fingerprint activity checks | Green | Typed activity and physical evaluator agree |
+| No route becomes Blocked with a specific reason | `unreachable_worker_stays_put_and_reports_a_specific_blocked_reason` | Green | Typed reason and transition-only feedback pass |
+| EnRoute/Blocked station workers produce zero | `assigned_but_enroute_station_worker_produces_nothing`; `blocked_station_worker_produces_nothing` | Green | Shared physical-work evaluator rejects remote/blocked work |
+| Adjacent station worker produces once | `adjacent_station_worker_produces_once` | Green | Shared physical-work evaluator credits once |
+| EnRoute/Blocked gatherers produce zero | `assigned_but_enroute_gatherer_produces_nothing` | Green | Shared physical-work evaluator rejects remote gathering |
+| Matching adjacent gatherer produces once | `adjacent_matching_gatherer_produces_once` | Green | None |
+| Wrong-node gatherer produces zero | `gatherer_at_wrong_node_type_produces_nothing` | Green | The adjacent physical node must match the durable task |
+| Blocked station worker produces zero | `blocked_station_worker_produces_nothing` | Green | None |
+| Rest equals equivalent individual turns | position and daily-resource equivalence tests | Green | Rest replays the same logical worker steps before each crossed day boundary |
+| Save/load preserves deterministic next step | next-step, no-immediate-work, and fingerprint tests | Green unreviewed | Durable and derived state equality pass; complete visual snapshot review remains |
+
+## 7. Economy and day transaction
+
+| Requirement piece | Primary evidence | Status | Missing proof |
+|---|---|---|---|
+| Every day boundary runs one transaction | `colony_day_cycle::day_advanced_emits_once`; `mvp_correction::every_legal_day_boundary_has_one_summary` | Green | None |
+| Tactical and Outpost day boundaries agree | tactical day-boundary tests | Green | Exact normalized state equality would strengthen this |
+| Food, station output, gathering, mood, and summary run once | `colony_day_cycle` and `mvp_correction` matrices | Partial | Physical worker rules currently invalidate remote-output assumptions |
+| Summary equals authoritative delta | `colony_day_cycle::daily_summary_matches_resource_delta` | Green | Physical activity fields remain absent |
+| Forecast equals execution | `mvp_correction::forecast_matches_adverse_gathering_matrix`; `forecast_excludes_enroute_worker_output` | Green | Forecast uses the same current physical-work evaluator as daily execution |
+| Zero-Supplies recovery is reachable | `zero_supply_recovery_remains_reachable_with_physical_gathering`; shelter target reachability | Green at the physical positive fixture | EnRoute travel time and player-visible recovery guidance remain incomplete |
+| Storage rejects before payment | `mvp_correction::disabled_storage_rejection_is_atomic` | Green | None |
+| Station catalog owns costs/effects/availability | catalog and loader tests | Green | Presentation still drops placement details |
+
+## 8. Fixed dungeon loop
+
+| Requirement piece | Primary evidence | Status | Missing proof |
+|---|---|---|---|
+| Entry costs exactly two Supplies | `foundation_stabilization::dungeon_entry_deducts_colony_supplies_once` | Green | None |
+| Entry denial is atomic | `dungeon_entry_denial_preserves_mode_turn_and_resources` | Green | None |
+| Fixed content loads without procgen | `foundation_scenario::fixed_dungeon_loads_without_procgen` | Green | None |
+| Entrance, hostile, loot, and exit are reachable | loader validation plus canonical action paths | Green | A single content reachability matrix would improve diagnostics |
+| Legal movement changes one cardinal tile and one turn | `foundation_actions::valid_fixed_dungeon_movement_changes_one_cardinal_tile` | Green unreviewed | Rendered movement transition |
+| Wall movement is typed and atomic | `foundation_actions::fixed_dungeon_wall_movement_is_typed_and_atomic` | Green | None |
+| Default hostile survives one default attack | `foundation_scenario::canonical_combat_requires_more_than_one_attack` | Green | None |
+| Enemy phase occurs once | tactical input and fatal-action tests | Partial | Exact one-response state-diff per accepted tactical action |
+| Invalid attacks are atomic | progression and core action tests | Partial | Integrated no-target/out-of-range player-path matrix |
+| Pickup is explicit and positional | `foundation_actions::pickup_resolves_through_action_pipeline`; rejected pickup atomicity | Green | Rendered pickup feedback |
+| Extraction requires exit and explicit action | premature extraction test plus canonical extraction | Green | Production-key workflow and rendered affordance |
+| Extracted loot applies once | `foundation_scenario::canonical_extraction_applies_loot_once` | Green | None |
+| Colony state survives the run | `canonical_colony_state_survives_round_trip`; entity-scope tests | Green | Full normalized fingerprint |
+| Defeat grants no loot | `canonical_defeat_awards_no_loot` | Green | None |
+| Restart uses shelter return spawn | `mvp_correction::defeat_restart_uses_the_same_shelter_return_spawn` | Green | None |
+| Full dungeon path is playable through production keys | no complete primary workflow | Open | One checkpointed key-and-render path plus defeat/restart path |
+
+## 9. Persistence
+
+| Requirement piece | Primary evidence | Status | Missing proof |
+|---|---|---|---|
+| Clean Outpost round trip | canonical and persistence tests | Partial | Full normalized fingerprint |
+| Built station round trip | station catalog identity test | Partial | Position, cost state, effect, and visual equality together |
+| Assigned worker round trip | colony assignment persistence test | Partial | Stable relationship identity rather than count |
+| EnRoute checkpoint | deterministic next worker step test | Partial | Typed activity and projection equality |
+| Working checkpoint | no primary contract | Open | Physical Working state is not implemented |
+| Before/after day boundary checkpoints | `save_before_day_boundary...`; `save_after_day_boundary...` | Green | Fingerprint equality |
+| Active dungeon checkpoint | dungeon preservation and RNG continuation tests | Partial | Full entity-independent fingerprint |
+| Carrying loot checkpoint | core save inventory tests and dungeon fixture | Partial | Foundation-level explicit checkpoint |
+| Extracted checkpoint | post-extraction no-reapply test | Green | Full fingerprint |
+| Game Over checkpoint | defeat outcome test | Green | Rendered outcome equality |
+| Failed load is atomic | `load_rejects_missing_relationship_reference` | Green | Corrupt-file application-boundary case |
+| Deterministic next action survives load | RNG and same-snapshot tests | Green | Worker and visual continuation remain partial |
+| Entity-independent Foundation fingerprint | `test_harness_contract` target | Green | Stable names/catalog identities/positions replace raw entity bits; transient build state is excluded |
+| Save/load preserves projected visual state | no primary contract | Open | Semantic/canvas/style equality at applicable checkpoints |
+
+## 10. Progression, factions, and data-driven content
+
+| Requirement piece | Primary evidence | Status | Missing proof |
+|---|---|---|---|
+| Quick Attack improves Melee once | `progression_factions::quick_attack_improves_melee` | Green | None |
+| Quick Attack expresses Thumos once | `quick_attack_expresses_thumos` | Green | None |
+| Combat survival expresses Fortitude | `generic_enemy_defeat_grants_fortitude_but_not_kleos` | Green | Exact mapping remains Foundation representative only |
+| Item use improves Medicine and Temperance | item-use progression tests | Green | Item pickup fixture still uses a helper after action-based movement |
+| Rejected actions grant no progression | `rejected_action_grants_no_progression` | Green | Ranged/Repair rejection matrix not required |
+| Melee, Ranged, Repair, and Medicine records exist | loader required-ID and link validation | Green | Ranged and Repair lack player-facing Foundation controls; content linkage is the current locked minimum |
+| Six virtues plus Kleos exist | `player_has_all_six_virtues_and_kleos` | Green | Exact balance/mapping is deferred |
+| Exactly two placeholder factions load from data | `two_foundation_factions_load_with_typed_disposition` | Green | None |
+| A third valid faction needs no Rust branch | loader extensibility test | Green | Registry ownership should be added during full migration |
+| Hostility uses disposition | faction and enemy-AI tests | Green | None |
+| Invalid content reports source and IDs | loader validation tests | Partial | Table-driven file/record diagnostic matrix |
+| Active symbols reject ambiguous simultaneous categories | monochrome presentation tests and `bd_data` collision-validation tests | Green | Validation names colliding active categories and rejects both glyph and fallback collisions |
+| Station catalog extends without a Rust branch | sixth-station content test | Green | None |
+
+## 11. Deferred boundary
+
+These goals belong to the product vision but must not be converted into active
+Foundation failures:
+
+| Product goal | Foundation disposition | Current guard |
+|---|---|---|
+| Procedural dungeon generation | Deferred | `fixed_dungeon_loads_without_procgen`; legacy procgen tests remain non-acceptance evidence |
+| Raids and colony events | Deferred | `foundation_app_does_not_register_deferred_systems` |
+| Sanity | Deferred | same deferred-system isolation contract |
+| Full overworld travel/weather | Deferred | fixed direct dungeon entry is the Foundation path |
+| Theology-driven mechanics | Deferred | representative virtue hooks only |
+| Faction reputation/diplomacy and final canon | Deferred | two placeholder factions only |
+| Deeper narrative/investigation | Deferred | no Foundation acceptance dependency |
+
+## 12. Next test-authoring queue
+
+The following missing contracts are the highest-value additions after the
+current red implementation batch. They are ordered by how much false
+confidence they currently permit:
+
+1. normalized Foundation fingerprint and detailed diff;
+2. complete persistence checkpoint matrix using that fingerprint;
+3. production-key fixed-dungeon workflow with named checkpoints;
+4. semantic/canvas/style/geometry visual observation infrastructure;
+5. worker activity projection and worker-state visual transitions;
+6. all-position viewport and all-layer transform matrices;
+7. rendered management controls, selected details, feedback, and modal/footer
+   agreement at 80x24 and 60x20;
+8. all-advertised-control runtime matrix;
+9. real PTY lifecycle, repeat, resize, and restoration evidence.
+
+Do not replace these with a single broad “MVP scenario passes” test. Each item
+must retain discrete atomic owners, with the broad scenario serving only as
+workflow evidence.

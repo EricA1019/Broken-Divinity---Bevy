@@ -4,9 +4,9 @@
 _default:
     @just --list
 
-# Run all CI checks in order: check, test, fmt, clippy
-ci: check test fmt clippy
-    @echo "=== CI PASSED ==="
+# Run the canonical measured development gate.
+ci:
+    bash scripts/test-gate.sh
 
 # Fast compile check (no codegen)
 check:
