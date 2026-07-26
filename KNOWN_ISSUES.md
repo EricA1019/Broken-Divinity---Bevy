@@ -4,7 +4,7 @@
 > not be used as a current issue list or implementation plan. Foundation
 > Recovery resolved or reclassified multiple entries below. Current limitations
 > and final evidence are recorded in
-> [`../docs/FOUNDATION-RECOVERY-PLAN.md`](../docs/FOUNDATION-RECOVERY-PLAN.md).
+> [`docs/FOUNDATION-RECOVERY-PLAN.md`](docs/FOUNDATION-RECOVERY-PLAN.md).
 > Product P2 requires a new owner-approved plan.
 
 **Date**: 2026-07-11  

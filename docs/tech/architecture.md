@@ -1,7 +1,7 @@
 # Technical Architecture
 
 > **RECONCILE — NOT TECHNICAL AUTHORITY**
-> The current technical authority is [Kernel.md](../../../Kernel.md). This
+> The current technical authority is [Kernel.md](../../Kernel.md). This
 > document may describe superseded graphical dependencies.
 
 This document defines the technology stack, crate dependencies, project structure, rendering pipeline, procedural generation strategy, and scalability approach for Broken Divinity. Every version listed was verified against crates.io as of April 2026.

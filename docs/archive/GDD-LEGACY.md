@@ -2,7 +2,7 @@
 
 **Status:** Historical predecessor, archived during Foundation Recovery Phase 0 on 2026-07-24.
 
-**Canonical replacement:** [Broken Divinity Product Design Authority](../../../GDD.md)
+**Canonical replacement:** [Broken Divinity Product Design Authority](../../GDD.md)
 
 This document must not direct current implementation. It is preserved as design history.
 

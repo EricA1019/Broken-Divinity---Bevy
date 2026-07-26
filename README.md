@@ -4,17 +4,25 @@ A reusable terminal-based roguelike/tactics game kernel built with Rust, Bevy EC
 
 ## Current Status
 
-The Broken Divinity Foundation MVP passed its final recovery gate on
-2026-07-24. The canonical scenario passes 14/14, automated workspace/content
-gates pass without warnings, and terminal extraction, resume, defeat, and
-save/load paths have been manually audited.
+Foundation remediation is automated-green, but Foundation acceptance remains
+partially reopened. Registered contracts are currently `GreenUnreviewed`, and
+the visual matrix retains explicit open evidence. The
+[Foundation Test and Colony UX Hardening Plan](docs/FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md)
+owns the remaining behavior work; the
+[Authoritative Testing Standard](docs/AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md)
+owns evidence sufficiency and suite migration. Product P2 remains unauthorized
+and requires a separate owner-approved plan.
 
 Project authority:
 
-1. [Product GDD](../GDD.md)
-2. [Locked decisions](../docs/DECISIONS-TO-LOCK.md)
-3. [Foundation MVP scenario](../docs/MVP-SCENARIO.md)
-4. [Foundation Recovery Plan](../docs/FOUNDATION-RECOVERY-PLAN.md)
+1. [Product GDD](GDD.md)
+2. [Locked decisions](docs/DECISIONS-TO-LOCK.md)
+3. [Foundation MVP scenario](docs/MVP-SCENARIO.md)
+4. [Foundation Test and Colony UX Hardening Plan](docs/FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md) — active behavior work
+5. [Authoritative Testing Standard](docs/AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md) — active evidence and migration work
+6. [Foundation MVP Correction Plan](docs/FOUNDATION-MVP-CORRECTION-PLAN.md) — completed historical evidence
+7. [Foundation Stabilization Plan](docs/FOUNDATION-STABILIZATION-PLAN.md) — completed historical evidence
+8. [Foundation Recovery Plan](docs/FOUNDATION-RECOVERY-PLAN.md) — completed historical evidence
 
 ## Quick Start
 
@@ -27,26 +35,32 @@ Controls:
 |---|---|
 | `W`/`↑` `S`/`↓` `A`/`←` `D`/`→` | Move |
 | `.` | Wait (restore AP) |
+| `N` | Rest until next day (shelter only) |
 | `F` | Attack nearest enemy |
 | `G` | Guard (defensive stance) |
 | `P` | Pick up item |
 | `U` | Use carried item |
 | `B` | Open station build menu / cancel build mode |
-| `A` | Cycle/assign the nearest survivor task |
-| `E` | Assign survivor to station |
+| `C` | Open colony management and select a survivor/task |
+| `E` | Open colony management at station staffing |
 | `I` | Inventory screen |
-| `Z` | Combat screen |
 | `T` | Enter the fixed dungeon from the shelter |
 | `R` | Extract at the dungeon exit |
 | `?` | Context help |
 | `F5` | Save the current game |
 | `F9` | Load the current game |
 | `1`-`5` | Select a station type in the build menu |
-| `Q` / `Esc` | Quit / Cancel build mode |
+| `Q` / `Esc` | Quit / Cancel the active interaction |
 
 Semantic command bindings, runtime input, contextual help, action panels, and
 the footer share one binding source. Numbered build-menu selection remains a
 fixed menu interaction rather than a configurable gameplay command.
+
+Construction is modal. `B` opens station selection; `1`–`5` or Up/Down moves
+the highlight; Enter changes to adjacent-tile placement; movement keys choose
+the tile; and Enter builds. `B` or Escape cancels either phase. Gameplay input
+is paused and previously queued gameplay is discarded while either
+construction phase is active.
 
 ## Build & Run
 
@@ -62,7 +76,17 @@ cargo run -p bd_app -- --validate
 
 # Run all tests
 cargo test --workspace
+
+# Required final gate for every development task
+bash scripts/test-gate.sh
 ```
+
+Development follows the repository contract in [`AGENTS.md`](AGENTS.md) and
+the owner-approved
+[Authoritative Testing Standard](docs/AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md).
+Behavior changes must proceed red → green through focused contract tests before
+the complete measured gate is run. A green automated gate does not replace
+required GDD drift review, visual evidence, or real-terminal playtesting.
 
 ## Project Structure
 
@@ -72,7 +96,9 @@ broken-divinity/
 ├── config/                 # Default config files
 ├── content/                # Game data (RON files)
 │   ├── symbols/            # ASCII symbol definitions
-│   └── themes/             # Color theme definitions
+│   ├── themes/             # Color theme definitions
+│   ├── dungeons/           # Fixed Foundation dungeon
+│   └── stations/           # Validated station catalog
 ├── crates/
 │   ├── bd_app/             # Binary entry point
 │   ├── bd_core/            # ECS components, systems, kernel
@@ -93,7 +119,8 @@ Config file location: `~/.config/broken-divinity/config.toml`
 
 Copy `config/default.toml` to this location and edit. Theme and semantic command
 bindings are validated at startup; invalid or conflicting bindings fail with a
-readable configuration error.
+readable configuration error. `save_dir_override` may set an explicit save
+directory; otherwise the platform data directory is used.
 
 ## Save Files
 
@@ -101,15 +128,30 @@ Current save directory: `~/.local/share/broken-divinity/saves/`
 
 Foundation uses one atomic `manual-slot.ron`. It supports colony, active
 dungeon, extracted, and defeated states. Save/content version checks are
-enforced; development saves are not a permanent cross-version compatibility
-contract.
+enforced. The current format is save version 7; development saves are not a
+permanent cross-version compatibility contract.
+
+## Current Foundation Limitations
+
+- The playable dungeon is fixed and hand-authored; procgen is preserved but
+  inactive on the Foundation path.
+- Travel is the direct shelter-to-dungeon interaction, not the full overworld.
+- Raids, colony events, sanity, theology-driven mechanics, faction reputation,
+  final faction canon, and deeper narrative are deferred.
+- Colony management is intentionally thin but explicit: three named survivors,
+  targeted gathering/rest assignments, staffed station production, forecast
+  and daily summary, five represented station types, and extracted-item
+  storage. Storage construction is disabled because it has no Foundation
+  effect.
+- The supported terminal profiles are 80x24 and 60x20.
 
 ## Logs
 
-Logs are written to stderr with configurable level via the `BD_LOG` environment variable:
+Logs are written to stderr with configurable level via the standard
+`RUST_LOG` environment variable:
 
 ```bash
-BD_LOG=bd=debug cargo run -p bd_app
+RUST_LOG=bd=debug cargo run -p bd_app
 ```
 
 ## Troubleshooting

@@ -2,8 +2,8 @@
 
 > **RECONCILE — NOT PRODUCT AUTHORITY**
 > This tree differs from the project-level design reference. Current scope
-> comes from the root [GDD](../../../GDD.md) and
-> [Foundation Recovery Plan](../../../docs/FOUNDATION-RECOVERY-PLAN.md).
+> comes from the root [GDD](../../GDD.md) and
+> [Foundation Recovery Plan](../FOUNDATION-RECOVERY-PLAN.md).
 
 Detailed gameplay systems for Broken Divinity, organized by domain. Each file clearly separates **MVP** scope from **Phase 2** (Colony Foundation) and **Phase 3** (Full Colony).
 
@@ -36,7 +36,7 @@ See [phase-roadmap.md](phase-roadmap.md) for the full breakdown.
 | Need | File |
 |------|------|
 | Lore, worldbuilding, factions | [docs/lore/](../lore/README.md) |
-| High-level game design overview | [root GDD](../../../GDD.md) |
+| High-level game design overview | [root GDD](../../GDD.md) |
 | Combat formulas (implementation-level) | [gameplay-mechanics skill](not in docs — Copilot skill) |
 | Colony system implementation | [colony-management skill](not in docs — Copilot skill) |
 | Procgen implementation | [procgen skill](not in docs — Copilot skill) |

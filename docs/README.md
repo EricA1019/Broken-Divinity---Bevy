@@ -1,45 +1,133 @@
-# Repository Documentation Index
+# Broken Divinity Documentation Hub
 
-**Status:** Technical/reference documentation subordinate to the project-level documentation hub.
+**Status:** Active navigation authority
 
-Current authority lives outside this nested repository:
+**Updated:** 2026-07-26
 
-1. [Product GDD](../../GDD.md)
-2. [Technical architecture](../../Kernel.md)
-3. [Locked decisions](../../docs/DECISIONS-TO-LOCK.md)
-4. [Foundation MVP scenario](../../docs/MVP-SCENARIO.md)
-5. [Foundation Recovery Plan](../../docs/FOUNDATION-RECOVERY-PLAN.md)
+Read this file before using any other Broken Divinity document.
 
-Nothing in this directory overrides those documents.
+## Authority order
 
-## Active reference
+1. [GDD.md](../GDD.md) — sole product and player-experience authority.
+2. [DECISIONS-TO-LOCK.md](DECISIONS-TO-LOCK.md) — locked product choices.
+3. [Kernel.md](../Kernel.md) — technical architecture authority.
+4. [Kernel-direction.md](../Kernel-direction.md) — subordinate technical appendix.
+5. [MIGRATION-AND-DEPRECATION.md](MIGRATION-AND-DEPRECATION.md) — preservation policy.
+6. [MVP-SCENARIO.md](MVP-SCENARIO.md) — canonical Foundation acceptance scenario.
+7. [AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md](AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md) — active testing policy, evidence, metrics, and suite-migration authority.
+8. [FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md](FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md) — active Foundation behavior and colony UX implementation authority.
+9. [FOUNDATION-MVP-CORRECTION-PLAN.md](FOUNDATION-MVP-CORRECTION-PLAN.md) — completed Foundation correction and acceptance record.
+10. [FOUNDATION-STABILIZATION-PLAN.md](FOUNDATION-STABILIZATION-PLAN.md) — completed stabilization execution record.
+11. [FOUNDATION-RECOVERY-PLAN.md](FOUNDATION-RECOVERY-PLAN.md) — completed Foundation execution record and prior evidence.
+12. [DOCUMENT-INVENTORY.md](DOCUMENT-INVENTORY.md) — classification and ownership of all project documentation.
 
-- `ARCHITECTURE_GUARDRAILS.md` — earlier technical guardrails; use only where consistent with `Kernel.md`.
-- `DEPENDENCY_MATRIX.md` — dependency record.
-- `PHASE_EXIT_CRITERIA.md` — historical engineering milestone criteria.
-- `decisions/` — historical technical decision records; a record is active only if reaffirmed by current authority.
-- `tech/` — technical reference and prior audit material.
-- `playtest-report-2026-04-06.md` — historical playtest evidence.
+Code, tests, content, reference documents, and archived plans are evidence.
+They do not override the authority order.
 
-## Reconcile
+## Current project status
 
-These trees overlap with project-level `docs/design/` and may contain unique differences:
+The completed 2026-07-25 correction gate proved cross-mode daily transactions,
+recoverable economy, data-driven stations, explicit named management,
+completed-run history, named shelter returns, persistence, and the fixed
+dungeon experience. A later deeper colony UX audit reopened the affected
+Foundation gates after proving player-trapping construction, a missing shelter
+viewport, invisible required targets, incoherent worker movement/presentation,
+semantic glyph collisions, compact truncation, and a management-time contract
+violation.
 
-- `gameplay/`
-- `lore/`
-- `ui/`
+`AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md` owns testing policy,
+evidence sufficiency, metrics, and suite migration.
+`FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md` owns behavior and implementation
+order. These are coordinated authorities with non-overlapping roles.
+`FOUNDATION-MVP-CORRECTION-PLAN.md` remains the completed correction record;
+its unaffected simulation, persistence, economy, and dungeon evidence is
+preserved. The stabilization and recovery plans remain earlier chronological
+evidence records.
 
-They are reference material, not current product authority. No implementation
-requirement may be taken from them without confirming it in the root GDD and
-the active recovery plan.
+Product P2 is not authorized and still requires a separate owner-approved
+plan.
 
-## Historical archive
+## Active product boundary
 
-- `archive/GDD-LEGACY.md` — superseded game design document.
-- `archive/DEV-PLAN-LEGACY.md` — superseded vertical-slice plan.
+The immediate target is:
 
-## Deferred-system warning
+- one persistent shelter;
+- three survivors;
+- five station types;
+- assignment and one production cycle;
+- one fixed hand-authored dungeon;
+- movement, combat, loot, explicit extraction, and defeat;
+- return results applied to the colony exactly once;
+- practical skill growth and two representative virtue hooks;
+- two data-driven placeholder factions;
+- deterministic save/load;
+- a clear Ratatui player path.
 
-Documents describing procgen, overworld travel, raids, events, sanity,
-reputation, Gabriel, final factions, or deeper narrative concern future work
-unless the active recovery plan explicitly brings them into scope.
+Deferred:
+
+- procgen in the Foundation path;
+- full overworld travel;
+- raids and colony events;
+- sanity;
+- theology-driven mechanics;
+- faction reputation;
+- final faction canon;
+- deeper narrative.
+
+## Document roles
+
+### Active
+
+- Root design and technical authority files.
+- Locked decisions and migration policy.
+- MVP scenario.
+- Authoritative Testing Standard and Migration Plan as active test-governance
+  authority.
+- Foundation Test and Colony UX Hardening Plan as active behavior execution
+  authority.
+- Foundation MVP Correction Plan as completed acceptance evidence.
+- Foundation Stabilization Plan as completed evidence.
+- Foundation Recovery Plan as completed evidence.
+- Documentation Inventory.
+
+### Reference
+
+`docs/design/` and selected `broken-divinity/docs/` material may provide useful
+history, lore, and implementation context. It remains subordinate to the root
+GDD and canonical Foundation scenario.
+
+### Historical
+
+All files under `docs/archive/` are historical. They are preserved for evidence
+and must not be used as current instructions.
+
+The old `ACTIVE-PLAN.md`, prior phase contracts, historical UX plan, stale
+repository-local GDD, and old repository development plan were archived during
+Foundation Recovery Phase 0.
+
+## Required reading order for an implementation agent
+
+1. This hub.
+2. Root `GDD.md`.
+3. `DECISIONS-TO-LOCK.md`.
+4. Relevant `Kernel.md` guardrails.
+5. `MVP-SCENARIO.md`.
+6. `AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md`.
+7. `FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md`.
+8. `FOUNDATION-MVP-CORRECTION-PLAN.md` for completed correction and acceptance evidence.
+9. `FOUNDATION-STABILIZATION-PLAN.md` for completed stabilization evidence.
+10. `FOUNDATION-RECOVERY-PLAN.md` for completed Foundation evidence.
+11. `DOCUMENT-INVENTORY.md` when consulting any other document.
+12. Current code and tests.
+
+## Stop rule
+
+Stop and ask the project owner when:
+
+- canonical documents conflict;
+- a product choice is missing;
+- work would activate a deferred system;
+- preserving existing work would materially expand scope;
+- a proposed implementation creates another source of truth.
+
+Do not resolve ambiguity by selecting an older plan or design copy.

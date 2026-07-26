@@ -1,8 +1,8 @@
 # UI Design Specification
 
 > **RECONCILE — NOT IMPLEMENTATION AUTHORITY**
-> Current runtime direction comes from [Kernel.md](../../../Kernel.md) and the
-> [Foundation Recovery Plan](../../../docs/FOUNDATION-RECOVERY-PLAN.md). This
+> Current runtime direction comes from [Kernel.md](../../Kernel.md) and the
+> [Foundation Recovery Plan](../FOUNDATION-RECOVERY-PLAN.md). This
 > document may describe superseded egui or graphical assumptions.
 
 This directory defines every user-facing screen, panel, HUD element, and interaction for Broken Divinity. Each file covers one major game state. This README defines shared foundations that apply everywhere.

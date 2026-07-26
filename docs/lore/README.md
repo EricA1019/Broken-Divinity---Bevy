@@ -1,7 +1,7 @@
 # Lore — Broken Divinity
 
 > **RECONCILE — NOT PRODUCT AUTHORITY**
-> Current product canon comes from the root [GDD](../../../GDD.md). This tree
+> Current product canon comes from the root [GDD](../../GDD.md). This tree
 > is preserved as potentially useful but conflicting lore reference.
 
 Each file covers one historical design domain.

@@ -1,8 +1,8 @@
 # UI Design Architecture
 
 > **RECONCILE — NOT IMPLEMENTATION AUTHORITY**
-> Current UI execution is governed by [Kernel.md](../../../Kernel.md) and the
-> [Foundation Recovery Plan](../../../docs/FOUNDATION-RECOVERY-PLAN.md).
+> Current UI execution is governed by [Kernel.md](../../Kernel.md) and the
+> [Foundation Recovery Plan](../FOUNDATION-RECOVERY-PLAN.md).
 
 ## Overview
 This document outlines the UI architecture for Broken Divinity MVP using `bevy_egui`.
