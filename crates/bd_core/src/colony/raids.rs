@@ -11,16 +11,14 @@ pub const RAID_ENEMY_COUNT_MIN: u32 = 1;
 pub const RAID_ENEMY_COUNT_MAX: u32 = 3;
 pub const RAID_SUPPLIES_LOST_IF_UNDEFENDED: i32 = 5;
 
-#[derive(Resource, Debug, Clone, Serialize, Deserialize)]
+#[derive(Resource, Debug, Default, Clone, Serialize, Deserialize)]
 pub enum RaidState {
+    #[default]
     Inactive,
-    Active { turn_started: u64, enemy_count: u32 },
-}
-
-impl Default for RaidState {
-    fn default() -> Self {
-        Self::Inactive
-    }
+    Active {
+        turn_started: u64,
+        enemy_count: u32,
+    },
 }
 
 /// Marker component for raid-spawned enemies.

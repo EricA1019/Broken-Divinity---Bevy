@@ -14,7 +14,10 @@ use bd_core::{
     procgen::{LocationTemplate, generate_location, validate_plan},
     save::{load_world, save_world},
     signals::PoolKind,
+    spatial::{EntityScope, FOUNDATION_DUNGEON_ID},
 };
+use bd_test_support::FoundationDriver;
+use bevy_ecs::prelude::Resource;
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -75,7 +78,7 @@ fn stress_world() -> bevy_ecs::world::World {
 // ---------------------------------------------------------------------------
 
 #[test]
-fn hundred_turn_simulation_does_not_leak_entities() {
+fn synthetic_spawn_despawn_fixture_returns_to_baseline() {
     let mut world = stress_world();
 
     // Spawn a player (persistent entity)
@@ -132,7 +135,46 @@ fn hundred_turn_simulation_does_not_leak_entities() {
 }
 
 #[test]
-fn seed_batch_does_not_panic() {
+fn production_colony_dungeon_cycles_do_not_leak_scoped_entities() {
+    let mut driver = FoundationDriver::new(9_001);
+    driver.start_colony().unwrap();
+    driver.fixture_set_colony_resource(PoolKind::Supplies, 100);
+
+    let run_baseline = driver.scope_count(EntityScope::RunPersistent);
+    let colony_baseline = driver.scope_count(EntityScope::ColonyPersistent);
+    let dungeon_baseline = driver.scope_count(EntityScope::DungeonTransient);
+
+    for cycle in 0..10 {
+        driver.enter_dungeon(FOUNDATION_DUNGEON_ID).unwrap();
+        assert!(
+            driver.scope_count(EntityScope::DungeonTransient) > dungeon_baseline,
+            "cycle {cycle} did not create production dungeon-scoped entities"
+        );
+
+        driver
+            .return_to_colony(&format!("production leak cycle {cycle}"))
+            .unwrap();
+
+        assert_eq!(
+            driver.scope_count(EntityScope::RunPersistent),
+            run_baseline,
+            "run-persistent count drifted after cycle {cycle}"
+        );
+        assert_eq!(
+            driver.scope_count(EntityScope::ColonyPersistent),
+            colony_baseline,
+            "colony-persistent count drifted after cycle {cycle}"
+        );
+        assert_eq!(
+            driver.scope_count(EntityScope::DungeonTransient),
+            dungeon_baseline,
+            "dungeon-transient entities leaked after cycle {cycle}"
+        );
+    }
+}
+
+#[test]
+fn deferred_procgen_seed_batch_smoke_does_not_panic() {
     let template = LocationTemplate::ruin();
     // Run 1000 seeds to validate procgen stability
     for seed in 0..1000 {
@@ -189,26 +231,28 @@ fn save_load_stress_roundtrip_passes() {
     let _ = std::fs::remove_dir(&temp_dir);
 }
 
+#[derive(Resource, Default)]
+struct ObservedTransitions(usize);
+
+#[derive(Resource, Default)]
+struct LateObservedTransitions(usize);
+
 #[test]
-fn event_queue_does_not_grow_unbounded() {
-    // Messages in Bevy are stored in the Messages resource.
-    // They are consumed when read by a MessageReader, so after a system
-    // reads them, they are cleared. This test verifies that a system
-    // reading messages keeps the queue empty.
+fn transition_message_observer_reads_each_burst_item_once_and_old_items_expire() {
     use bevy_ecs::message::MessageReader;
 
     let mut app = bevy_app::App::new();
     app.add_message::<bd_core::spatial::TransitionIntent>();
+    app.init_resource::<ObservedTransitions>();
 
-    // Add a reader system
     app.add_systems(
         bevy_app::Update,
-        |mut messages: MessageReader<bd_core::spatial::TransitionIntent>| {
-            for _msg in messages.read() {}
+        |mut messages: MessageReader<bd_core::spatial::TransitionIntent>,
+         mut observed: bevy_ecs::prelude::ResMut<ObservedTransitions>| {
+            observed.0 += messages.read().count();
         },
     );
 
-    // Send a burst of messages
     for _ in 0..1000 {
         app.world_mut()
             .resource_mut::<bevy_ecs::message::Messages<bd_core::spatial::TransitionIntent>>()
@@ -218,8 +262,35 @@ fn event_queue_does_not_grow_unbounded() {
             });
     }
 
-    // Run the schedule to drain messages
     app.update();
+    assert_eq!(
+        app.world().resource::<ObservedTransitions>().0,
+        1000,
+        "the production message reader must observe every burst item"
+    );
+
+    app.update();
+    assert_eq!(
+        app.world().resource::<ObservedTransitions>().0,
+        1000,
+        "an existing reader must not process a retained message twice"
+    );
+
+    app.init_resource::<LateObservedTransitions>();
+    app.add_systems(
+        bevy_app::Update,
+        |mut messages: MessageReader<bd_core::spatial::TransitionIntent>,
+         mut observed: bevy_ecs::prelude::ResMut<LateObservedTransitions>| {
+            observed.0 += messages.read().count();
+        },
+    );
+    app.update();
+
+    assert_eq!(
+        app.world().resource::<LateObservedTransitions>().0,
+        0,
+        "messages older than the retention window must be unavailable to a new reader"
+    );
 }
 
 #[test]

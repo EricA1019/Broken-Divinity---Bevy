@@ -144,7 +144,7 @@ mod tests {
     }
 
     #[test]
-    fn map_snapshot_matches_expected_render() {
+    fn map_grid_resolves_expected_glyphs() {
         let symbols = SymbolRegistry::phase5_defaults();
         let theme = ThemeRegistry::phase5_defaults();
         let mut grid = RenderCellGrid::new(3, 3, VisualToken::Floor, &symbols, &theme);

@@ -6,12 +6,16 @@
 #[cfg(test)]
 mod tests {
     use bd_core::BdSet;
-    use bevy_app::App;
+    use bevy_app::{App, Update};
+    use bevy_ecs::prelude::{IntoScheduleConfigs, ResMut, Resource};
 
-    /// Verify the declared schedule order is stable.
+    #[derive(Resource, Default)]
+    struct ScheduleProbe(Vec<&'static str>);
+
+    /// Keep the public set vocabulary stable. This does not claim that the
+    /// Bevy schedule executed the sets in this order.
     #[test]
-    fn system_order_matches_declared_schedule() {
-        // The BdSet variants in declaration order
+    fn bd_set_declaration_names_remain_stable() {
         let expected = [
             "Input",
             "IntentCollection",
@@ -44,6 +48,49 @@ mod tests {
         assert_eq!(actual, expected, "BdSet order must not change silently");
     }
 
+    fn required_stage_positions(stages: &[&str]) -> Result<[usize; 3], String> {
+        let required = ["Validation", "CostResolution", "Mutation"];
+        let mut positions = [0; 3];
+
+        for (required_index, required_stage) in required.iter().enumerate() {
+            let matches: Vec<usize> = stages
+                .iter()
+                .enumerate()
+                .filter_map(|(index, stage)| (*stage == *required_stage).then_some(index))
+                .collect();
+            if matches.len() != 1 {
+                return Err(format!(
+                    "{required_stage} must occur exactly once, found {}",
+                    matches.len()
+                ));
+            }
+            positions[required_index] = matches[0];
+        }
+
+        if !(positions[0] < positions[1] && positions[1] < positions[2]) {
+            return Err(format!(
+                "required order is Validation < CostResolution < Mutation, positions={positions:?}"
+            ));
+        }
+        Ok(positions)
+    }
+
+    #[test]
+    fn stage_sequence_validator_rejects_missing_duplicate_and_reordered_stages() {
+        assert!(required_stage_positions(&["Validation", "CostResolution", "Mutation"]).is_ok());
+        assert!(required_stage_positions(&["Validation", "Mutation"]).is_err());
+        assert!(
+            required_stage_positions(&[
+                "Validation",
+                "CostResolution",
+                "CostResolution",
+                "Mutation",
+            ])
+            .is_err()
+        );
+        assert!(required_stage_positions(&["Mutation", "Validation", "CostResolution"]).is_err());
+    }
+
     /// Verify that BdCorePlugin registers the trigger guard resource.
     #[test]
     fn trigger_guard_resource_exists() {
@@ -73,11 +120,12 @@ mod tests {
 
     /// Verify that an invalid action stops before cost resolution (doesn't spend AP).
     #[test]
-    fn invalid_action_stops_before_cost_resolution() {
+    fn denied_move_never_reaches_cost_or_mutation() {
         use bd_core::components::{Player, Position, Tile};
         use bd_core::map::SmokeMap;
         use bd_core::pools::{Pool, Pools};
         use bd_core::signals::{ActionIntent, PoolKind};
+        use bd_core::trace::SignalTrace;
         use bevy_ecs::message::Messages;
 
         let mut app = App::new();
@@ -121,11 +169,31 @@ mod tests {
             .unwrap()
             .current;
         assert_eq!(ap, 3, "Denied actions must not spend AP");
+
+        let trace = app.world().resource::<SignalTrace>();
+        let stages: Vec<&str> = trace.entries.iter().map(|entry| entry.stage).collect();
+        assert_eq!(
+            stages
+                .iter()
+                .filter(|stage| **stage == "Validation")
+                .count(),
+            1,
+            "a denied move must be validated exactly once"
+        );
+        assert!(
+            !stages.contains(&"CostResolution"),
+            "a denied move reached cost resolution: {stages:?}"
+        );
+        assert!(
+            !stages.contains(&"Mutation"),
+            "a denied move reached mutation: {stages:?}"
+        );
     }
 
-    /// Verify trace records ordered flow through the pipeline.
+    /// Execute one accepted action through the production plugin and prove
+    /// that each action-pipeline signal appears exactly once in stage order.
     #[test]
-    fn trace_records_ordered_flow() {
+    fn accepted_move_emits_each_required_trace_stage_exactly_once() {
         use bd_core::components::{Player, Position, Tile};
         use bd_core::map::SmokeMap;
         use bd_core::pools::{Pool, Pools};
@@ -162,22 +230,57 @@ mod tests {
         app.update();
 
         let trace = app.world().resource::<SignalTrace>();
+        let required_signals = [
+            ("Validation", "ActionIntent"),
+            ("CostResolution", "CostCompile"),
+            ("Mutation", "EffectResolve"),
+        ];
+        let mut positions = [0; 3];
+        for (required_index, required) in required_signals.iter().enumerate() {
+            let matches: Vec<usize> = trace
+                .entries
+                .iter()
+                .enumerate()
+                .filter_map(|(index, entry)| {
+                    ((entry.stage, entry.signal_type) == *required).then_some(index)
+                })
+                .collect();
+            assert_eq!(
+                matches.len(),
+                1,
+                "{required:?} must appear exactly once; trace={:?}",
+                trace.entries
+            );
+            positions[required_index] = matches[0];
+        }
         assert!(
-            !trace.entries.is_empty(),
-            "Trace should have entries after a move action"
+            positions[0] < positions[1] && positions[1] < positions[2],
+            "required pipeline signal order drifted; positions={positions:?}, trace={:?}",
+            trace.entries
+        );
+    }
+
+    #[test]
+    fn production_schedule_executes_required_sets_in_declared_order() {
+        let mut app = App::new();
+        app.add_plugins(bd_core::BdCorePlugin);
+        app.init_resource::<ScheduleProbe>();
+        app.add_systems(
+            Update,
+            (
+                (|mut probe: ResMut<ScheduleProbe>| probe.0.push("Validation"))
+                    .in_set(BdSet::Validation),
+                (|mut probe: ResMut<ScheduleProbe>| probe.0.push("CostResolution"))
+                    .in_set(BdSet::CostResolution),
+                (|mut probe: ResMut<ScheduleProbe>| probe.0.push("Mutation"))
+                    .in_set(BdSet::Mutation),
+            ),
         );
 
-        // Verify stages appear in order
-        let stages: Vec<&str> = trace.entries.iter().map(|e| e.stage).collect();
-        let validation_idx = stages.iter().position(|&s| s == "Validation");
-        let cost_idx = stages.iter().position(|&s| s == "CostResolution");
-        let mutation_idx = stages.iter().position(|&s| s == "Mutation");
+        app.update();
 
-        if let (Some(v), Some(c), Some(m)) = (validation_idx, cost_idx, mutation_idx) {
-            assert!(
-                v < c && c < m,
-                "Trace stages must be: Validation < CostResolution < Mutation"
-            );
-        }
+        let stages = &app.world().resource::<ScheduleProbe>().0;
+        required_stage_positions(stages)
+            .unwrap_or_else(|error| panic!("{error}; actual probe stages={stages:?}"));
     }
 }

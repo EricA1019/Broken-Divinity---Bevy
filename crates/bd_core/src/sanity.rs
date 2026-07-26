@@ -42,7 +42,7 @@ pub fn process_sanity_drain(
                 source: None,
                 target: entity,
                 kind: PoolKind::Sanity,
-                amount: -(pressure.drain_per_turn as i32),
+                amount: -pressure.drain_per_turn,
                 tags: vec![],
                 reason: "sanity drain".into(),
             });
@@ -177,8 +177,10 @@ mod tests {
 
     #[test]
     fn sanity_constants_are_sane() {
-        assert!(SANITY_BREAKDOWN_THRESHOLD < SANITY_HALLUCINATION_THRESHOLD);
-        assert!(SANITY_HALLUCINATION_THRESHOLD < SANITY_MAX);
+        const {
+            assert!(SANITY_BREAKDOWN_THRESHOLD < SANITY_HALLUCINATION_THRESHOLD);
+            assert!(SANITY_HALLUCINATION_THRESHOLD < SANITY_MAX);
+        }
     }
 
     #[test]

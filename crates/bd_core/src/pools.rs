@@ -91,7 +91,7 @@ pub(crate) fn register_pools(app: &mut App) {
 
     app.add_systems(
         bevy_app::Update,
-        resolve_pool_deltas.in_set(BdSet::Mutation),
+        resolve_pool_deltas.in_set(crate::BdMutationSet::PoolDeltas),
     );
 
     app.add_systems(
@@ -257,7 +257,7 @@ pub(crate) fn resolve_pool_deltas(
 
 /// Observes EntityDefeated messages and despawns the defeated entities.
 /// Generic: handles any entity regardless of how it was spawned.
-fn cleanup_defeated_entities(
+pub(crate) fn cleanup_defeated_entities(
     mut defeated: bevy_ecs::message::MessageReader<EntityDefeated>,
     mut commands: Commands,
     mut game_log: ResMut<GameLog>,
@@ -318,11 +318,12 @@ fn observe_player_defeat(
     player: Query<(), With<crate::components::Player>>,
     mut mode: ResMut<crate::spatial::GameMode>,
     mut session: ResMut<crate::session::RunSession>,
+    mut last_completed: ResMut<crate::session::LastCompletedRun>,
 ) {
     for msg in defeated.read() {
         if player.get(msg.entity).is_ok() {
             *mode = crate::spatial::GameMode::GameOver;
-            session.mark_defeated();
+            session.complete_defeat(&mut last_completed);
         }
     }
 }

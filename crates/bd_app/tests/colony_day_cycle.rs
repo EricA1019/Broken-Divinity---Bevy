@@ -19,6 +19,19 @@ fn wait_to_next_day(driver: &mut FoundationDriver) {
     }
 }
 
+fn rest_to_next_day(driver: &mut FoundationDriver) {
+    let player = driver.player().unwrap();
+    driver
+        .expect_action(
+            "rest to next colony day",
+            player,
+            "ability.rest_until_next_day",
+            None,
+            None,
+        )
+        .unwrap();
+}
+
 fn build_station(driver: &mut FoundationDriver, staffed: bool) {
     let player = driver.player().unwrap();
     driver
@@ -186,5 +199,89 @@ fn save_after_day_boundary_does_not_duplicate_cycle() {
     assert_eq!(
         restored.resource_current(PoolKind::Supplies),
         Some(before.supplies_after)
+    );
+}
+
+#[test]
+fn rest_advances_exactly_the_remaining_turns() {
+    let mut driver = colony_driver();
+    for _ in 0..7 {
+        let player = driver.player().unwrap();
+        driver
+            .expect_action("advance before rest", player, "ability.wait", None, None)
+            .unwrap();
+    }
+    let before = driver.summary();
+    assert_eq!(before.turn, 7);
+
+    rest_to_next_day(&mut driver);
+
+    let after = driver.summary();
+    assert_eq!(after.day, before.day + 1);
+    assert_eq!(after.turn, 0);
+    assert_eq!(driver.last_day_advanced_count(), 1);
+}
+
+#[test]
+fn rest_and_individual_waits_run_the_same_daily_transaction() {
+    let mut waits = colony_driver();
+    let mut rest = colony_driver();
+    build_station(&mut waits, true);
+    build_station(&mut rest, true);
+
+    wait_to_next_day(&mut waits);
+    rest_to_next_day(&mut rest);
+
+    assert_eq!(waits.latest_daily_summary(), rest.latest_daily_summary());
+    for kind in [
+        PoolKind::Supplies,
+        PoolKind::Materials,
+        PoolKind::WildPlants,
+    ] {
+        assert_eq!(waits.resource_current(kind), rest.resource_current(kind));
+    }
+    let supplies = rest.resource_current(PoolKind::Supplies);
+    rest.advance_idle();
+    assert_eq!(rest.resource_current(PoolKind::Supplies), supplies);
+}
+
+#[test]
+fn rest_boundary_survives_save_load_without_repeating_consumers() {
+    let mut driver = colony_driver();
+    build_station(&mut driver, true);
+    rest_to_next_day(&mut driver);
+    let summary = driver.latest_daily_summary().unwrap();
+    let supplies = driver.resource_current(PoolKind::Supplies);
+    let checkpoint = driver.checkpoint().unwrap();
+
+    let mut restored = FoundationDriver::from_checkpoint(&checkpoint).unwrap();
+    restored.advance_idle();
+
+    assert_eq!(restored.latest_daily_summary(), Some(summary));
+    assert_eq!(restored.resource_current(PoolKind::Supplies), supplies);
+    assert_eq!(restored.last_day_advanced_count(), 0);
+}
+
+#[test]
+fn rest_replay_is_deterministic() {
+    let mut first = colony_driver();
+    let mut second = colony_driver();
+
+    rest_to_next_day(&mut first);
+    rest_to_next_day(&mut second);
+
+    assert_eq!(first.latest_daily_summary(), second.latest_daily_summary());
+    assert_eq!(
+        first.summary().replay_intents,
+        second.summary().replay_intents
+    );
+    assert_eq!(
+        first
+            .summary()
+            .replay_intents
+            .iter()
+            .filter(|record| record.action_id == "ability.rest_until_next_day")
+            .count(),
+        1
     );
 }

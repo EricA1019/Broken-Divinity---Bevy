@@ -88,6 +88,7 @@ pub fn register_begin_travel_action() -> ActionDefinition {
 
 /// Process one turn of travel: decrement turns_remaining, deduct food.
 /// When turns_remaining reaches 0, auto-transition to Tactical.
+#[allow(clippy::too_many_arguments)] // Deferred travel keeps each Bevy owner explicit.
 pub fn process_travel_day(
     mut state: ResMut<OverworldState>,
     mode: Res<crate::spatial::GameMode>,
@@ -343,19 +344,10 @@ pub fn process_travel_weather(
 
 /// Combined travel context for the TUI layer — bundles overworld state with
 /// the travel map so they can be passed as a single system parameter.
-#[derive(Resource, Debug, Clone)]
+#[derive(Resource, Debug, Default, Clone)]
 pub struct TravelContext {
     pub overworld: OverworldState,
     pub travel_map: crate::spatial::TravelMap,
-}
-
-impl Default for TravelContext {
-    fn default() -> Self {
-        Self {
-            overworld: OverworldState::default(),
-            travel_map: crate::spatial::TravelMap::default(),
-        }
-    }
 }
 
 /// Register travel systems.

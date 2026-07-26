@@ -247,7 +247,7 @@ pub fn process_event_triggers(
             .filter(|c| {
                 c.conditions
                     .iter()
-                    .all(|cond| evaluate_condition(cond, player_pools.as_deref()))
+                    .all(|cond| evaluate_condition(cond, player_pools))
             })
             .count();
 

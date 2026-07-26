@@ -91,6 +91,8 @@ impl ThemeRegistry {
             StyleToken::Terrain,
             StyleToken::Wall,
             StyleToken::Item,
+            StyleToken::Station,
+            StyleToken::ResourceNode,
             StyleToken::Exit,
             StyleToken::Danger,
             StyleToken::Muted,
@@ -144,6 +146,18 @@ impl ThemeRegistry {
             ThemeDef {
                 style_token: StyleToken::Item,
                 fg: "cyan".into(),
+                bg: None,
+                bold: false,
+            },
+            ThemeDef {
+                style_token: StyleToken::Station,
+                fg: "lightblue".into(),
+                bg: None,
+                bold: true,
+            },
+            ThemeDef {
+                style_token: StyleToken::ResourceNode,
+                fg: "green".into(),
                 bg: None,
                 bold: false,
             },

@@ -29,17 +29,9 @@ pub enum Condition {
     Always,
 }
 
-#[derive(Resource, Debug, Clone, Serialize, Deserialize)]
+#[derive(Resource, Debug, Default, Clone, Serialize, Deserialize)]
 pub struct DialogueLog {
     pub seen_nodes: Vec<String>,
-}
-
-impl Default for DialogueLog {
-    fn default() -> Self {
-        Self {
-            seen_nodes: Vec::new(),
-        }
-    }
 }
 
 #[cfg(test)]

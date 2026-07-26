@@ -114,7 +114,7 @@ pub(crate) fn register_inventory(app: &mut App) {
 
 // ── Systems ──
 
-#[allow(clippy::type_complexity)]
+#[allow(clippy::type_complexity, clippy::too_many_arguments)] // Pickup validates distinct ECS owners atomically.
 fn process_pickup(
     mut commands: Commands,
     mut messages: bevy_ecs::message::MessageReader<PickupIntent>,

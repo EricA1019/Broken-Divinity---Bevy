@@ -6,19 +6,10 @@ use serde::{Deserialize, Serialize};
 pub const GABRIEL_TRIGGER_FLOOR: u32 = 1;
 pub const GABRIEL_SANITY_RECOVERY: i32 = 10;
 
-#[derive(Resource, Debug, Clone, Serialize, Deserialize)]
+#[derive(Resource, Debug, Default, Clone, Serialize, Deserialize)]
 pub struct GabrielState {
     pub appeared: bool,
     pub accepted: bool,
-}
-
-impl Default for GabrielState {
-    fn default() -> Self {
-        Self {
-            appeared: false,
-            accepted: false,
-        }
-    }
 }
 
 #[cfg(test)]

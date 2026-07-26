@@ -72,6 +72,15 @@ pub enum BdSet {
     Render,
 }
 
+/// Explicit order for request producers and consumers inside authoritative
+/// mutation. This prevents a checkpoint from observing an emitted combat
+/// delta before that delta has been applied.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub(crate) enum BdMutationSet {
+    ActionEffects,
+    PoolDeltas,
+}
+
 /// Full legacy plugin — registers the foundation plus deferred systems.
 ///
 /// Existing module tests use this plugin because they exercise deferred
@@ -128,6 +137,12 @@ fn register_foundation(app: &mut App, foundation: bool) {
         )
             .chain(),
     );
+    app.configure_sets(
+        bevy_app::Update,
+        (BdMutationSet::ActionEffects, BdMutationSet::PoolDeltas)
+            .chain()
+            .in_set(BdSet::Mutation),
+    );
 
     // Register resources
     app.insert_resource(SmokeMap::default_smoke_map());
@@ -170,9 +185,9 @@ fn register_foundation(app: &mut App, foundation: bool) {
     pools::register_move_feedback(app);
 
     // Register colony resources (must exist before actions validate them)
-    app.init_resource::<crate::colony::stations::PendingStationBuild>();
-    app.init_resource::<crate::colony::stations::BuildGhostState>();
-    app.init_resource::<crate::colony::stations::BuildMenuState>();
+    app.init_resource::<crate::colony::stations::PendingStationAssignment>();
+    app.init_resource::<crate::colony::stations::BuildInteraction>();
+    app.init_resource::<crate::colony::stations::StationCatalog>();
     app.insert_resource(crate::colony::production::ColonyResources::default());
     app.init_resource::<crate::colony::production::ColonyStorage>();
     app.init_resource::<crate::colony::production::DailyCycleDraft>();
@@ -181,6 +196,9 @@ fn register_foundation(app: &mut App, foundation: bool) {
 
     // Register action system (replaces direct movement systems)
     actions::register_actions(app);
+    app.world_mut()
+        .resource_mut::<crate::actions::ActionRegistry>()
+        .register(crate::time::register_rest_until_next_day_action());
     progression::register_progression(app);
 
     // Register status/trigger/modifier system
@@ -193,11 +211,23 @@ fn register_foundation(app: &mut App, foundation: bool) {
     app.world_mut()
         .resource_mut::<crate::actions::ActionRegistry>()
         .register(crate::colony::stations::register_station_actions());
+    app.world_mut()
+        .resource_mut::<crate::actions::ActionRegistry>()
+        .register(crate::spatial::register_foundation_entry_action());
 
     // Register survivor actions
     app.world_mut()
         .resource_mut::<crate::actions::ActionRegistry>()
         .register(crate::colony::survivors::register_assign_gathering_action());
+    app.world_mut()
+        .resource_mut::<crate::actions::ActionRegistry>()
+        .register(crate::colony::survivors::register_gather_supplies_action());
+    app.world_mut()
+        .resource_mut::<crate::actions::ActionRegistry>()
+        .register(crate::colony::survivors::register_gather_materials_action());
+    app.world_mut()
+        .resource_mut::<crate::actions::ActionRegistry>()
+        .register(crate::colony::survivors::register_gather_plants_action());
     app.world_mut()
         .resource_mut::<crate::actions::ActionRegistry>()
         .register(crate::colony::survivors::register_unassign_task_action());
@@ -269,7 +299,10 @@ fn register_foundation(app: &mut App, foundation: bool) {
     // P3: Register survivor movement system
     app.add_systems(
         bevy_app::Update,
-        crate::colony::survivors::process_survivor_movement.in_set(BdSet::Mutation),
+        crate::colony::survivors::process_survivor_movement
+            .after(crate::actions::resolve_action_effects)
+            .after(crate::colony::survivors::process_station_assignments)
+            .in_set(BdSet::Mutation),
     );
 }
 

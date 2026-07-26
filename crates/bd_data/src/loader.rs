@@ -50,6 +50,7 @@ pub fn load_foundation_content(
     let skills = load_items!("skills", bd_core::content::SkillDefinition);
     let factions = load_items!("factions", bd_core::content::FactionDefinition);
     let actions = load_items!("actions", bd_core::content::ActionReference);
+    let stations = load_items!("stations", bd_core::colony::stations::StationBlueprint);
     let blueprints = load_items!("blueprints", bd_core::factory::EntityBlueprint);
 
     let bundle = FoundationContent {
@@ -58,6 +59,7 @@ pub fn load_foundation_content(
         skills,
         factions,
         actions,
+        stations,
         blueprints,
     };
     validate_foundation_content(&bundle)?;
@@ -100,8 +102,86 @@ pub fn validate_foundation_content(
     for entry in &content.actions {
         add_id(&entry.id, "actions/foundation.ron")?;
     }
+    for entry in &content.stations {
+        add_id(&entry.id, "stations/foundation.ron")?;
+    }
     for entry in &content.blueprints {
         add_id(&entry.id, "blueprints/foundation.ron")?;
+    }
+
+    let mut station_types = HashSet::new();
+    for station in &content.stations {
+        if !station_types.insert(station.station_type) {
+            return Err(LoadError::Validation {
+                file: "stations/foundation.ron".into(),
+                message: format!("duplicate station type {:?}", station.station_type),
+            });
+        }
+        if station.label.trim().is_empty() || station.description.trim().is_empty() {
+            return Err(LoadError::Validation {
+                file: "stations/foundation.ron".into(),
+                message: format!("station '{}' requires a label and description", station.id),
+            });
+        }
+        if station.build_cost_supplies < 0 {
+            return Err(LoadError::Validation {
+                file: "stations/foundation.ron".into(),
+                message: format!("station '{}' has a negative build cost", station.id),
+            });
+        }
+        match station.effect {
+            bd_core::colony::stations::StationEffect::Produce { amount, .. }
+            | bd_core::colony::stations::StationEffect::RestoreWorkerMood { amount }
+                if amount <= 0 =>
+            {
+                return Err(LoadError::Validation {
+                    file: "stations/foundation.ron".into(),
+                    message: format!("station '{}' effect amount must be positive", station.id),
+                });
+            }
+            bd_core::colony::stations::StationEffect::Disabled
+                if station.buildable || station.unavailable_reason.is_none() =>
+            {
+                return Err(LoadError::Validation {
+                    file: "stations/foundation.ron".into(),
+                    message: format!(
+                        "disabled station '{}' must be unavailable with a visible reason",
+                        station.id
+                    ),
+                });
+            }
+            _ => {}
+        }
+    }
+
+    let mut active_glyphs = std::collections::HashMap::<char, String>::from([
+        ('@', "Player".into()),
+        ('i', "Survivor Idle".into()),
+        ('e', "Survivor EnRoute".into()),
+        ('*', "Survivor Working".into()),
+        ('x', "Survivor Blocked".into()),
+        ('r', "Survivor Resting".into()),
+        ('d', "Survivor Defending".into()),
+        ('T', "Trees".into()),
+        ('~', "Water Source".into()),
+        ('P', "Wild Plants".into()),
+        ('>', "Shelter gate".into()),
+    ]);
+    for station in &content.stations {
+        for (state, glyph) in [
+            ("unstaffed", station.glyph),
+            ("staffed", station.staffed_glyph),
+        ] {
+            let identity = format!("{} ({state})", station.id);
+            if let Some(existing) = active_glyphs.insert(glyph, identity.clone()) {
+                return Err(LoadError::Validation {
+                    file: "stations/foundation.ron".into(),
+                    message: format!(
+                        "ambiguous Foundation glyph '{glyph}' is shared by {existing} and {identity}"
+                    ),
+                });
+            }
+        }
     }
 
     let required = [
@@ -113,6 +193,11 @@ pub fn validate_foundation_content(
         "skill.medicine",
         "faction.placeholder_a",
         "faction.placeholder_b",
+        "station.stove",
+        "station.altar",
+        "station.workshop",
+        "station.bed",
+        "station.storage",
         "blueprint.player",
         "blueprint.rat",
         "blueprint.healing_potion",
@@ -475,6 +560,62 @@ mod tests {
     }
 
     #[test]
+    fn sixth_station_loads_without_a_rust_branch() {
+        let mut content = load_foundation_content(&content_root()).unwrap();
+        content
+            .stations
+            .push(bd_core::colony::stations::StationBlueprint {
+                id: "station.test_extension".into(),
+                station_type: bd_core::colony::stations::StationType::Custom(900),
+                label: "Test Extension".into(),
+                build_cost_supplies: 1,
+                description: "Validation-only extension record.".into(),
+                glyph: 'q',
+                staffed_glyph: 'Q',
+                effect: bd_core::colony::stations::StationEffect::Produce {
+                    kind: PoolKind::Materials,
+                    amount: 1,
+                },
+                staffing_required: true,
+                buildable: true,
+                unavailable_reason: None,
+            });
+
+        validate_foundation_content(&content).unwrap();
+    }
+
+    #[test]
+    fn station_fallback_collision_names_both_content_records() {
+        let mut content = load_foundation_content(&content_root()).unwrap();
+        content.stations[1].glyph = content.stations[0].glyph;
+
+        let error = validate_foundation_content(&content)
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("station.stove"), "{error}");
+        assert!(error.contains("station.altar"), "{error}");
+    }
+
+    #[test]
+    fn station_and_resource_fallback_collision_is_rejected() {
+        let mut content = load_foundation_content(&content_root()).unwrap();
+        let workshop = content
+            .stations
+            .iter_mut()
+            .find(|station| station.id == "station.workshop")
+            .expect("Foundation Workshop must exist");
+        workshop.staffed_glyph = '~';
+
+        let error = validate_foundation_content(&content)
+            .unwrap_err()
+            .to_string();
+
+        assert!(error.contains("station.workshop"), "{error}");
+        assert!(error.contains("Water Source"), "{error}");
+    }
+
+    #[test]
     fn duplicate_content_ids_fail() {
         let mut content = load_foundation_content(&content_root()).unwrap();
         content.items.push(content.items[0].clone());
@@ -531,7 +672,7 @@ mod tests {
     fn dungeon_extraction_must_be_reachable() {
         let mut content = load_foundation_content(&content_root()).unwrap();
         let dungeon = &mut content.dungeons[0];
-        for position in [Position { x: 5, y: 4 }, Position { x: 6, y: 3 }] {
+        for position in [Position { x: 9, y: 6 }, Position { x: 10, y: 5 }] {
             let index = tile_index(dungeon, position);
             dungeon.tiles[index] = Tile::Wall;
         }
@@ -544,9 +685,7 @@ mod tests {
     fn placement_must_be_on_walkable_tile() {
         let mut content = load_foundation_content(&content_root()).unwrap();
         let dungeon = &mut content.dungeons[0];
-        let position = dungeon.enemy_placements[0].position;
-        let index = tile_index(dungeon, position);
-        dungeon.tiles[index] = Tile::Wall;
+        dungeon.enemy_placements[0].position = Position { x: 0, y: 0 };
 
         let error = validate_foundation_content(&content).unwrap_err();
         assert!(error.to_string().contains("placement"));

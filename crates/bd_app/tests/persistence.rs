@@ -2,7 +2,9 @@
 
 use std::path::PathBuf;
 
-use bd_core::{direction::Direction, session::RunOutcome, spatial::EntityScope};
+use bd_core::{
+    colony::stations::StationType, direction::Direction, session::RunOutcome, spatial::EntityScope,
+};
 use bd_test_support::FoundationDriver;
 
 const FIXED_DUNGEON: &str = "dungeon.foundation";
@@ -52,6 +54,28 @@ fn save_load_colony_preserves_survivors_stations_and_assignments() {
     assert_eq!(after.stations, before.stations);
     assert_eq!(after.assigned_survivors, before.assigned_survivors);
     assert_eq!(after.resource_nodes, before.resource_nodes);
+}
+
+#[test]
+fn station_catalog_identity_survives_save_load() {
+    let mut driver = colony_driver();
+    driver.fixture_select_station(StationType::Workshop);
+    let player = driver.player().unwrap();
+    driver
+        .expect_action(
+            "build Workshop identity fixture",
+            player,
+            "ability.build",
+            Some(Direction::East),
+            None,
+        )
+        .unwrap();
+    assert_eq!(driver.station_types(), vec![StationType::Workshop]);
+
+    let checkpoint = driver.checkpoint().unwrap();
+    driver.restore_checkpoint(&checkpoint).unwrap();
+
+    assert_eq!(driver.station_types(), vec![StationType::Workshop]);
 }
 
 #[test]

@@ -38,7 +38,9 @@ pub(crate) fn register_enemy_ai(app: &mut App) {
     );
     app.add_systems(
         bevy_app::Update,
-        release_enemy_phase_lock.in_set(crate::BdSet::ResultEmission),
+        release_enemy_phase_lock
+            .before(crate::pools::cleanup_defeated_entities)
+            .in_set(crate::BdSet::ResultEmission),
     );
 }
 
@@ -72,7 +74,7 @@ fn enemy_melee_action() -> ActionDefinition {
 /// Reads enemy positions, checks range to player, and writes move/attack intents.
 /// Runs in `BdSet::Input` alongside player input — both are consumed together
 /// by validation.
-#[allow(clippy::type_complexity)] // Query types are inherently complex in ECS
+#[allow(clippy::type_complexity, clippy::too_many_arguments)] // Query/resource owners remain explicit in the enemy phase.
 fn process_enemy_turns(
     enemies: Query<
         (
@@ -324,7 +326,7 @@ mod tests {
         // Expected: 3, 5, or 8 damage. Accept any valid variance.
         let damage_taken = 20 - hp;
         assert!(
-            damage_taken >= 2 && damage_taken <= 8,
+            (2..=8).contains(&damage_taken),
             "player should take 2-8 damage from base 5 with d100 variance, took {} (HP: 20 -> {})",
             damage_taken,
             hp

@@ -107,14 +107,6 @@ impl Default for AppConfig {
 // Key bindings
 // ---------------------------------------------------------------------------
 
-fn default_pickup_key() -> String {
-    "p".into()
-}
-
-fn default_extract_key() -> String {
-    "r".into()
-}
-
 /// User-configurable key bindings for game actions.
 ///
 /// Each field is a single-key string (e.g. `"w"`, `"i"`).
@@ -126,13 +118,13 @@ pub struct KeyBindingConfig {
     pub move_east: String,
     pub move_west: String,
     pub wait: String,
+    pub rest_until_next_day: String,
     pub attack: String,
     pub guard: String,
     pub inventory: String,
     pub pickup: String,
     pub extract: String,
     pub use_item: String,
-    pub combat_screen: String,
     pub help: String,
     pub travel: String,
     pub build: String,
@@ -145,27 +137,37 @@ pub struct KeyBindingConfig {
 
 impl Default for KeyBindingConfig {
     fn default() -> Self {
+        use bd_tui::commands::{CommandBindings, UiCommand, config_key_name};
+
+        let bindings = CommandBindings::default();
+        let key = |command| {
+            config_key_name(
+                bindings
+                    .key_for(command)
+                    .expect("every configurable command must have a built-in default"),
+            )
+        };
         Self {
-            move_north: "w".into(),
-            move_south: "s".into(),
-            move_east: "d".into(),
-            move_west: "a".into(),
-            wait: ".".into(),
-            attack: "f".into(),
-            guard: "g".into(),
-            inventory: "i".into(),
-            pickup: default_pickup_key(),
-            extract: default_extract_key(),
-            use_item: "u".into(),
-            combat_screen: "z".into(),
-            help: "?".into(),
-            travel: "t".into(),
-            build: "b".into(),
-            assign_task: "c".into(),
-            assign_station: "e".into(),
-            save: "F5".into(),
-            load: "F9".into(),
-            quit: "q".into(),
+            move_north: key(UiCommand::MoveNorth),
+            move_south: key(UiCommand::MoveSouth),
+            move_east: key(UiCommand::MoveEast),
+            move_west: key(UiCommand::MoveWest),
+            wait: key(UiCommand::Wait),
+            rest_until_next_day: key(UiCommand::RestUntilNextDay),
+            attack: key(UiCommand::Attack),
+            guard: key(UiCommand::Guard),
+            inventory: key(UiCommand::Inventory),
+            pickup: key(UiCommand::Pickup),
+            extract: key(UiCommand::Extract),
+            use_item: key(UiCommand::UseItem),
+            help: key(UiCommand::Help),
+            travel: key(UiCommand::Travel),
+            build: key(UiCommand::Build),
+            assign_task: key(UiCommand::AssignTask),
+            assign_station: key(UiCommand::AssignStation),
+            save: key(UiCommand::Save),
+            load: key(UiCommand::Load),
+            quit: key(UiCommand::Quit),
         }
     }
 }
@@ -181,13 +183,16 @@ impl KeyBindingConfig {
             (UiCommand::MoveEast, self.move_east.as_str()),
             (UiCommand::MoveWest, self.move_west.as_str()),
             (UiCommand::Wait, self.wait.as_str()),
+            (
+                UiCommand::RestUntilNextDay,
+                self.rest_until_next_day.as_str(),
+            ),
             (UiCommand::Attack, self.attack.as_str()),
             (UiCommand::Guard, self.guard.as_str()),
             (UiCommand::Inventory, self.inventory.as_str()),
             (UiCommand::Pickup, self.pickup.as_str()),
             (UiCommand::Extract, self.extract.as_str()),
             (UiCommand::UseItem, self.use_item.as_str()),
-            (UiCommand::CombatScreen, self.combat_screen.as_str()),
             (UiCommand::Help, self.help.as_str()),
             (UiCommand::Travel, self.travel.as_str()),
             (UiCommand::Build, self.build.as_str()),
@@ -386,6 +391,103 @@ mod tests {
             toml::from_str(include_str!("../../../config/default.toml")).unwrap();
         validate_config(&config).unwrap();
         config.keybindings.command_bindings().unwrap();
+    }
+
+    #[test]
+    fn shipped_bindings_match_builtin_bindings() {
+        use bd_tui::commands::{CommandBindings, UiCommand};
+
+        let shipped: AppConfig =
+            toml::from_str(include_str!("../../../config/default.toml")).unwrap();
+        let shipped = shipped.keybindings.command_bindings().unwrap();
+        let builtin = CommandBindings::default();
+        for command in [
+            UiCommand::MoveNorth,
+            UiCommand::MoveSouth,
+            UiCommand::MoveEast,
+            UiCommand::MoveWest,
+            UiCommand::Wait,
+            UiCommand::RestUntilNextDay,
+            UiCommand::Attack,
+            UiCommand::Guard,
+            UiCommand::Inventory,
+            UiCommand::Pickup,
+            UiCommand::UseItem,
+            UiCommand::Help,
+            UiCommand::Travel,
+            UiCommand::Extract,
+            UiCommand::AssignTask,
+            UiCommand::AssignStation,
+            UiCommand::Build,
+            UiCommand::Save,
+            UiCommand::Load,
+            UiCommand::Quit,
+        ] {
+            assert_eq!(
+                shipped.key_for(command),
+                builtin.key_for(command),
+                "shipped and built-in defaults drifted for {command:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn readme_default_controls_match_shipped_bindings() {
+        let shipped: AppConfig =
+            toml::from_str(include_str!("../../../config/default.toml")).unwrap();
+        let readme = include_str!("../../../README.md").to_ascii_lowercase();
+        let keys = shipped.keybindings;
+        let expected_rows = [
+            format!(
+                "| `{}`/`↑` `{}`/`↓` `{}`/`←` `{}`/`→` | move |",
+                keys.move_north, keys.move_south, keys.move_west, keys.move_east
+            ),
+            format!("| `{}` | wait (restore ap) |", keys.wait),
+            format!(
+                "| `{}` | rest until next day (shelter only) |",
+                keys.rest_until_next_day
+            ),
+            format!("| `{}` | attack nearest enemy |", keys.attack),
+            format!("| `{}` | guard (defensive stance) |", keys.guard),
+            format!("| `{}` | pick up item |", keys.pickup),
+            format!("| `{}` | use carried item |", keys.use_item),
+            format!(
+                "| `{}` | open station build menu / cancel build mode |",
+                keys.build
+            ),
+            format!(
+                "| `{}` | open colony management and select a survivor/task |",
+                keys.assign_task
+            ),
+            format!(
+                "| `{}` | open colony management at station staffing |",
+                keys.assign_station
+            ),
+            format!("| `{}` | inventory screen |", keys.inventory),
+            format!(
+                "| `{}` | enter the fixed dungeon from the shelter |",
+                keys.travel
+            ),
+            format!("| `{}` | extract at the dungeon exit |", keys.extract),
+            format!("| `{}` | context help |", keys.help),
+            format!("| `{}` | save the current game |", keys.save),
+            format!("| `{}` | load the current game |", keys.load),
+            format!(
+                "| `{}` / `esc` | quit / cancel the active interaction |",
+                keys.quit
+            ),
+        ];
+        for expected in expected_rows {
+            let expected = expected.to_ascii_lowercase();
+            assert!(
+                readme.contains(&expected),
+                "README is missing exact shipped control row `{expected}`"
+            );
+        }
+        assert!(
+            readme.contains("| `1`-`5` | select a station type in the build menu |"),
+            "README must document the one fixed numbered-menu interaction"
+        );
     }
 
     #[test]

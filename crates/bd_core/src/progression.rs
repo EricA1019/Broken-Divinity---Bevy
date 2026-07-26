@@ -114,19 +114,14 @@ fn apply_action_progression(
             after = skill_id.value(&progression),
             "skill progression applied"
         );
-        game_log.push(
-            format!(
-                "{:?} skill improves to {}.",
-                skill_id,
-                skill_id.value(&progression)
-            ),
-            crate::gamelog::LogLevel::Info,
-        );
+        let skill_feedback = format!("{skill_id:?} {}.", skill_id.value(&progression));
 
         let Some(virtue_name) = metadata.virtue_expression.as_deref() else {
+            game_log.push(skill_feedback, crate::gamelog::LogLevel::Info);
             continue;
         };
         let Some(virtue) = virtue_pool(virtue_name) else {
+            game_log.push(skill_feedback, crate::gamelog::LogLevel::Info);
             continue;
         };
         action_deltas.write(PoolDeltaRequested {
@@ -138,7 +133,11 @@ fn apply_action_progression(
             reason: format!("{} expression", virtue_name),
         });
         game_log.push(
-            format!("You express {}.", virtue_name),
+            format!(
+                "{skill_id:?} {}; {virtue:?} {:+}.",
+                skill_id.value(&progression),
+                metadata.virtue_gain
+            ),
             crate::gamelog::LogLevel::Info,
         );
     }
@@ -263,6 +262,20 @@ mod tests {
             .get(PoolKind::Thumos)
             .unwrap();
         assert_eq!(thumos.current, 1);
+        let progression_feedback = app
+            .world()
+            .resource::<crate::gamelog::GameLog>()
+            .iter()
+            .filter(|entry| entry.message.contains("Melee ") || entry.message.contains("Thumos"))
+            .map(|entry| entry.message.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            progression_feedback.len(),
+            1,
+            "one resolved action should emit one compact progression result"
+        );
+        assert!(progression_feedback[0].contains("Melee"));
+        assert!(progression_feedback[0].contains("Thumos +1"));
     }
 
     #[test]

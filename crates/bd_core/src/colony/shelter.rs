@@ -7,6 +7,9 @@
 use crate::components::Tile;
 use crate::map::SmokeMap;
 
+pub const SHELTER_RETURN_SPAWN: crate::components::Position =
+    crate::components::Position { x: 1, y: 1 };
+
 // ── Constants ──
 
 /// Width of the shelter map in tiles.

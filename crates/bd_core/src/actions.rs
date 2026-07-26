@@ -71,6 +71,10 @@ pub enum Requirement {
     ActorHasContainer,
     /// At least one active station must exist for assignment.
     ActiveStationExists,
+    /// The action is only legal in the named authoritative game mode.
+    InMode(crate::spatial::GameMode),
+    /// Modal colony interactions must be closed before time can advance.
+    NoBlockingInteraction,
 }
 
 /// An effect produced by a successful action.
@@ -81,6 +85,12 @@ pub enum Effect {
         kind: PoolKind,
         amount: i32,
         tags: Vec<DeltaTag>,
+        reason: String,
+    },
+    /// Apply a delta to the authoritative shelter resource owner.
+    ColonyPoolDelta {
+        kind: PoolKind,
+        amount: i32,
         reason: String,
     },
     /// Move the actor in a direction.
@@ -97,12 +107,19 @@ pub enum Effect {
     Flag(String, bool),
     /// Request a mode transition after the action resolves.
     RequestTransition(crate::spatial::GameMode),
+    /// Request a transition to a specific content-backed location.
+    RequestLocationTransition {
+        target: crate::spatial::GameMode,
+        node_id: String,
+    },
     /// Request the inventory pipeline to use the pending target item.
     RequestUseItem,
     /// Request the inventory pipeline to pick up the pending target item.
     RequestPickup,
     /// Assign the pending survivor target to the nearest active station.
     AssignTargetToStation,
+    /// Advance authoritative colony time to the next day boundary.
+    RequestRestUntilNextDay,
 }
 
 /// Definition of an action: what it costs, requires, and produces.
@@ -177,13 +194,13 @@ impl ActionRegistry {
                         reason: "attack cost".into(),
                     }],
                     effects: vec![
+                        Effect::Log(ATTACK_LOG.into(), LogLevel::Combat),
                         Effect::PoolDelta {
                             kind: PoolKind::Health,
                             amount: -ATTACK_DAMAGE_BASE,
                             tags: vec![DeltaTag::Physical],
                             reason: "attack hit".into(),
                         },
-                        Effect::Log(ATTACK_LOG.into(), LogLevel::Combat),
                     ],
                 },
                 ActionDefinition {
@@ -206,10 +223,7 @@ impl ActionRegistry {
                     label: "Extract".into(),
                     requirements: vec![Requirement::EntityAlive, Requirement::AtExit],
                     cost_effects: vec![],
-                    effects: vec![
-                        Effect::RequestTransition(crate::spatial::GameMode::Outpost),
-                        Effect::Log("You extract from the dungeon.".into(), LogLevel::Info),
-                    ],
+                    effects: vec![Effect::RequestTransition(crate::spatial::GameMode::Outpost)],
                 },
                 ActionDefinition {
                     id: "ability.repair".into(),
@@ -288,10 +302,48 @@ pub(crate) fn register_actions(app: &mut App) {
         bevy_app::Update,
         (
             validate_action_intents.in_set(BdSet::Validation),
+            reconcile_build_denials
+                .in_set(BdSet::CostResolution)
+                .before(compile_action_costs),
             compile_action_costs.in_set(BdSet::CostResolution),
-            resolve_action_effects.in_set(BdSet::Mutation),
+            resolve_action_effects.in_set(crate::BdMutationSet::ActionEffects),
         ),
     );
+}
+
+fn reconcile_build_denials(
+    mut denied: bevy_ecs::message::MessageReader<ActionDenied>,
+    mut build: ResMut<crate::colony::stations::BuildInteraction>,
+) {
+    for event in denied.read() {
+        if event.action_id != "ability.build" {
+            continue;
+        }
+        let crate::colony::stations::BuildInteraction::AwaitingResolution {
+            selected_station,
+            cursor,
+        } = *build
+        else {
+            continue;
+        };
+        let denial = match event.reason {
+            DenialReason::StationPlacement(reason) => {
+                crate::colony::stations::BuildInteractionDenial::Placement(reason)
+            }
+            DenialReason::NotEnoughPool(PoolKind::Supplies) => {
+                crate::colony::stations::BuildInteractionDenial::NotEnoughSupplies
+            }
+            DenialReason::Other(ref message) if message == "Unknown station selection." => {
+                crate::colony::stations::BuildInteractionDenial::UnknownSelection
+            }
+            _ => crate::colony::stations::BuildInteractionDenial::StationUnavailable,
+        };
+        *build = crate::colony::stations::BuildInteraction::Placing {
+            selected_station,
+            cursor,
+            validation: Err(denial),
+        };
+    }
 }
 
 // ── Validation ──
@@ -304,6 +356,7 @@ struct PendingAction {
 }
 
 #[derive(SystemParam)]
+#[allow(clippy::type_complexity)] // Named action-validation owner keeps scoped queries together.
 struct ActionValidationQueries<'w, 's> {
     actors: Query<
         'w,
@@ -343,7 +396,11 @@ struct ActionValidationQueries<'w, 's> {
     stations: Query<
         'w,
         's,
-        (Entity, Option<&'static crate::spatial::EntityScope>),
+        (
+            Entity,
+            &'static Position,
+            Option<&'static crate::spatial::EntityScope>,
+        ),
         With<crate::colony::stations::Station>,
     >,
     survivors: Query<
@@ -376,6 +433,22 @@ struct ActionValidationQueries<'w, 's> {
     >,
 }
 
+#[derive(SystemParam)]
+struct ActionInteractionState<'w> {
+    build: Res<'w, crate::colony::stations::BuildInteraction>,
+    current_event: Option<Res<'w, crate::events::CurrentEvent>>,
+}
+
+impl ActionInteractionState<'_> {
+    fn is_blocked(&self) -> bool {
+        self.build.is_active()
+            || self
+                .current_event
+                .as_ref()
+                .is_some_and(|event| event.is_active())
+    }
+}
+
 /// Read ActionIntent messages, validate against action definitions, and
 /// either tag with PendingAction or emit ActionDenied.
 #[allow(clippy::too_many_arguments)]
@@ -383,6 +456,7 @@ fn validate_action_intents(
     mut commands: Commands,
     registry: Res<ActionRegistry>,
     map: Res<SmokeMap>,
+    outpost: Res<crate::spatial::OutpostState>,
     mode: Res<crate::spatial::GameMode>,
     content: Option<Res<crate::content::FoundationContent>>,
     foundation: Option<Res<crate::session::FoundationRuntime>>,
@@ -391,6 +465,8 @@ fn validate_action_intents(
     mut game_log: ResMut<GameLog>,
     mut trace: ResMut<SignalTrace>,
     colony_res: Res<ColonyResources>,
+    station_catalog: Res<crate::colony::stations::StationCatalog>,
+    interaction: ActionInteractionState,
     queries: ActionValidationQueries,
 ) {
     let foundation_runtime = foundation.is_some();
@@ -431,6 +507,100 @@ fn validate_action_intents(
             });
             continue;
         };
+
+        if intent.action_id == "ability.build" {
+            let selected = interaction
+                .build
+                .selected_station()
+                .unwrap_or(crate::colony::stations::StationType::Stove);
+            let Some(blueprint) = station_catalog.get(selected) else {
+                denied_writer.write(ActionDenied {
+                    actor: intent.actor,
+                    action_id: intent.action_id.clone(),
+                    reason: DenialReason::Other("Unknown station selection.".into()),
+                });
+                continue;
+            };
+            if !blueprint.buildable {
+                let message = blueprint
+                    .unavailable_reason
+                    .as_deref()
+                    .unwrap_or("Station is unavailable.");
+                denied_writer.write(ActionDenied {
+                    actor: intent.actor,
+                    action_id: intent.action_id.clone(),
+                    reason: DenialReason::Other(message.into()),
+                });
+                if player_flag.is_some() {
+                    game_log.push(message, LogLevel::Warn);
+                }
+                continue;
+            }
+            let available = colony_res
+                .pools
+                .get(PoolKind::Supplies)
+                .map_or(0, |pool| pool.current);
+            if available < blueprint.build_cost_supplies {
+                denied_writer.write(ActionDenied {
+                    actor: intent.actor,
+                    action_id: intent.action_id.clone(),
+                    reason: DenialReason::NotEnoughPool(PoolKind::Supplies),
+                });
+                if player_flag.is_some() {
+                    game_log.push("Not enough Supplies.", LogLevel::Warn);
+                }
+                continue;
+            }
+            if *mode == crate::spatial::GameMode::Outpost {
+                let Some(direction) = intent.direction else {
+                    denied_writer.write(ActionDenied {
+                        actor: intent.actor,
+                        action_id: intent.action_id.clone(),
+                        reason: DenialReason::Other("Choose a placement tile.".into()),
+                    });
+                    continue;
+                };
+                let (dx, dy) = direction.delta();
+                let candidate = Position {
+                    x: actor_pos.x + dx,
+                    y: actor_pos.y + dy,
+                };
+                let gate = queries
+                    .exit_positions
+                    .iter()
+                    .find(|(_, scope)| {
+                        crate::spatial::entity_is_active(*scope, *mode, foundation_runtime)
+                    })
+                    .map(|(position, _)| *position);
+                let permanent_blockers = queries
+                    .stations
+                    .iter()
+                    .filter(|(_, _, scope)| {
+                        crate::spatial::entity_is_active(*scope, *mode, foundation_runtime)
+                    })
+                    .map(|(_, position, _)| *position)
+                    .collect();
+                if let Some(gate) = gate
+                    && let Err(reason) = crate::colony::stations::validate_station_placement(
+                        &outpost.map,
+                        *actor_pos,
+                        gate,
+                        &permanent_blockers,
+                        candidate,
+                    )
+                {
+                    if player_flag.is_some() {
+                        game_log.push(reason.to_string(), LogLevel::Warn);
+                    }
+                    denied_writer.write(ActionDenied {
+                        actor: intent.actor,
+                        action_id: intent.action_id.clone(),
+                        reason: DenialReason::StationPlacement(reason),
+                    });
+                    continue;
+                }
+            }
+        }
 
         // Check each requirement
         let mut denied = None;
@@ -543,7 +713,7 @@ fn validate_action_intents(
                     }
                 }
                 Requirement::TargetHasComponent(component_name) => {
-                    let has_component = intent.target.map_or(false, |t| match *component_name {
+                    let has_component = intent.target.is_some_and(|t| match *component_name {
                         name if name.ends_with("Survivor") => {
                             queries.survivors.iter().any(|(e, _, scope)| {
                                 e == t
@@ -591,7 +761,7 @@ fn validate_action_intents(
                     }
                 }
                 Requirement::TargetTaskIsIdle => {
-                    let is_idle = intent.target.map_or(false, |t| {
+                    let is_idle = intent.target.is_some_and(|t| {
                         queries
                             .survivors
                             .iter()
@@ -603,7 +773,7 @@ fn validate_action_intents(
                                         foundation_runtime,
                                     )
                             })
-                            .map_or(false, |(_, task, _)| matches!(task, SurvivorTask::Idle))
+                            .is_some_and(|(_, task, _)| matches!(task, SurvivorTask::Idle))
                     });
                     if !is_idle {
                         denied = Some(DenialReason::Other("target not idle".into()));
@@ -693,10 +863,27 @@ fn validate_action_intents(
                     }
                 }
                 Requirement::ActiveStationExists => {
-                    if !queries.stations.iter().any(|(_, scope)| {
+                    if !queries.stations.iter().any(|(_, _, scope)| {
                         crate::spatial::entity_is_active(scope, *mode, foundation_runtime)
                     }) {
                         denied = Some(DenialReason::NoTarget);
+                        break;
+                    }
+                }
+                Requirement::InMode(required) => {
+                    if *mode != *required {
+                        denied = Some(DenialReason::Other(format!(
+                            "{} is only available in {:?} mode.",
+                            def.label, required
+                        )));
+                        break;
+                    }
+                }
+                Requirement::NoBlockingInteraction => {
+                    if interaction.is_blocked() {
+                        denied = Some(DenialReason::Other(
+                            "Finish the current interaction before resting.".into(),
+                        ));
                         break;
                     }
                 }
@@ -717,6 +904,7 @@ fn validate_action_intents(
                     DenialReason::NoTarget => "No target.".into(),
                     DenialReason::InvalidTarget => "Invalid target.".into(),
                     DenialReason::ActorDefeated => "Can't act while defeated.".into(),
+                    DenialReason::StationPlacement(reason) => reason.to_string(),
                     DenialReason::Other(s) => s.clone(),
                 };
                 game_log.push(msg, LogLevel::Warn);
@@ -739,12 +927,20 @@ fn validate_action_intents(
 
 // ── Cost compilation ──
 
+#[derive(SystemParam)]
+struct ActionCostContext<'w> {
+    colony_resources: ResMut<'w, ColonyResources>,
+    build: Res<'w, crate::colony::stations::BuildInteraction>,
+    station_catalog: Res<'w, crate::colony::stations::StationCatalog>,
+}
+
 /// Compile cost effects into PoolDeltaRequested messages.
 fn compile_action_costs(
     mut commands: Commands,
     registry: Res<ActionRegistry>,
     mut trace: ResMut<SignalTrace>,
     mut delta_writer: bevy_ecs::message::MessageWriter<PoolDeltaRequested>,
+    mut cost_context: ActionCostContext,
     actors: Query<(Entity, &PendingAction)>,
 ) {
     for (entity, pending) in actors.iter() {
@@ -758,22 +954,68 @@ fn compile_action_costs(
             continue;
         };
 
+        if pending.action_id == "ability.build" {
+            let selected = cost_context
+                .build
+                .selected_station()
+                .unwrap_or(crate::colony::stations::StationType::Stove);
+            let blueprint = cost_context
+                .station_catalog
+                .get(selected)
+                .expect("validated build must retain its station catalog entry");
+            let pool = cost_context
+                .colony_resources
+                .pools
+                .get_mut(PoolKind::Supplies)
+                .expect("validated build must have the Supplies pool");
+            let before = pool.current;
+            pool.apply_delta(-blueprint.build_cost_supplies);
+            trace.push(
+                "CostResolution",
+                "ColonyPoolDelta",
+                format!(
+                    "Supplies {before}→{} — {} build cost",
+                    pool.current, blueprint.id
+                ),
+            );
+        }
+
         for effect in &def.cost_effects {
-            if let Effect::PoolDelta {
-                kind,
-                amount,
-                tags,
-                reason,
-            } = effect
-            {
-                delta_writer.write(PoolDeltaRequested {
-                    source: Some(entity),
-                    target: entity,
-                    kind: *kind,
-                    amount: *amount,
-                    tags: tags.clone(),
-                    reason: reason.clone(),
-                });
+            match effect {
+                Effect::PoolDelta {
+                    kind,
+                    amount,
+                    tags,
+                    reason,
+                } => {
+                    delta_writer.write(PoolDeltaRequested {
+                        source: Some(entity),
+                        target: entity,
+                        kind: *kind,
+                        amount: *amount,
+                        tags: tags.clone(),
+                        reason: reason.clone(),
+                    });
+                }
+                Effect::ColonyPoolDelta {
+                    kind,
+                    amount,
+                    reason,
+                } => {
+                    let pool = cost_context
+                        .colony_resources
+                        .pools
+                        .get_mut(*kind)
+                        .expect("validated colony action cost must have an authoritative pool");
+                    let before = pool.current;
+                    pool.apply_delta(*amount);
+                    trace.push(
+                        "CostResolution",
+                        "ColonyPoolDelta",
+                        format!("{kind:?} {before}→{} — {reason}", pool.current),
+                    );
+                }
+                _ => {}
             }
         }
     }
@@ -782,6 +1024,7 @@ fn compile_action_costs(
 // ── Effect resolution ──
 
 #[derive(SystemParam)]
+#[allow(clippy::type_complexity)] // Named effect-location owner keeps scoped queries together.
 pub(crate) struct ActionResolutionLocation<'w, 's> {
     mode: Res<'w, crate::spatial::GameMode>,
     foundation: Option<Res<'w, crate::session::FoundationRuntime>>,
@@ -821,6 +1064,11 @@ pub(crate) struct ActionResolutionLocation<'w, 's> {
 pub(crate) struct FoundationEffectWriters<'w> {
     pickup: bevy_ecs::message::MessageWriter<'w, crate::inventory::PickupIntent>,
     station: bevy_ecs::message::MessageWriter<'w, crate::signals::AssignToStation>,
+    rest: bevy_ecs::message::MessageWriter<'w, crate::time::RestUntilNextDayRequested>,
+    build: ResMut<'w, crate::colony::stations::BuildInteraction>,
+    pending_assignment: ResMut<'w, crate::colony::stations::PendingStationAssignment>,
+    time_plan: ResMut<'w, crate::time::TimeAdvancePlan>,
+    game_time: Res<'w, crate::time::GameTime>,
 }
 
 /// Resolve action effects: move entities, apply pool deltas (via messages), log, etc.
@@ -838,9 +1086,9 @@ pub(crate) fn resolve_action_effects(
     mut action_result_writer: bevy_ecs::message::MessageWriter<crate::progression::ActionResolved>,
     mut use_item_writer: bevy_ecs::message::MessageWriter<crate::inventory::UseItemIntent>,
     mut foundation_effects: FoundationEffectWriters,
-    mut pending_station: ResMut<crate::colony::stations::PendingStationBuild>,
     mut should_advance: ResMut<crate::time::ShouldAdvanceTime>,
     mut session: ResMut<crate::session::RunSession>,
+    station_catalog: Res<crate::colony::stations::StationCatalog>,
     location: ActionResolutionLocation,
 ) {
     let foundation_runtime = location.foundation.is_some();
@@ -867,6 +1115,10 @@ pub(crate) fn resolve_action_effects(
         // than a combat turn.
         if player_flag.is_some() && is_turn_action(&pending.action_id) {
             should_advance.0 = true;
+            foundation_effects.time_plan.elapsed_turns = 1;
+            foundation_effects.time_plan.outpost_worker_steps =
+                u64::from(*location.mode == crate::spatial::GameMode::Outpost);
+            foundation_effects.time_plan.cause = crate::time::TimeAdvanceCause::AcceptedAction;
             if *location.mode == crate::spatial::GameMode::Tactical {
                 should_advance.1 = true;
                 commands
@@ -933,6 +1185,10 @@ pub(crate) fn resolve_action_effects(
                         reason: reason.clone(),
                     });
                 }
+                Effect::ColonyPoolDelta { .. } => {
+                    // Colony pool deltas are cost effects and are resolved by
+                    // the typed colony-resource owner before effect emission.
+                }
                 Effect::Log(msg, level) => {
                     if player_flag.is_some() {
                         game_log.push(msg.clone(), *level);
@@ -955,20 +1211,20 @@ pub(crate) fn resolve_action_effects(
                 }
                 Effect::SpawnEntity(blueprint_id) => {
                     use crate::colony::stations::{Station, StationType};
-                    // Determine station type: check PendingStationBuild resource first,
-                    // then fall back to parsing the blueprint_id.
-                    let station_type = if let Some(st) = pending_station.0.take() {
-                        st
-                    } else {
-                        match blueprint_id.as_str() {
-                            "blueprint.station" | "blueprint.station.stove" => StationType::Stove,
-                            "blueprint.station.altar" => StationType::Altar,
-                            "blueprint.station.workshop" => StationType::Workshop,
-                            "blueprint.station.bed" => StationType::Bed,
-                            "blueprint.station.storage" => StationType::Storage,
-                            _ => StationType::Stove,
-                        }
-                    };
+                    // Accepted Foundation builds always carry an explicit
+                    // catalog selection. The fallback keeps legacy direct
+                    // action fixtures deterministic.
+                    let station_type =
+                        foundation_effects
+                            .build
+                            .selected_station()
+                            .unwrap_or_else(|| {
+                                let _ = blueprint_id;
+                                StationType::Stove
+                            });
+                    let station_label = station_catalog
+                        .get(station_type)
+                        .map_or_else(|| "Unknown station".to_owned(), |entry| entry.label.clone());
                     // Build at tile in direction offset, not on player
                     let build_pos = pending
                         .direction
@@ -985,11 +1241,22 @@ pub(crate) fn resolve_action_effects(
                         station_type,
                         build_pos,
                         crate::components::BlocksMovement,
-                        crate::components::Name(format!("{:?}", station_type)),
+                        crate::components::Name(station_label.clone()),
                         crate::spatial::EntityScope::ColonyPersistent,
                     ));
+                    *foundation_effects.build = crate::colony::stations::BuildInteraction::Inactive;
                     if player_flag.is_some() {
-                        game_log.push(format!("You build a {:?}.", station_type), LogLevel::Info);
+                        let label = station_label;
+                        let article = if label
+                            .chars()
+                            .next()
+                            .is_some_and(|first| matches!(first, 'A' | 'E' | 'I' | 'O' | 'U'))
+                        {
+                            "an"
+                        } else {
+                            "a"
+                        };
+                        game_log.push(format!("You build {article} {label}."), LogLevel::Info);
                     }
                 }
                 Effect::SetSurvivorTask(task) => {
@@ -999,7 +1266,11 @@ pub(crate) fn resolve_action_effects(
                         let new_task = match task.as_str() {
                             "Idle" => SurvivorTask::Idle,
                             "Resting" => SurvivorTask::Resting,
-                            "Gathering" => SurvivorTask::Gathering,
+                            "Gathering" | "Gather:Supplies" => {
+                                SurvivorTask::Gathering(PoolKind::Supplies)
+                            }
+                            "Gather:Materials" => SurvivorTask::Gathering(PoolKind::Materials),
+                            "Gather:WildPlants" => SurvivorTask::Gathering(PoolKind::WildPlants),
                             "Defending" => SurvivorTask::Defending,
                             _ => SurvivorTask::Idle,
                         };
@@ -1026,6 +1297,12 @@ pub(crate) fn resolve_action_effects(
                         node_id: None,
                     });
                 }
+                Effect::RequestLocationTransition { target, node_id } => {
+                    transition_writer.write(crate::spatial::TransitionIntent {
+                        target: *target,
+                        node_id: Some(node_id.clone()),
+                    });
+                }
                 Effect::RequestUseItem => {
                     if let Some(item) = pending.target {
                         use_item_writer.write(crate::inventory::UseItemIntent {
@@ -1046,27 +1323,55 @@ pub(crate) fn resolve_action_effects(
                 }
                 Effect::AssignTargetToStation => {
                     if let Some(survivor) = pending.target {
-                        let station = location
-                            .stations
-                            .iter()
-                            .filter(|(_, _, scope)| {
-                                crate::spatial::entity_is_active(
-                                    *scope,
-                                    *location.mode,
-                                    foundation_runtime,
-                                )
-                            })
-                            .min_by_key(|(_, station_position, _)| {
-                                (station_position.x - pos.x).unsigned_abs()
-                                    + (station_position.y - pos.y).unsigned_abs()
-                            })
-                            .map(|(station, _, _)| station);
+                        let selected =
+                            foundation_effects
+                                .pending_assignment
+                                .0
+                                .take()
+                                .filter(|selected| {
+                                    location.stations.iter().any(|(station, _, scope)| {
+                                        station == *selected
+                                            && crate::spatial::entity_is_active(
+                                                scope,
+                                                *location.mode,
+                                                foundation_runtime,
+                                            )
+                                    })
+                                });
+                        let station = selected.or_else(|| {
+                            location
+                                .stations
+                                .iter()
+                                .filter(|(_, _, scope)| {
+                                    crate::spatial::entity_is_active(
+                                        *scope,
+                                        *location.mode,
+                                        foundation_runtime,
+                                    )
+                                })
+                                .min_by_key(|(_, station_position, _)| {
+                                    (station_position.x - pos.x).unsigned_abs()
+                                        + (station_position.y - pos.y).unsigned_abs()
+                                })
+                                .map(|(station, _, _)| station)
+                        });
                         if let Some(station) = station {
                             foundation_effects
                                 .station
                                 .write(crate::signals::AssignToStation { survivor, station });
                         }
                     }
+                }
+                Effect::RequestRestUntilNextDay => {
+                    let turns = crate::time::TURNS_PER_DAY - foundation_effects.game_time.turn;
+                    foundation_effects.time_plan.elapsed_turns = turns;
+                    foundation_effects.time_plan.outpost_worker_steps =
+                        u64::from(*location.mode == crate::spatial::GameMode::Outpost) * turns;
+                    foundation_effects.time_plan.cause =
+                        crate::time::TimeAdvanceCause::RestUntilNextDay;
+                    foundation_effects
+                        .rest
+                        .write(crate::time::RestUntilNextDayRequested);
                 }
             }
         }
@@ -1099,12 +1404,6 @@ fn is_turn_action(action_id: &str) -> bool {
             | "ability.repair"
             | "ability.use_item"
             | "ability.pickup"
-            | "ability.assign_station"
-            | "ability.assign_gathering"
-            | "ability.assign_defending"
-            | "ability.assign_resting"
-            | "ability.assign_idle"
-            | "ability.unassign_task"
     )
 }
 
@@ -1332,7 +1631,7 @@ mod tests {
         // Expected: 3, 5, or 8 damage. Accept any valid variance.
         let damage_dealt = 10 - dummy_hp;
         assert!(
-            damage_dealt >= 2 && damage_dealt <= 8,
+            (2..=8).contains(&damage_dealt),
             "dummy should take 2-8 damage from base 5 with d100 variance, took {} (HP: {} -> {})",
             damage_dealt,
             10,
@@ -1377,6 +1676,9 @@ mod tests {
             DenialReason::NoTarget,
             DenialReason::InvalidTarget,
             DenialReason::ActorDefeated,
+            DenialReason::StationPlacement(
+                crate::colony::stations::StationPlacementDenial::WouldBlockShelterEgress,
+            ),
             DenialReason::Other("test".into()),
         ];
         // All should have non-empty Debug output

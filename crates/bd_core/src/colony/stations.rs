@@ -5,24 +5,19 @@
 
 use bevy_ecs::prelude::*;
 use serde::{Deserialize, Serialize};
+use std::{collections::HashSet, fmt};
 
 use crate::{
     actions::{ActionDefinition, Effect, Requirement},
-    signals::{DeltaTag, PoolKind},
+    components::Position,
+    map::SmokeMap,
+    pathfinding::{AStarPathfinder, Pathfinder},
+    signals::PoolKind,
 };
 
-// ── Pending station build (set by UI, consumed by action system) ──
-
-/// Pending station type to build, set by TUI when cycling station types.
-/// Reset to `None` after the build action is processed.
-#[derive(Resource, Debug, Clone, Serialize, Deserialize)]
-pub struct PendingStationBuild(pub Option<StationType>);
-
-impl Default for PendingStationBuild {
-    fn default() -> Self {
-        Self(None)
-    }
-}
+/// Explicit station selected by colony management for the next assignment.
+#[derive(Resource, Debug, Default, Clone)]
+pub struct PendingStationAssignment(pub Option<Entity>);
 
 // ── Constants ──
 
@@ -32,49 +27,108 @@ pub const MAX_STATIONS: u32 = 20;
 /// Supplies needed to build a station.
 pub const STATION_BUILD_COST_SUPPLIES: i32 = 2;
 
-// ── P2: Build ghost state (placement preview) ──
-
-/// Tracks the player's build placement cursor and selected station type.
-/// Set by the TUI when the player enters build mode, consumed by the build
-/// action system when the player confirms placement.
-#[derive(Resource, Debug, Clone)]
-pub struct BuildGhostState {
-    /// Which station type the player is about to place.
-    pub station_type: Option<StationType>,
-    /// Where the ghost cursor currently sits on the shelter map.
-    pub cursor: crate::components::Position,
-    /// Whether build mode is currently active (b key toggles).
-    pub active: bool,
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StationPlacementDenial {
+    NotWalkable,
+    Occupied,
+    WouldBlockShelterEgress,
 }
 
-impl Default for BuildGhostState {
-    fn default() -> Self {
-        Self {
-            station_type: None,
-            cursor: crate::components::Position { x: 0, y: 0 },
-            active: false,
+impl fmt::Display for StationPlacementDenial {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        formatter.write_str(match self {
+            Self::NotWalkable => "Tile is not walkable",
+            Self::Occupied => "Tile is occupied",
+            Self::WouldBlockShelterEgress => "Would block shelter egress",
+        })
+    }
+}
+
+/// Validate one station footprint before payment or mutation.
+///
+/// Only permanent blockers belong in `permanent_blockers`; survivor motion is
+/// deliberately excluded so a temporary worker position cannot make a legal
+/// construction permanently invalid.
+pub fn validate_station_placement(
+    map: &SmokeMap,
+    player: Position,
+    gate: Position,
+    permanent_blockers: &HashSet<Position>,
+    candidate: Position,
+) -> Result<(), StationPlacementDenial> {
+    if !map.is_walkable(candidate.x, candidate.y) {
+        return Err(StationPlacementDenial::NotWalkable);
+    }
+    if permanent_blockers.contains(&candidate) {
+        return Err(StationPlacementDenial::Occupied);
+    }
+
+    let mut blockers = permanent_blockers.clone();
+    blockers.insert(candidate);
+    if AStarPathfinder
+        .find_path(map, player, gate, &blockers)
+        .is_none()
+    {
+        return Err(StationPlacementDenial::WouldBlockShelterEgress);
+    }
+    Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BuildInteractionDenial {
+    Placement(StationPlacementDenial),
+    NotEnoughSupplies,
+    StationUnavailable,
+    UnknownSelection,
+}
+
+impl fmt::Display for BuildInteractionDenial {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Placement(reason) => reason.fmt(formatter),
+            Self::NotEnoughSupplies => formatter.write_str("Not enough Supplies"),
+            Self::StationUnavailable => formatter.write_str("Station is unavailable"),
+            Self::UnknownSelection => formatter.write_str("Unknown station selection"),
         }
     }
 }
 
-// ── P2: Build menu state (station selection popup) ──
-
-/// Menu shown when the player presses 'b' — lists buildable stations.
-/// Once a station is selected, transitions to BuildGhostState for placement.
-#[derive(Resource, Debug, Clone)]
-pub struct BuildMenuState {
-    /// Whether the build menu is currently open.
-    pub active: bool,
-    /// Index of the currently highlighted option (0-based).
-    pub selected: usize,
+/// Sole transient authority for the build selection, preview, and resolution
+/// transaction. It is deliberately excluded from persistence.
+#[derive(Resource, Debug, Clone, PartialEq, Eq, Default)]
+pub enum BuildInteraction {
+    #[default]
+    Inactive,
+    Selecting {
+        selected_station: StationType,
+    },
+    Placing {
+        selected_station: StationType,
+        cursor: Position,
+        validation: Result<(), BuildInteractionDenial>,
+    },
+    AwaitingResolution {
+        selected_station: StationType,
+        cursor: Position,
+    },
 }
 
-impl Default for BuildMenuState {
-    fn default() -> Self {
-        Self {
-            active: false,
-            selected: 0,
+impl BuildInteraction {
+    pub fn selected_station(&self) -> Option<StationType> {
+        match self {
+            Self::Inactive => None,
+            Self::Selecting { selected_station }
+            | Self::Placing {
+                selected_station, ..
+            }
+            | Self::AwaitingResolution {
+                selected_station, ..
+            } => Some(*selected_station),
         }
+    }
+
+    pub fn is_active(&self) -> bool {
+        !matches!(self, Self::Inactive)
     }
 }
 
@@ -85,60 +139,181 @@ impl Default for BuildMenuState {
 pub struct Station;
 
 /// Type of station, determining its function and production.
-#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum StationType {
     Stove,
     Altar,
     Workshop,
     Bed,
     Storage,
+    /// Extension slot for data-defined station records.
+    Custom(u16),
 }
 
-// ── Blueprint data (Rust fixture, RON later) ──
+// ── Authoritative station content ──
 
 /// Production and cost data for a station type.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StationBlueprint {
+    pub id: String,
     pub station_type: StationType,
-    pub label: &'static str,
+    pub label: String,
     pub build_cost_supplies: i32,
-    pub produces: Option<(PoolKind, i32)>, // (resource, amount_per_day)
+    pub description: String,
+    /// Monochrome glyph while no survivor is assigned.
+    pub glyph: char,
+    /// Explicit monochrome glyph while at least one survivor is assigned.
+    pub staffed_glyph: char,
+    pub effect: StationEffect,
+    pub staffing_required: bool,
+    pub buildable: bool,
+    pub unavailable_reason: Option<String>,
 }
 
-/// Default station blueprints.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum StationEffect {
+    Produce { kind: PoolKind, amount: i32 },
+    RestoreWorkerMood { amount: i32 },
+    Disabled,
+}
+
+impl StationBlueprint {
+    pub fn effect_label(&self) -> String {
+        match self.effect {
+            StationEffect::Produce { kind, amount } => {
+                format!("+{amount} {kind:?}/day when staffed")
+            }
+            StationEffect::RestoreWorkerMood { amount } => {
+                format!("+{amount} Mood/day to assigned worker")
+            }
+            StationEffect::Disabled => format!(
+                "Disabled — {}",
+                self.unavailable_reason
+                    .as_deref()
+                    .unwrap_or("No Foundation effect yet")
+            ),
+        }
+    }
+}
+
+/// Runtime owner for all station simulation and presentation facts.
+#[derive(Resource, Debug, Clone)]
+pub struct StationCatalog {
+    entries: Vec<StationBlueprint>,
+}
+
+impl StationCatalog {
+    pub fn new(entries: Vec<StationBlueprint>) -> Self {
+        Self { entries }
+    }
+
+    pub fn entries(&self) -> &[StationBlueprint] {
+        &self.entries
+    }
+
+    pub fn get(&self, station_type: StationType) -> Option<&StationBlueprint> {
+        self.entries
+            .iter()
+            .find(|entry| entry.station_type == station_type)
+    }
+
+    pub fn buildable(&self) -> impl Iterator<Item = &StationBlueprint> {
+        self.entries.iter().filter(|entry| entry.buildable)
+    }
+}
+
+impl Default for StationCatalog {
+    fn default() -> Self {
+        Self::new(default_station_blueprints())
+    }
+}
+
+/// Test/legacy fixture used when no application content has been installed.
+///
+/// The shipping application replaces this resource with validated RON data.
 pub fn default_station_blueprints() -> Vec<StationBlueprint> {
     vec![
         StationBlueprint {
+            id: "station.stove".into(),
             station_type: StationType::Stove,
-            label: "Stove",
+            label: "Stove".into(),
             build_cost_supplies: STATION_BUILD_COST_SUPPLIES,
-            produces: Some((PoolKind::Supplies, 3)),
+            description: "Prepares daily shelter Supplies.".into(),
+            glyph: 'f',
+            staffed_glyph: 'F',
+            effect: StationEffect::Produce {
+                kind: PoolKind::Supplies,
+                amount: 3,
+            },
+            staffing_required: true,
+            buildable: true,
+            unavailable_reason: None,
         },
         StationBlueprint {
+            id: "station.altar".into(),
             station_type: StationType::Altar,
-            label: "Altar",
+            label: "Altar".into(),
             build_cost_supplies: STATION_BUILD_COST_SUPPLIES,
-            produces: Some((PoolKind::Faith, 2)),
+            description: "Builds daily Faith through observance.".into(),
+            glyph: 'a',
+            staffed_glyph: 'A',
+            effect: StationEffect::Produce {
+                kind: PoolKind::Faith,
+                amount: 2,
+            },
+            staffing_required: true,
+            buildable: true,
+            unavailable_reason: None,
         },
         StationBlueprint {
+            id: "station.workshop".into(),
             station_type: StationType::Workshop,
-            label: "Workshop",
+            label: "Workshop".into(),
             build_cost_supplies: STATION_BUILD_COST_SUPPLIES,
-            produces: Some((PoolKind::Supplies, 2)),
+            description: "Produces repair and construction Materials.".into(),
+            glyph: 'w',
+            staffed_glyph: 'W',
+            effect: StationEffect::Produce {
+                kind: PoolKind::Materials,
+                amount: 2,
+            },
+            staffing_required: true,
+            buildable: true,
+            unavailable_reason: None,
         },
         StationBlueprint {
+            id: "station.bed".into(),
             station_type: StationType::Bed,
-            label: "Bed",
+            label: "Bed".into(),
             build_cost_supplies: STATION_BUILD_COST_SUPPLIES,
-            produces: None, // restores mood, not resources
+            description: "Restores the assigned survivor's Mood.".into(),
+            glyph: 'b',
+            staffed_glyph: 'B',
+            effect: StationEffect::RestoreWorkerMood {
+                amount: crate::colony::survivors::MOOD_REST_BONUS,
+            },
+            staffing_required: true,
+            buildable: true,
+            unavailable_reason: None,
         },
         StationBlueprint {
+            id: "station.storage".into(),
             station_type: StationType::Storage,
-            label: "Storage",
+            label: "Storage".into(),
             build_cost_supplies: STATION_BUILD_COST_SUPPLIES,
-            produces: None, // increases capacity
+            description: "Reserved for later storage-capacity rules.".into(),
+            glyph: 's',
+            staffed_glyph: 'S',
+            effect: StationEffect::Disabled,
+            staffing_required: false,
+            buildable: false,
+            unavailable_reason: Some("No Foundation effect yet".into()),
         },
     ]
+}
+
+pub fn station_catalog() -> Vec<StationBlueprint> {
+    default_station_blueprints()
 }
 
 // ── Action registration ──
@@ -148,23 +323,9 @@ pub fn register_station_actions() -> ActionDefinition {
     ActionDefinition {
         id: "ability.build".into(),
         label: "Build".into(),
-        requirements: vec![
-            Requirement::ResourcePoolAbove(PoolKind::Supplies, STATION_BUILD_COST_SUPPLIES),
-            Requirement::TileVacant,
-        ],
-        cost_effects: vec![Effect::PoolDelta {
-            kind: PoolKind::Supplies,
-            amount: -STATION_BUILD_COST_SUPPLIES,
-            tags: vec![DeltaTag::Action],
-            reason: "build cost".into(),
-        }],
-        effects: vec![
-            Effect::SpawnEntity("blueprint.station".into()),
-            Effect::Log(
-                "You build a station.".into(),
-                crate::gamelog::LogLevel::Info,
-            ),
-        ],
+        requirements: vec![Requirement::TileVacant],
+        cost_effects: vec![],
+        effects: vec![Effect::SpawnEntity("blueprint.station".into())],
     }
 }
 
@@ -178,6 +339,7 @@ mod tests {
         signals::ActionIntent,
     };
     use bevy_app::App;
+    use std::collections::HashSet;
 
     fn test_app() -> App {
         let mut app = App::new();
@@ -185,17 +347,82 @@ mod tests {
         app
     }
 
-    fn spawn_player_with_supplies(app: &mut App, supplies: i32) -> Entity {
+    fn spawn_player_with_colony_supplies(app: &mut App, supplies: i32) -> Entity {
+        app.world_mut()
+            .resource_mut::<crate::colony::production::ColonyResources>()
+            .pools
+            .get_mut(PoolKind::Supplies)
+            .expect("test colony supplies must exist")
+            .current = supplies;
         app.world_mut()
             .spawn((
                 Player,
                 Position { x: 5, y: 5 },
-                Pools::new(vec![
-                    Pool::new(PoolKind::Supplies, supplies, 0, 50),
-                    Pool::new(PoolKind::ActionPoints, 3, 0, 3),
-                ]),
+                Pools::new(vec![Pool::new(PoolKind::ActionPoints, 3, 0, 3)]),
             ))
             .id()
+    }
+
+    #[test]
+    fn placement_rejects_candidate_that_removes_last_gate_path() {
+        let map = crate::colony::shelter::create_shelter_map();
+        let player = crate::colony::shelter::SHELTER_RETURN_SPAWN;
+        let gate = Position {
+            x: crate::colony::shelter::SHELTER_WIDTH / 2,
+            y: 1,
+        };
+        let blockers = HashSet::from([Position { x: 1, y: 2 }]);
+
+        let result =
+            validate_station_placement(&map, player, gate, &blockers, Position { x: 2, y: 1 });
+
+        assert_eq!(result, Err(StationPlacementDenial::WouldBlockShelterEgress));
+    }
+
+    #[test]
+    fn placement_accepts_candidate_when_another_gate_path_remains() {
+        let map = crate::colony::shelter::create_shelter_map();
+        let player = crate::colony::shelter::SHELTER_RETURN_SPAWN;
+        let gate = Position {
+            x: crate::colony::shelter::SHELTER_WIDTH / 2,
+            y: 1,
+        };
+
+        let result = validate_station_placement(
+            &map,
+            player,
+            gate,
+            &HashSet::new(),
+            Position { x: 2, y: 1 },
+        );
+
+        assert_eq!(result, Ok(()));
+    }
+
+    #[test]
+    fn placement_rejects_non_walkable_and_occupied_candidates_with_typed_reasons() {
+        let map = crate::colony::shelter::create_shelter_map();
+        let player = crate::colony::shelter::SHELTER_RETURN_SPAWN;
+        let gate = Position {
+            x: crate::colony::shelter::SHELTER_WIDTH / 2,
+            y: 1,
+        };
+        let occupied = HashSet::from([Position { x: 2, y: 1 }]);
+
+        assert_eq!(
+            validate_station_placement(&map, player, gate, &occupied, Position { x: 2, y: 1 },),
+            Err(StationPlacementDenial::Occupied)
+        );
+        assert_eq!(
+            validate_station_placement(
+                &map,
+                player,
+                gate,
+                &HashSet::new(),
+                Position { x: 0, y: 1 },
+            ),
+            Err(StationPlacementDenial::NotWalkable)
+        );
     }
 
     fn send_action(
@@ -224,17 +451,21 @@ mod tests {
             blueprints[0].build_cost_supplies,
             STATION_BUILD_COST_SUPPLIES
         );
+        let storage = station_catalog()
+            .into_iter()
+            .find(|entry| entry.station_type == StationType::Storage)
+            .unwrap();
+        assert!(!storage.buildable);
+        assert_eq!(storage.effect, StationEffect::Disabled);
     }
 
     #[test]
-    fn build_action_has_correct_requirements() {
+    fn build_action_leaves_catalog_cost_to_the_build_validator() {
         let def = register_station_actions();
         assert_eq!(def.id, "ability.build");
-        assert!(
-            def.requirements
-                .iter()
-                .any(|r| matches!(r, Requirement::ResourcePoolAbove(PoolKind::Supplies, _)))
-        );
+        assert!(def.cost_effects.is_empty());
+        assert_eq!(def.requirements.len(), 1);
+        assert!(matches!(def.requirements[0], Requirement::TileVacant));
     }
 
     #[test]
@@ -242,7 +473,7 @@ mod tests {
         let mut app = test_app();
         app.world_mut()
             .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
-        let p = spawn_player_with_supplies(&mut app, 0); // no supplies
+        let p = spawn_player_with_colony_supplies(&mut app, 0);
         send_action(
             &mut app,
             p,
@@ -254,8 +485,8 @@ mod tests {
         // Supplies should remain 0 (build was denied)
         let supplies = app
             .world()
-            .get::<Pools>(p)
-            .unwrap()
+            .resource::<crate::colony::production::ColonyResources>()
+            .pools
             .get(PoolKind::Supplies)
             .unwrap()
             .current;
@@ -267,7 +498,7 @@ mod tests {
         let mut app = test_app();
         app.world_mut()
             .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
-        let p = spawn_player_with_supplies(&mut app, 10);
+        let p = spawn_player_with_colony_supplies(&mut app, 10);
         send_action(
             &mut app,
             p,
@@ -278,8 +509,8 @@ mod tests {
         app.update();
         let supplies = app
             .world()
-            .get::<Pools>(p)
-            .unwrap()
+            .resource::<crate::colony::production::ColonyResources>()
+            .pools
             .get(PoolKind::Supplies)
             .unwrap()
             .current;
@@ -287,40 +518,22 @@ mod tests {
         assert_eq!(supplies, 10 - STATION_BUILD_COST_SUPPLIES);
     }
 
-    // ── P2-A: BuildGhostState tests ──
-
     #[test]
-    fn build_ghost_state_default_is_inactive() {
-        let state = BuildGhostState::default();
-        assert!(!state.active, "Build ghost should start inactive");
-        assert!(
-            state.station_type.is_none(),
-            "No station type selected by default"
-        );
+    fn build_interaction_default_is_inactive() {
+        let state = BuildInteraction::default();
+        assert_eq!(state, BuildInteraction::Inactive);
+        assert!(!state.is_active());
+        assert_eq!(state.selected_station(), None);
     }
 
     #[test]
-    fn build_ghost_state_can_be_activated() {
-        let mut state = BuildGhostState::default();
-        state.active = true;
-        state.station_type = Some(StationType::Stove);
-        state.cursor = Position { x: 10, y: 5 };
-        assert!(state.active);
-        assert_eq!(state.station_type, Some(StationType::Stove));
-        assert_eq!(state.cursor.x, 10);
-        assert_eq!(state.cursor.y, 5);
-    }
-
-    #[test]
-    fn build_ghost_deactivate_clears_selection() {
-        let mut state = BuildGhostState {
-            active: true,
-            station_type: Some(StationType::Workshop),
-            cursor: Position { x: 7, y: 3 },
+    fn build_interaction_placing_retains_selection_cursor_and_validation() {
+        let state = BuildInteraction::Placing {
+            selected_station: StationType::Stove,
+            cursor: Position { x: 10, y: 5 },
+            validation: Ok(()),
         };
-        state.active = false;
-        state.station_type = None;
-        assert!(!state.active);
-        assert!(state.station_type.is_none());
+        assert!(state.is_active());
+        assert_eq!(state.selected_station(), Some(StationType::Stove));
     }
 }

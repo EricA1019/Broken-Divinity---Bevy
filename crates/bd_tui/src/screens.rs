@@ -287,7 +287,7 @@ pub fn default_screen_registry() -> ScreenRegistry {
         panels: vec![
             PanelDefinition {
                 id: "outpost_party".into(),
-                layout: PanelLayout::Left { width_pct: 30 },
+                layout: PanelLayout::Left { width_pct: 38 },
                 view_model: "ContainerViewModel".into(),
             },
             PanelDefinition {
@@ -347,25 +347,11 @@ pub fn default_screen_registry() -> ScreenRegistry {
     // Help screen: keybindings overlay
     reg.register(ScreenDefinition {
         id: "help".into(),
-        panels: vec![
-            PanelDefinition {
-                id: "help_keys".into(),
-                layout: PanelLayout::Main,
-                view_model: "HelpViewModel".into(),
-            },
-            PanelDefinition {
-                id: "stats".into(),
-                layout: PanelLayout::Right {
-                    width_pct: STATS_PANEL_WIDTH_PCT,
-                },
-                view_model: "StatsViewModel".into(),
-            },
-            PanelDefinition {
-                id: "log".into(),
-                layout: PanelLayout::Bottom { height_pct: 15 },
-                view_model: "LogViewModel".into(),
-            },
-        ],
+        panels: vec![PanelDefinition {
+            id: "help_keys".into(),
+            layout: PanelLayout::Main,
+            view_model: "HelpViewModel".into(),
+        }],
     });
 
     // Debug screen: signal trace viewer + entity info
@@ -403,6 +389,49 @@ pub fn default_screen_registry() -> ScreenRegistry {
     });
 
     reg
+}
+
+/// Derive the supported compact policy from a canonical screen definition.
+///
+/// Compact screens deliberately remove secondary panels rather than allowing
+/// the full layout to collapse into unreadable rectangles.
+pub fn compact_screen_definition(definition: &ScreenDefinition) -> ScreenDefinition {
+    let mut compact = definition.clone();
+    match definition.id.as_str() {
+        "outpost" => {
+            for panel in &mut compact.panels {
+                match panel.id.as_str() {
+                    "outpost_party" => panel.layout = PanelLayout::Left { width_pct: 40 },
+                    "stats" => panel.layout = PanelLayout::Right { width_pct: 23 },
+                    "actions" => panel.layout = PanelLayout::Bottom { height_pct: 30 },
+                    "log" => panel.layout = PanelLayout::Bottom { height_pct: 20 },
+                    _ => {}
+                }
+            }
+        }
+        "combat" => {
+            for panel in &mut compact.panels {
+                match panel.id.as_str() {
+                    "stats" => panel.layout = PanelLayout::Right { width_pct: 25 },
+                    "actions" => panel.layout = PanelLayout::Bottom { height_pct: 24 },
+                    "log" => panel.layout = PanelLayout::Bottom { height_pct: 36 },
+                    _ => {}
+                }
+            }
+        }
+        "inventory" => {
+            compact
+                .panels
+                .retain(|panel| !matches!(panel.id.as_str(), "stats" | "equipment"));
+            for panel in &mut compact.panels {
+                if panel.id == "log" {
+                    panel.layout = PanelLayout::Bottom { height_pct: 25 };
+                }
+            }
+        }
+        _ => {}
+    }
+    compact
 }
 
 /// Build the default widget registry with all known renderers.
@@ -461,47 +490,43 @@ fn render_game_over_splash_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRen
 }
 
 /// Render the title screen splash.
-fn render_title_splash_widget(frame: &mut Frame, area: Rect, _ctx: &WidgetRenderContext) {
+fn render_title_splash_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
     let style_title = ratatui::style::Style::default()
         .fg(ACCENT_COLOR)
         .add_modifier(ratatui::style::Modifier::BOLD);
     let style_muted = ratatui::style::Style::default().fg(MUTED_COLOR);
     let style_accent = ratatui::style::Style::default().fg(ACCENT_COLOR);
 
-    let text: Vec<ratatui::text::Line> = if area.width < 50 || area.height < 12 {
-        vec![
-            ratatui::text::Line::from(""),
-            ratatui::text::Line::styled("Broken Divinity Kernel", style_title),
-            ratatui::text::Line::from(""),
-            ratatui::text::Line::styled("  Press any key to begin", style_accent),
-        ]
-    } else {
-        let title_lines = [
-            "  ____             _      ___     _ _            _   _ ",
-            " | __ ) _ __ ___  | | __ |_ _|_ _(_) |_ ___  _ _| |_(_)_ __   __ _",
-            " |  _ \\| '__/ _ \\| |/ /   | || '__| | __/ _ \\| / /  _| | '  \\ / _` |",
-            " | |_) | | | (_) |   <   | || |  | | || (_) |   \\| |_| | | | | (_| |",
-            " |_.__/|_|  \\___/|_|\\_\\ |___|_|  |_|\\__\\___/|_|\\_\\__|_|_| |_|\\__, |",
-            "                                                               |___/",
-        ];
-        // Pad all lines to the same width so center-alignment is clean
-        let max_w = title_lines.iter().map(|l| l.len()).max().unwrap_or(0);
-        let indent = " ".repeat(area.width.saturating_sub(max_w as u16) as usize / 2);
-        let mut lines: Vec<ratatui::text::Line> = vec![ratatui::text::Line::from("")];
-        for line in title_lines {
-            let padded = format!("{indent}{line:<max_w$}");
-            lines.push(ratatui::text::Line::styled(padded, style_title));
-        }
-        let version_line = format!("{indent}  Kernel v{}  ", env!("CARGO_PKG_VERSION"));
-        let prompt_line = format!("{indent}  Press any key to begin");
-        lines.push(ratatui::text::Line::from(""));
-        lines.push(ratatui::text::Line::styled(version_line, style_muted));
-        lines.push(ratatui::text::Line::from(""));
-        lines.push(ratatui::text::Line::styled(prompt_line, style_accent));
-        lines
+    let mut text = vec![
+        ratatui::text::Line::styled("BROKEN DIVINITY", style_title),
+        ratatui::text::Line::styled("FOUNDATION BUILD", style_muted),
+        ratatui::text::Line::from(""),
+        ratatui::text::Line::styled("Press any key to begin", style_accent),
+        ratatui::text::Line::styled(
+            format!("Kernel v{}", env!("CARGO_PKG_VERSION")),
+            style_muted,
+        ),
+    ];
+    if let Some(entry) = ctx
+        .log
+        .entries
+        .last()
+        .filter(|entry| entry.level == bd_core::gamelog::LogLevel::Warn)
+    {
+        text.push(ratatui::text::Line::from(""));
+        text.push(ratatui::text::Line::styled(
+            truncate_end(&entry.message, area.width as usize),
+            ratatui::style::Style::default().fg(ratatui::style::Color::Yellow),
+        ));
+    }
+    let content_height = (text.len() as u16).min(area.height);
+    let content_area = Rect {
+        y: area.y + area.height.saturating_sub(content_height) / 2,
+        height: content_height,
+        ..area
     };
-    let para = ratatui::widgets::Paragraph::new(text);
-    frame.render_widget(para, area);
+    let para = ratatui::widgets::Paragraph::new(text).alignment(ratatui::layout::Alignment::Center);
+    frame.render_widget(para, content_area);
 }
 
 pub fn default_widget_registry() -> WidgetRegistry {
@@ -676,6 +701,85 @@ pub fn validate_screens(screens: &ScreenRegistry, widgets: &WidgetRegistry) -> S
 // Widget renderers
 // ---------------------------------------------------------------------------
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct MapViewport {
+    origin_x: i32,
+    origin_y: i32,
+    width: u16,
+    height: u16,
+}
+
+impl MapViewport {
+    fn follow_player(map: &MapViewModel, width: u16, height: u16) -> Self {
+        let width = width.min(map.width.max(0) as u16);
+        let height = height.min(map.height.max(0) as u16);
+        let max_x = map.width.saturating_sub(width as i32).max(0);
+        let max_y = map.height.saturating_sub(height as i32).max(0);
+        let (origin_x, origin_y) = map.player_pos.map_or((0, 0), |player| {
+            (
+                (player.x - i32::from(width) / 2).clamp(0, max_x),
+                (player.y - i32::from(height) / 2).clamp(0, max_y),
+            )
+        });
+        Self {
+            origin_x,
+            origin_y,
+            width,
+            height,
+        }
+    }
+
+    fn project(self, position: bd_core::components::Position) -> Option<(u16, u16)> {
+        let x = position.x - self.origin_x;
+        let y = position.y - self.origin_y;
+        (x >= 0 && x < i32::from(self.width) && y >= 0 && y < i32::from(self.height))
+            .then_some((x as u16, y as u16))
+    }
+
+    fn edge_indicator(self, position: bd_core::components::Position) -> Option<(u16, u16, char)> {
+        if self.project(position).is_some() || self.width == 0 || self.height == 0 {
+            return None;
+        }
+        let min_x = self.origin_x;
+        let max_x = self.origin_x + i32::from(self.width) - 1;
+        let min_y = self.origin_y;
+        let max_y = self.origin_y + i32::from(self.height) - 1;
+        let left = min_x.saturating_sub(position.x);
+        let right = position.x.saturating_sub(max_x);
+        let up = min_y.saturating_sub(position.y);
+        let down = position.y.saturating_sub(max_y);
+        let (_, glyph, x, y) = [
+            (
+                left,
+                '←',
+                0,
+                (position.y - min_y).clamp(0, i32::from(self.height) - 1),
+            ),
+            (
+                right,
+                '→',
+                i32::from(self.width) - 1,
+                (position.y - min_y).clamp(0, i32::from(self.height) - 1),
+            ),
+            (
+                up,
+                '↑',
+                (position.x - min_x).clamp(0, i32::from(self.width) - 1),
+                0,
+            ),
+            (
+                down,
+                '↓',
+                (position.x - min_x).clamp(0, i32::from(self.width) - 1),
+                i32::from(self.height) - 1,
+            ),
+        ]
+        .into_iter()
+        .max_by_key(|(distance, _, _, _)| *distance)?;
+        Some((x as u16, y as u16, glyph))
+    }
+}
+
 fn render_map_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
     let block = ratatui::widgets::Block::default()
         .title(" Map ")
@@ -685,162 +789,60 @@ fn render_map_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let w = inner.width.min(ctx.map.width as u16);
-    let h = inner.height.min(ctx.map.height as u16);
+    let viewport = MapViewport::follow_player(ctx.map, inner.width, inner.height);
+    let w = viewport.width;
+    let h = viewport.height;
     let mut grid = RenderCellGrid::new(w, h, VisualToken::Floor, ctx.symbols, ctx.theme);
 
-    for y in 0..h as i32 {
-        for x in 0..w as i32 {
-            let idx = (y * ctx.map.width + x) as usize;
+    for screen_y in 0..h as i32 {
+        for screen_x in 0..w as i32 {
+            let world_x = viewport.origin_x + screen_x;
+            let world_y = viewport.origin_y + screen_y;
+            let idx = (world_y * ctx.map.width + world_x) as usize;
             let token = match ctx.map.tiles.get(idx) {
                 Some(bd_core::components::Tile::Wall) | None => VisualToken::Wall,
                 Some(bd_core::components::Tile::Floor) => VisualToken::Floor,
                 Some(bd_core::components::Tile::Door) => VisualToken::DoorClosed,
                 Some(bd_core::components::Tile::Water) => VisualToken::Water,
             };
-            grid.set(x as u16, y as u16, token, ctx.symbols, ctx.theme);
-        }
-    }
-
-    // Render enemies with type-specific glyphs (r, S, B) or default 'E'
-    for (pos, glyph) in &ctx.map.enemy_glyphs {
-        if pos.x >= 0 && pos.x < w as i32 && pos.y >= 0 && pos.y < h as i32 {
-            grid.set_glyph(
-                pos.x as u16,
-                pos.y as u16,
-                *glyph,
-                VisualToken::Enemy,
-                ctx.symbols,
-                ctx.theme,
-            );
-        }
-    }
-    // Fallback: render any remaining enemy positions that didn't get glyphs
-    for ep in &ctx.map.enemy_positions {
-        if ep.x >= 0 && ep.x < w as i32 && ep.y >= 0 && ep.y < h as i32 {
-            // Only render if not already covered by enemy_glyphs
-            if !ctx.map.enemy_glyphs.iter().any(|(p, _)| p == ep) {
-                grid.set(
-                    ep.x as u16,
-                    ep.y as u16,
-                    VisualToken::Enemy,
-                    ctx.symbols,
-                    ctx.theme,
-                );
-            }
-        }
-    }
-
-    if let Some(pp) = ctx.map.player_pos {
-        if pp.x >= 0 && pp.x < w as i32 && pp.y >= 0 && pp.y < h as i32 {
             grid.set(
-                pp.x as u16,
-                pp.y as u16,
-                VisualToken::Player,
+                screen_x as u16,
+                screen_y as u16,
+                token,
                 ctx.symbols,
                 ctx.theme,
             );
         }
     }
 
-    // Render survivors on shelter map as Ally tokens
-    for (pos, glyph) in &ctx.map.survivor_glyphs {
-        if pos.x >= 0 && pos.x < w as i32 && pos.y >= 0 && pos.y < h as i32 {
+    for target in &ctx.map.assigned_targets {
+        if let Some((x, y, glyph)) = viewport.edge_indicator(*target) {
             grid.set_glyph(
-                pos.x as u16,
-                pos.y as u16,
-                *glyph,
-                VisualToken::Ally,
+                x,
+                y,
+                glyph,
+                VisualToken::TargetIndicator,
                 ctx.symbols,
                 ctx.theme,
             );
         }
     }
 
-    // Render stations on map
-    for (pos, glyph) in &ctx.map.station_glyphs {
-        if pos.x >= 0 && pos.x < w as i32 && pos.y >= 0 && pos.y < h as i32 {
-            grid.set_glyph(
-                pos.x as u16,
-                pos.y as u16,
-                *glyph,
-                VisualToken::Item,
-                ctx.symbols,
-                ctx.theme,
-            );
-        }
-    }
-
-    // P15-C: Render Gabriel on shelter map
-    if let Some((pos, glyph)) = &ctx.map.gabriel_glyph {
-        if pos.x >= 0 && pos.x < w as i32 && pos.y >= 0 && pos.y < h as i32 {
-            grid.set_glyph(
-                pos.x as u16,
-                pos.y as u16,
-                *glyph,
-                VisualToken::Ally,
-                ctx.symbols,
-                ctx.theme,
-            );
-        }
-    }
-
-    // P22-D: Render resource nodes on shelter map
-    for (pos, glyph) in &ctx.map.resource_glyphs {
-        if pos.x >= 0 && pos.x < w as i32 && pos.y >= 0 && pos.y < h as i32 {
-            grid.set_glyph(
-                pos.x as u16,
-                pos.y as u16,
-                *glyph,
-                VisualToken::Item,
-                ctx.symbols,
-                ctx.theme,
-            );
-        }
-    }
-
-    // P3-A: Render exit tiles (shelter gate, dungeon exits)
-    for (pos, glyph) in &ctx.map.exit_glyphs {
-        if pos.x >= 0 && pos.x < w as i32 && pos.y >= 0 && pos.y < h as i32 {
-            grid.set_glyph(
-                pos.x as u16,
-                pos.y as u16,
-                *glyph,
-                VisualToken::Exit,
-                ctx.symbols,
-                ctx.theme,
-            );
+    for visual in &ctx.map.visuals {
+        if let Some((x, y)) = viewport.project(visual.position) {
+            if let Some(glyph) = visual.glyph {
+                grid.set_glyph(x, y, glyph, visual.token, ctx.symbols, ctx.theme);
+            } else {
+                grid.set(x, y, visual.token, ctx.symbols, ctx.theme);
+            }
         }
     }
 
     // P2-C: Render build ghost cursor on shelter map
     if let Some((pos, glyph)) = &ctx.map.build_ghost {
-        if pos.x >= 0 && pos.x < w as i32 && pos.y >= 0 && pos.y < h as i32 {
-            grid.set_glyph(
-                pos.x as u16,
-                pos.y as u16,
-                *glyph,
-                VisualToken::Selection,
-                ctx.symbols,
-                ctx.theme,
-            );
+        if let Some((x, y)) = viewport.project(*pos) {
+            grid.set_glyph(x, y, *glyph, VisualToken::Selection, ctx.symbols, ctx.theme);
         }
-    }
-
-    // P2: Build menu overlay — render as text lines below the map
-    let mut menu_lines: Vec<ratatui::text::Line> = Vec::new();
-    if let Some(ref menu) = ctx.map.build_menu {
-        menu_lines.push(ratatui::text::Line::from("══ Build ══"));
-        for (i, (label, cost)) in menu.options.iter().enumerate() {
-            let prefix = if i == menu.selected { "▶" } else { " " };
-            let key = (i + 1).to_string();
-            menu_lines.push(ratatui::text::Line::from(format!(
-                "{prefix} {key}. {label} ({cost} Supplies)"
-            )));
-        }
-        menu_lines.push(ratatui::text::Line::from(
-            "↑↓/1-5:select Enter:confirm b:cancel",
-        ));
     }
 
     let lines: Vec<ratatui::text::Line> = grid
@@ -854,12 +856,233 @@ fn render_map_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
         })
         .collect();
 
-    // Append build menu lines below the map grid if menu is open
-    let all_lines: Vec<ratatui::text::Line> =
-        lines.into_iter().chain(menu_lines.into_iter()).collect();
-
-    let para = ratatui::widgets::Paragraph::new(all_lines);
+    let para = ratatui::widgets::Paragraph::new(lines).wrap(ratatui::widgets::Wrap { trim: false });
     frame.render_widget(para, inner);
+}
+
+pub fn render_build_overlay(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
+    if let Some(menu) = &ctx.stats.management {
+        let mut lines = vec![
+            ratatui::text::Line::styled(
+                menu.resources.clone(),
+                ratatui::style::Style::default().fg(ratatui::style::Color::Yellow),
+            ),
+            ratatui::text::Line::from(menu.forecast.clone()),
+            ratatui::text::Line::styled(
+                "Select survivor:",
+                ratatui::style::Style::default().fg(ACCENT_COLOR),
+            ),
+        ];
+        for (index, survivor) in menu.survivors.iter().enumerate() {
+            let selected = menu.selected_survivor == Some(index);
+            lines.push(ratatui::text::Line::styled(
+                format!(
+                    "{} {}. {survivor}",
+                    if selected { "▶" } else { " " },
+                    index + 1
+                ),
+                ratatui::style::Style::default().fg(if selected {
+                    ACCENT_COLOR
+                } else {
+                    ratatui::style::Color::White
+                }),
+            ));
+        }
+        if menu.selected_survivor.is_some() {
+            for (index, task) in menu.tasks.iter().enumerate() {
+                let selected = menu.selected_task == Some(index);
+                lines.push(ratatui::text::Line::styled(
+                    format!("{} {task}", if selected { "▶" } else { " " }),
+                    ratatui::style::Style::default().fg(if task.contains("unavailable") {
+                        ratatui::style::Color::DarkGray
+                    } else if selected {
+                        ACCENT_COLOR
+                    } else {
+                        ratatui::style::Color::White
+                    }),
+                ));
+            }
+        }
+        let cancel_key = match menu.kind {
+            super::view_models::ManagementMenuKind::TaskAssignment => "c",
+            super::view_models::ManagementMenuKind::StationStaffing => "e",
+        };
+        lines.push(ratatui::text::Line::styled(
+            format!("1-9:select  Enter:confirm  {cancel_key}/Esc:cancel"),
+            ratatui::style::Style::default().fg(MUTED_COLOR),
+        ));
+
+        let width = area.width.saturating_sub(2).min(76);
+        let height = (lines.len() as u16 + 2).min(area.height);
+        let modal = Rect {
+            x: area.x + area.width.saturating_sub(width) / 2,
+            y: area.y + area.height.saturating_sub(height) / 2,
+            width,
+            height,
+        };
+        frame.render_widget(ratatui::widgets::Clear, modal);
+        let title = match menu.kind {
+            super::view_models::ManagementMenuKind::TaskAssignment => " Task Management ",
+            super::view_models::ManagementMenuKind::StationStaffing => " Station Staffing ",
+        };
+        let block = ratatui::widgets::Block::default()
+            .title(title)
+            .borders(ratatui::widgets::Borders::ALL)
+            .style(ratatui::style::Style::default().fg(ACCENT_COLOR));
+        let inner = block.inner(modal);
+        frame.render_widget(block, modal);
+        frame.render_widget(
+            ratatui::widgets::Paragraph::new(lines).wrap(ratatui::widgets::Wrap { trim: true }),
+            inner,
+        );
+        return;
+    }
+
+    if let Some(menu) = &ctx.map.build_menu {
+        let width = area.width.saturating_sub(2).min(76);
+        let inner_width = width.saturating_sub(2).max(1) as usize;
+        let selected_effect_rows = menu.options.get(menu.selected).map_or(0, |(_, _, effect)| {
+            format!("Effect: {effect}")
+                .split_whitespace()
+                .fold((1_usize, 0_usize), |(rows, used), word| {
+                    let needed = usize::from(used > 0) + word.chars().count();
+                    if used + needed > inner_width {
+                        (rows + 1, word.chars().count())
+                    } else {
+                        (rows, used + needed)
+                    }
+                })
+                .0
+        });
+        let height =
+            (menu.options.len() + selected_effect_rows + 5).min(area.height as usize) as u16;
+        let modal = Rect {
+            x: area.x + area.width.saturating_sub(width) / 2,
+            y: area.y + area.height.saturating_sub(height) / 2,
+            width,
+            height,
+        };
+        frame.render_widget(ratatui::widgets::Clear, modal);
+        let block = ratatui::widgets::Block::default()
+            .title(" Build Station ")
+            .borders(ratatui::widgets::Borders::ALL)
+            .style(ratatui::style::Style::default().fg(ACCENT_COLOR));
+        let inner = block.inner(modal);
+        frame.render_widget(block, modal);
+
+        let mut lines = vec![ratatui::text::Line::styled(
+            format!("Available: {} Supplies", menu.available_supplies),
+            ratatui::style::Style::default().fg(ratatui::style::Color::Yellow),
+        )];
+        for (index, (label, cost, effect)) in menu.options.iter().enumerate() {
+            let selected = index == menu.selected;
+            let prefix = if selected { "▶" } else { " " };
+            let color = if effect.starts_with("Disabled") {
+                ratatui::style::Color::DarkGray
+            } else if menu.available_supplies < *cost {
+                ratatui::style::Color::Red
+            } else if selected {
+                ACCENT_COLOR
+            } else {
+                ratatui::style::Color::White
+            };
+            lines.push(ratatui::text::Line::styled(
+                format!("{prefix} {}. {label} — {cost} Supplies", index + 1),
+                ratatui::style::Style::default().fg(color),
+            ));
+        }
+        if let Some((_, _, effect)) = menu.options.get(menu.selected) {
+            lines.push(ratatui::text::Line::styled(
+                format!("Effect: {effect}"),
+                ratatui::style::Style::default().fg(ACCENT_COLOR),
+            ));
+        }
+        lines.push(ratatui::text::Line::styled(
+            "↑↓/1-5:highlight Enter:placement b/Esc:cancel",
+            ratatui::style::Style::default().fg(MUTED_COLOR),
+        ));
+        frame.render_widget(
+            ratatui::widgets::Paragraph::new(lines).wrap(ratatui::widgets::Wrap { trim: true }),
+            inner,
+        );
+        return;
+    }
+
+    if ctx.map.build_ghost.is_some() && area.height >= 3 {
+        let detail_rows = usize::from(ctx.map.build_placement.is_some()) * 2;
+        let denial_rows = usize::from(ctx.map.build_ghost_denial.is_some());
+        let banner_height = u16::try_from(3 + detail_rows + denial_rows)
+            .unwrap_or(area.height)
+            .min(area.height);
+        let banner = Rect {
+            y: area.y + area.height - banner_height,
+            height: banner_height,
+            ..area
+        };
+        frame.render_widget(ratatui::widgets::Clear, banner);
+        let block = ratatui::widgets::Block::default()
+            .title(" Build Placement ")
+            .borders(ratatui::widgets::Borders::ALL)
+            .style(ratatui::style::Style::default().fg(ACCENT_COLOR));
+        let inner = block.inner(banner);
+        frame.render_widget(block, banner);
+        let mut lines = Vec::new();
+        if let Some(detail) = &ctx.map.build_placement {
+            lines.push(ratatui::text::Line::styled(
+                format!("{} — {} Supplies", detail.label, detail.supply_cost),
+                ratatui::style::Style::default().fg(ACCENT_COLOR),
+            ));
+            lines.push(ratatui::text::Line::from(format!(
+                "Effect: {}",
+                detail.effect
+            )));
+        }
+        lines.push(ratatui::text::Line::from(
+            "Tile: wasd/arrows | Enter:build | b/Esc:cancel",
+        ));
+        if let Some(reason) = &ctx.map.build_ghost_denial {
+            lines.push(ratatui::text::Line::styled(
+                reason.clone(),
+                ratatui::style::Style::default().fg(ratatui::style::Color::Red),
+            ));
+        }
+        frame.render_widget(ratatui::widgets::Paragraph::new(lines), inner);
+    }
+}
+
+fn truncate_end(value: &str, width: usize) -> String {
+    if value.chars().count() <= width {
+        return value.to_owned();
+    }
+    if width == 0 {
+        return String::new();
+    }
+    if width == 1 {
+        return "…".into();
+    }
+    let prefix = value.chars().take(width - 1).collect::<String>();
+    format!("{prefix}…")
+}
+
+fn truncate_middle(value: &str, width: usize) -> String {
+    if value.chars().count() <= width {
+        return value.to_owned();
+    }
+    if width <= 1 {
+        return truncate_end(value, width);
+    }
+    let left_len = (width - 1) / 2;
+    let right_len = width - 1 - left_len;
+    let left = value.chars().take(left_len).collect::<String>();
+    let right = value
+        .chars()
+        .rev()
+        .take(right_len)
+        .collect::<String>()
+        .chars()
+        .rev()
+        .collect::<String>();
+    format!("{left}…{right}")
 }
 
 fn render_stats_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
@@ -870,6 +1093,48 @@ fn render_stats_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext)
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
+
+    let stored_loot = ctx
+        .stats
+        .stored_items
+        .iter()
+        .map(|(_, count)| *count)
+        .sum::<u32>();
+    let compact_stats = inner.width < 14;
+    let stored_loot_text = if compact_stats {
+        format!("Loot: {stored_loot}")
+    } else {
+        format!("Stored loot: {stored_loot}")
+    };
+    let supplies_text = if compact_stats {
+        format!("Sup:{}", ctx.stats.supplies)
+    } else {
+        format!("Supplies: {}", ctx.stats.supplies)
+    };
+    let faith_text = format!("Faith:{}", ctx.stats.faith);
+    let materials_text = if compact_stats {
+        format!("Mat:{}", ctx.stats.materials)
+    } else {
+        format!("Materials: {}", ctx.stats.materials)
+    };
+    let plants_text = if compact_stats {
+        format!("Plant:{}", ctx.stats.wild_plants)
+    } else {
+        format!("Plants: {}", ctx.stats.wild_plants)
+    };
+    let last_run_text = if compact_stats {
+        let outcome = match ctx.stats.run_outcome {
+            bd_core::session::RunOutcome::None => "None",
+            bd_core::session::RunOutcome::Extracted => "Extract",
+            bd_core::session::RunOutcome::Defeated => "Defeat",
+        };
+        format!("Run:{outcome} {}", ctx.stats.extracted_loot)
+    } else {
+        format!(
+            "Last run: {:?} ({} loot)",
+            ctx.stats.run_outcome, ctx.stats.extracted_loot
+        )
+    };
 
     let text = vec![
         ratatui::text::Line::from(vec![
@@ -897,37 +1162,27 @@ fn render_stats_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext)
         ]),
         ratatui::text::Line::from(""),
         ratatui::text::Line::styled(
-            format!("Supplies: {}", ctx.stats.supplies),
+            supplies_text,
             ratatui::style::Style::default().fg(ratatui::style::Color::Yellow),
         ),
         ratatui::text::Line::styled(
-            format!("Faith: {}", ctx.stats.faith),
+            faith_text,
             ratatui::style::Style::default().fg(ACCENT_COLOR),
         ),
         ratatui::text::Line::styled(
-            format!("Materials: {}", ctx.stats.materials),
+            materials_text,
             ratatui::style::Style::default().fg(ratatui::style::Color::Yellow),
         ),
         ratatui::text::Line::styled(
-            format!("Plants: {}", ctx.stats.wild_plants),
+            plants_text,
             ratatui::style::Style::default().fg(ratatui::style::Color::Green),
         ),
         ratatui::text::Line::styled(
-            format!(
-                "Stored loot: {}",
-                ctx.stats
-                    .stored_items
-                    .iter()
-                    .map(|(_, count)| *count)
-                    .sum::<u32>()
-            ),
+            stored_loot_text,
             ratatui::style::Style::default().fg(ratatui::style::Color::Cyan),
         ),
         ratatui::text::Line::styled(
-            format!(
-                "Last run: {:?} ({} loot)",
-                ctx.stats.run_outcome, ctx.stats.extracted_loot
-            ),
+            truncate_end(&last_run_text, inner.width as usize),
             ratatui::style::Style::default().fg(MUTED_COLOR),
         ),
         ratatui::text::Line::from(""),
@@ -948,7 +1203,7 @@ fn render_stats_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext)
             _ => ratatui::style::Color::Gray,
         };
         text.push(ratatui::text::Line::styled(
-            format!("{}: {}", label, status),
+            truncate_end(&format!("{}: {}", label, status), inner.width as usize),
             ratatui::style::Style::default().fg(color),
         ));
     }
@@ -966,11 +1221,13 @@ fn render_log_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
+    let visible_rows = inner.height as usize;
+    let first_visible = ctx.log.entries.len().saturating_sub(visible_rows);
     let lines: Vec<ratatui::text::Line> = ctx
         .log
         .entries
         .iter()
-        .take(inner.height as usize)
+        .skip(first_visible)
         .map(|entry| {
             let style = match entry.level {
                 bd_core::gamelog::LogLevel::Info => {
@@ -983,11 +1240,16 @@ fn render_log_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
                     ratatui::style::Style::default().fg(ratatui::style::Color::Red)
                 }
             };
-            ratatui::text::Line::styled(&entry.message, style)
+            let message = if entry.message.contains('/') {
+                truncate_middle(&entry.message, inner.width as usize)
+            } else {
+                truncate_end(&entry.message, inner.width as usize)
+            };
+            ratatui::text::Line::styled(message, style)
         })
         .collect();
 
-    let para = ratatui::widgets::Paragraph::new(lines).wrap(ratatui::widgets::Wrap { trim: false });
+    let para = ratatui::widgets::Paragraph::new(lines);
     frame.render_widget(para, inner);
 }
 
@@ -1044,9 +1306,14 @@ fn render_inventory_list_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRende
         .items
         .iter()
         .map(|item| {
-            let equip_mark = if item.equipped { " [E]" } else { "" };
+            let state = match (item.equipped, item.usable) {
+                (true, true) => " [equipped, usable]",
+                (true, false) => " [equipped]",
+                (false, true) => " [usable]",
+                (false, false) => "",
+            };
             ratatui::text::Line::styled(
-                format!(" {}{}", item.name, equip_mark),
+                truncate_end(&format!(" {}{}", item.name, state), inner.width as usize),
                 ratatui::style::Style::default().fg(ratatui::style::Color::White),
             )
         })
@@ -1202,7 +1469,8 @@ fn render_outpost_party_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRender
             ratatui::style::Style::default().fg(MUTED_COLOR),
         )]
     } else {
-        ctx.stats
+        let mut lines: Vec<_> = ctx
+            .stats
             .party_names
             .iter()
             .map(|name| {
@@ -1211,10 +1479,21 @@ fn render_outpost_party_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRender
                     ratatui::style::Style::default().fg(ratatui::style::Color::White),
                 )
             })
-            .collect()
+            .collect();
+        lines.extend(ctx.stats.station_status.iter().map(|status| {
+            ratatui::text::Line::styled(
+                format!(" {status}"),
+                ratatui::style::Style::default().fg(ACCENT_COLOR),
+            )
+        }));
+        lines.push(ratatui::text::Line::styled(
+            format!(" {}", ctx.stats.next_day_forecast),
+            ratatui::style::Style::default().fg(ratatui::style::Color::Yellow),
+        ));
+        lines
     };
 
-    let para = ratatui::widgets::Paragraph::new(lines);
+    let para = ratatui::widgets::Paragraph::new(lines).wrap(ratatui::widgets::Wrap { trim: false });
     frame.render_widget(para, inner);
 }
 
@@ -1230,26 +1509,38 @@ fn render_help_keys_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderCont
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let mut lines: Vec<ratatui::text::Line> = vec![
-        ratatui::text::Line::from(""),
-        ratatui::text::Line::styled(
-            " Keybindings:",
-            ratatui::style::Style::default()
-                .fg(ACCENT_COLOR)
-                .add_modifier(ratatui::style::Modifier::BOLD),
-        ),
-        ratatui::text::Line::from(""),
-    ];
-    for (key, action) in &ctx.help.keys {
-        let k = format!("  {key:7} → {action}");
+    let mut lines: Vec<ratatui::text::Line> = vec![ratatui::text::Line::styled(
+        " Controls and shelter legend",
+        ratatui::style::Style::default()
+            .fg(ACCENT_COLOR)
+            .add_modifier(ratatui::style::Modifier::BOLD),
+    )];
+    let column_gap = 2_usize;
+    let inner_width = inner.width as usize;
+    let column_width = inner_width.saturating_sub(column_gap) / 2;
+    let row_count = ctx.help.keys.len().div_ceil(2);
+    for row in 0..row_count {
+        let left = ctx
+            .help
+            .keys
+            .get(row)
+            .map_or_else(String::new, |(key, action)| format!("{key} {action}"));
+        let right = ctx
+            .help
+            .keys
+            .get(row + row_count)
+            .map_or_else(String::new, |(key, action)| format!("{key} {action}"));
+        debug_assert!(
+            left.chars().count() <= column_width && right.chars().count() <= column_width,
+            "Help entries must fit the supported responsive column"
+        );
         lines.push(ratatui::text::Line::styled(
-            k,
+            format!("{left:<column_width$}{:column_gap$}{right}", ""),
             ratatui::style::Style::default().fg(ratatui::style::Color::White),
         ));
     }
-    lines.push(ratatui::text::Line::from(""));
     lines.push(ratatui::text::Line::styled(
-        " Press '?' or Esc to close",
+        " ? or Esc: close Help",
         ratatui::style::Style::default().fg(MUTED_COLOR),
     ));
 
@@ -1452,19 +1743,11 @@ mod tests {
 
     #[test]
     fn hp_color_changes_with_threshold() {
-        // Verify color constants are reasonable
-        assert!(
-            HP_GREEN_THRESHOLD_PCT > 0,
-            "HP_GREEN_THRESHOLD_PCT should be positive"
-        );
-        assert!(
-            HP_YELLOW_THRESHOLD_PCT > 0,
-            "HP_YELLOW_THRESHOLD_PCT should be positive"
-        );
-        assert!(
-            HP_GREEN_THRESHOLD_PCT > HP_YELLOW_THRESHOLD_PCT,
-            "HP_GREEN_THRESHOLD_PCT should be above HP_YELLOW_THRESHOLD_PCT"
-        );
+        const {
+            assert!(HP_GREEN_THRESHOLD_PCT > 0);
+            assert!(HP_YELLOW_THRESHOLD_PCT > 0);
+            assert!(HP_GREEN_THRESHOLD_PCT > HP_YELLOW_THRESHOLD_PCT);
+        }
     }
 
     #[test]

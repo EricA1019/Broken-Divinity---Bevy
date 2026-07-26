@@ -79,6 +79,7 @@ pub enum DenialReason {
     NoTarget,
     InvalidTarget,
     ActorDefeated,
+    StationPlacement(crate::colony::stations::StationPlacementDenial),
     /// Fallback for unclassified denials.
     Other(String),
 }

@@ -24,7 +24,7 @@ use crate::{
         BlocksMovement, ContentIdentity, ExitTile, Name, Player, Position, ResourceNode, Tile,
     },
     factory::EntityBlueprint,
-    gamelog::GameLog,
+    gamelog::{GameLog, LogEntry},
     inventory::{Container, EquipmentSlot, Item, SlotKind, Usable, UseEffect},
     map::SmokeMap,
     pools::{Pool, Pools},
@@ -39,10 +39,15 @@ use crate::{
 // ---------------------------------------------------------------------------
 
 /// Current save format version. Bump on breaking changes.
-pub const SAVE_VERSION: u32 = 5;
+pub const SAVE_VERSION: u32 = 7;
 
 /// Content version — corresponds to the content pack hash/date.
 pub const CONTENT_VERSION: &str = "foundation-2026-07-24";
+
+/// One-frame integration signal used to clear presentation-only interaction
+/// state after durable world state has been restored.
+#[derive(Resource, Debug, Clone, Copy)]
+pub struct WorldJustRestored;
 
 // ---------------------------------------------------------------------------
 // Save ID — serializable surrogate for `Entity`
@@ -101,7 +106,7 @@ pub struct EntityData {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SurvivorTaskSnapshot {
     Idle,
-    Gathering,
+    Gathering(PoolKind),
     Defending,
     AssignedTo(SaveId),
     Resting,
@@ -137,11 +142,13 @@ pub struct RunSnapshot {
     pub seed: u64,
     pub turn: u64,
     pub session: crate::session::RunSession,
+    #[serde(default)]
+    pub last_completed_run: crate::session::LastCompletedRun,
     pub map_width: i32,
     pub map_height: i32,
     pub map_tiles: Vec<Tile>,
     pub entities: Vec<EntityData>,
-    pub log_entries: Vec<String>,
+    pub log_entries: Vec<LogEntry>,
     #[serde(default)]
     pub colony_storage: crate::colony::production::ColonyStorage,
     #[serde(default)]
@@ -218,7 +225,7 @@ pub fn save_world(
     world: &mut World,
     seed: u64,
     turn: u64,
-    save_dir: &PathBuf,
+    save_dir: &Path,
 ) -> Result<PathBuf, SaveError> {
     let snapshot = build_snapshot(world, seed, turn);
     write_manual_snapshot(&snapshot, save_dir)
@@ -453,19 +460,17 @@ fn build_snapshot(world: &mut World, seed: u64, turn: u64) -> RunSnapshot {
             survivor_task: world
                 .entity(entity)
                 .get::<SurvivorTask>()
-                .and_then(|task| match task {
-                    SurvivorTask::Idle => Some(SurvivorTaskSnapshot::Idle),
-                    SurvivorTask::Gathering => Some(SurvivorTaskSnapshot::Gathering),
-                    SurvivorTask::Defending => Some(SurvivorTaskSnapshot::Defending),
-                    SurvivorTask::AssignedTo(station_bits) => {
-                        Some(SurvivorTaskSnapshot::AssignedTo(
-                            entity_to_save_id
-                                .get(&Entity::from_bits(*station_bits))
-                                .copied()
-                                .unwrap_or(SaveId(u64::MAX)),
-                        ))
-                    }
-                    SurvivorTask::Resting => Some(SurvivorTaskSnapshot::Resting),
+                .map(|task| match task {
+                    SurvivorTask::Idle => SurvivorTaskSnapshot::Idle,
+                    SurvivorTask::Gathering(kind) => SurvivorTaskSnapshot::Gathering(*kind),
+                    SurvivorTask::Defending => SurvivorTaskSnapshot::Defending,
+                    SurvivorTask::AssignedTo(station_bits) => SurvivorTaskSnapshot::AssignedTo(
+                        entity_to_save_id
+                            .get(&Entity::from_bits(*station_bits))
+                            .copied()
+                            .unwrap_or(SaveId(u64::MAX)),
+                    ),
+                    SurvivorTask::Resting => SurvivorTaskSnapshot::Resting,
                 }),
             station_type: world.entity(entity).get::<StationType>().copied(),
             resource_node: world.entity(entity).get::<ResourceNode>().cloned(),
@@ -527,10 +532,7 @@ fn build_snapshot(world: &mut World, seed: u64, turn: u64) -> RunSnapshot {
 
     // Log
     let log = world.resource::<GameLog>();
-    let log_entries: Vec<String> = log
-        .iter()
-        .map(|e| format!("{:?}: {}", e.level, e.message))
-        .collect();
+    let log_entries: Vec<LogEntry> = log.iter().cloned().collect();
     let colony_storage = world
         .get_resource::<crate::colony::production::ColonyStorage>()
         .cloned()
@@ -577,6 +579,10 @@ fn build_snapshot(world: &mut World, seed: u64, turn: u64) -> RunSnapshot {
         .get_resource::<crate::colony::production::LatestDailySummary>()
         .cloned()
         .unwrap_or_default();
+    let last_completed_run = world
+        .get_resource::<crate::session::LastCompletedRun>()
+        .cloned()
+        .unwrap_or_default();
 
     RunSnapshot {
         save_version: SAVE_VERSION,
@@ -584,6 +590,7 @@ fn build_snapshot(world: &mut World, seed: u64, turn: u64) -> RunSnapshot {
         seed,
         turn,
         session,
+        last_completed_run,
         map_width: map.width,
         map_height: map.height,
         map_tiles: tiles_from_map(map),
@@ -624,11 +631,12 @@ pub fn restore_snapshot_into(
 
     // Restore log
     let mut log = GameLog::default();
-    for entry in &snapshot.log_entries {
-        log.push(entry.clone(), crate::gamelog::LogLevel::Info);
+    for entry in snapshot.log_entries.iter().rev() {
+        log.push(entry.message.clone(), entry.level);
     }
     world.insert_resource(log);
     world.insert_resource(snapshot.session.clone());
+    world.insert_resource(snapshot.last_completed_run.clone());
     world.insert_resource(snapshot.session.phase);
     world.insert_resource(crate::time::GameTime {
         day: snapshot.session.day,
@@ -706,7 +714,7 @@ pub fn restore_snapshot_into(
         if let Some(task) = &ed.survivor_task {
             let task = match task {
                 SurvivorTaskSnapshot::Idle => SurvivorTask::Idle,
-                SurvivorTaskSnapshot::Gathering => SurvivorTask::Gathering,
+                SurvivorTaskSnapshot::Gathering(kind) => SurvivorTask::Gathering(*kind),
                 SurvivorTaskSnapshot::Defending => SurvivorTask::Defending,
                 SurvivorTaskSnapshot::AssignedTo(station) => {
                     SurvivorTask::AssignedTo(save_id_to_entity[station].to_bits())
@@ -847,6 +855,20 @@ pub fn restore_snapshot_into(
         party,
         map: crate::colony::shelter::create_shelter_map(),
     });
+    world.insert_resource(crate::time::ShouldAdvanceTime::default());
+    world.insert_resource(crate::time::TimeAdvancePlan::default());
+    world.insert_resource(crate::colony::stations::PendingStationAssignment::default());
+    world.insert_resource(crate::colony::stations::BuildInteraction::default());
+
+    // Derived activity is deliberately absent from the save format. Rebuild it
+    // through the production resolver without granting a movement step or
+    // emitting a second Blocked transition log.
+    world.insert_resource(crate::colony::survivors::RecomputingWorkerActivity);
+    let mut activity_schedule = Schedule::default();
+    activity_schedule.add_systems(crate::colony::survivors::process_survivor_movement);
+    activity_schedule.run(world);
+    world.remove_resource::<crate::colony::survivors::RecomputingWorkerActivity>();
+    world.insert_resource(WorldJustRestored);
 
     Ok(save_id_to_entity)
 }
@@ -892,6 +914,7 @@ mod tests {
             seed: 42,
             turn: 0,
             session: crate::session::RunSession::new(42),
+            last_completed_run: crate::session::LastCompletedRun::default(),
             map_width: 10,
             map_height: 10,
             map_tiles: vec![Tile::Floor; 100],
@@ -909,6 +932,81 @@ mod tests {
     fn save_version_recorded() {
         let snap = test_snapshot();
         assert_eq!(snap.save_version, SAVE_VERSION);
+    }
+
+    #[test]
+    fn log_message_and_level_round_trip_without_text_prefixing() {
+        let mut source = App::new();
+        source.add_plugins(crate::BdCorePlugin);
+        source
+            .world_mut()
+            .resource_mut::<GameLog>()
+            .push("Save requested.", crate::gamelog::LogLevel::Warn);
+        source
+            .world_mut()
+            .resource_mut::<GameLog>()
+            .push("Newest result.", crate::gamelog::LogLevel::Combat);
+        let snapshot = build_snapshot(source.world_mut(), 42, 0);
+
+        let mut restored = App::new();
+        restored.add_plugins(crate::BdCorePlugin);
+        restore_snapshot_into(restored.world_mut(), &snapshot, &HashMap::new()).unwrap();
+        let entries = restored
+            .world()
+            .resource::<GameLog>()
+            .iter()
+            .collect::<Vec<_>>();
+
+        assert_eq!(entries[0].message, "Newest result.");
+        assert_eq!(entries[0].level, crate::gamelog::LogLevel::Combat);
+        assert_eq!(entries[1].message, "Save requested.");
+        assert_eq!(entries[1].level, crate::gamelog::LogLevel::Warn);
+    }
+
+    #[test]
+    fn older_duplicate_player_supplies_save_is_rejected_readably() {
+        let mut snap = test_snapshot();
+        snap.save_version = SAVE_VERSION - 1;
+        snap.entities.push(EntityData {
+            save_id: SaveId(1),
+            blueprint_id: Some("blueprint.player".into()),
+            is_player: true,
+            blocks_movement: false,
+            name: Some("Player".into()),
+            content_id: None,
+            position: Some(Position { x: 1, y: 1 }),
+            skill_progression: None,
+            pools: vec![PoolSnapshot {
+                kind: PoolKind::Supplies,
+                current: 10,
+                min: 0,
+                max: 50,
+            }],
+            statuses: Vec::new(),
+            contains: Vec::new(),
+            equipped_by: None,
+            owned_by: None,
+            summoned_by: None,
+            location_owned: None,
+            faction: None,
+            item: false,
+            container_capacity: None,
+            equipment_slot: None,
+            usable: false,
+            usable_consume: false,
+            usable_effects: Vec::new(),
+            scope: None,
+            survivor_task: None,
+            station_type: None,
+            resource_node: None,
+            exit_tile: false,
+        });
+
+        let error = validate_snapshot(&snap).expect_err("older split-ownership save must fail");
+        assert!(
+            error.to_string().contains("version"),
+            "version rejection must be readable: {error}"
+        );
     }
 
     #[test]
@@ -1222,10 +1320,11 @@ mod tests {
         app.world_mut()
             .entity_mut(player)
             .insert(Position { x: 10, y: 10 });
-        let mut pools_borrow = app.world_mut().get_mut::<Pools>(player).unwrap();
-        let hp = pools_borrow.get_mut(PoolKind::Health).unwrap();
-        hp.current = 5;
-        drop(pools_borrow);
+        {
+            let mut pools_borrow = app.world_mut().get_mut::<Pools>(player).unwrap();
+            let hp = pools_borrow.get_mut(PoolKind::Health).unwrap();
+            hp.current = 5;
+        }
 
         // Load saved state (empty blueprints — player uses components directly)
         let blueprints = HashMap::new();

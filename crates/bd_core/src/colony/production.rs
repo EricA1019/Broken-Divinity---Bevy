@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     colony::survivors::{Survivor, SurvivorTask},
+    components::{Position, ResourceNodeType},
     gamelog::{GameLog, LogLevel},
     pools::{Pool, Pools},
     signals::PoolKind,
@@ -55,6 +56,179 @@ pub struct DailySummary {
 #[derive(Resource, Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LatestDailySummary(pub Option<DailySummary>);
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ColonyForecast {
+    pub food_consumed: i32,
+    pub station_supplies: i32,
+    pub gathered_supplies: i32,
+    pub supplies_net: i32,
+    pub supplies_after: i32,
+    pub materials_net: i32,
+    pub plants_net: i32,
+    pub faith_net: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SurvivorWorkSnapshot {
+    pub task: SurvivorTask,
+    pub position: Position,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StationWorkSnapshot {
+    pub entity_bits: u64,
+    pub station_type: crate::colony::stations::StationType,
+    pub position: Position,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ResourceWorkSnapshot {
+    pub kind: ResourceNodeType,
+    pub position: Position,
+    pub depleted: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PhysicalWorkContribution {
+    Station(StationWorkSnapshot),
+    Resource(ResourceWorkSnapshot),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PhysicalWorkDenial {
+    NotAssigned,
+    MissingTarget,
+    NotAdjacent,
+    TargetDepleted,
+    WrongResource,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PhysicalWorkEvaluation {
+    Contributes(PhysicalWorkContribution),
+    NoContribution(PhysicalWorkDenial),
+}
+
+/// Evaluate current physical work from durable assignment and world
+/// snapshots. This is the sole station/gathering contribution rule used by
+/// production, gathering, forecast, recovery effects, and activity checks.
+pub fn evaluate_physical_work(
+    worker: &SurvivorWorkSnapshot,
+    stations: &[StationWorkSnapshot],
+    nodes: &[ResourceWorkSnapshot],
+) -> PhysicalWorkEvaluation {
+    match worker.task {
+        SurvivorTask::AssignedTo(station_bits) => {
+            let Some(station) = stations
+                .iter()
+                .find(|station| station.entity_bits == station_bits)
+                .copied()
+            else {
+                return PhysicalWorkEvaluation::NoContribution(PhysicalWorkDenial::MissingTarget);
+            };
+            if !crate::colony::survivors::cardinally_adjacent(worker.position, station.position) {
+                return PhysicalWorkEvaluation::NoContribution(PhysicalWorkDenial::NotAdjacent);
+            }
+            PhysicalWorkEvaluation::Contributes(PhysicalWorkContribution::Station(station))
+        }
+        SurvivorTask::Gathering(kind) => {
+            let adjacent = nodes
+                .iter()
+                .filter(|node| {
+                    crate::colony::survivors::cardinally_adjacent(worker.position, node.position)
+                })
+                .collect::<Vec<_>>();
+            if let Some(node) = adjacent
+                .iter()
+                .find(|node| {
+                    !node.depleted && crate::colony::resources::pool_for_node(node.kind) == kind
+                })
+                .copied()
+                .copied()
+            {
+                return PhysicalWorkEvaluation::Contributes(PhysicalWorkContribution::Resource(
+                    node,
+                ));
+            }
+            if adjacent.iter().any(|node| {
+                node.depleted && crate::colony::resources::pool_for_node(node.kind) == kind
+            }) {
+                return PhysicalWorkEvaluation::NoContribution(PhysicalWorkDenial::TargetDepleted);
+            }
+            if adjacent.is_empty() {
+                PhysicalWorkEvaluation::NoContribution(PhysicalWorkDenial::NotAdjacent)
+            } else {
+                PhysicalWorkEvaluation::NoContribution(PhysicalWorkDenial::WrongResource)
+            }
+        }
+        SurvivorTask::Idle | SurvivorTask::Defending | SurvivorTask::Resting => {
+            PhysicalWorkEvaluation::NoContribution(PhysicalWorkDenial::NotAssigned)
+        }
+    }
+}
+
+pub fn forecast_colony(
+    resources: &ColonyResources,
+    survivors: &[SurvivorWorkSnapshot],
+    stations: &[StationWorkSnapshot],
+    nodes: &[ResourceWorkSnapshot],
+    station_catalog: &crate::colony::stations::StationCatalog,
+) -> ColonyForecast {
+    let supplies_before = resource_value(resources, PoolKind::Supplies);
+    let food_required =
+        survivors.len() as i32 * crate::colony::survivors::FOOD_PER_SURVIVOR_PER_DAY;
+    let food_consumed = food_required.min(supplies_before);
+    let mut forecast = ColonyForecast {
+        food_consumed,
+        ..Default::default()
+    };
+
+    let mut credited_stations = std::collections::HashSet::new();
+    for worker in survivors {
+        match evaluate_physical_work(worker, stations, nodes) {
+            PhysicalWorkEvaluation::Contributes(PhysicalWorkContribution::Resource(node)) => {
+                match crate::colony::resources::pool_for_node(node.kind) {
+                    PoolKind::Supplies => {
+                        forecast.gathered_supplies +=
+                            crate::colony::resources::GATHERING_YIELD_PER_DAY
+                    }
+                    PoolKind::Materials => {
+                        forecast.materials_net += crate::colony::resources::GATHERING_YIELD_PER_DAY
+                    }
+                    PoolKind::WildPlants => {
+                        forecast.plants_net += crate::colony::resources::GATHERING_YIELD_PER_DAY
+                    }
+                    _ => {}
+                }
+            }
+            PhysicalWorkEvaluation::Contributes(PhysicalWorkContribution::Station(station)) => {
+                if !credited_stations.insert(station.entity_bits) {
+                    continue;
+                }
+                let Some(blueprint) = station_catalog.get(station.station_type) else {
+                    continue;
+                };
+                if let crate::colony::stations::StationEffect::Produce { kind, amount } =
+                    blueprint.effect
+                {
+                    match kind {
+                        PoolKind::Supplies => forecast.station_supplies += amount,
+                        PoolKind::Materials => forecast.materials_net += amount,
+                        PoolKind::WildPlants => forecast.plants_net += amount,
+                        PoolKind::Faith => forecast.faith_net += amount,
+                        _ => {}
+                    }
+                }
+            }
+            PhysicalWorkEvaluation::NoContribution(_) => {}
+        }
+    }
+    forecast.supplies_net =
+        forecast.station_supplies + forecast.gathered_supplies - forecast.food_consumed;
+    forecast.supplies_after = (supplies_before + forecast.supplies_net).clamp(0, 100);
+    forecast
+}
+
 #[derive(Resource, Debug, Default)]
 pub(crate) struct DailyCycleDraft(pub Option<DailySummary>);
 
@@ -85,21 +259,56 @@ impl Default for ColonyResources {
     }
 }
 
+#[cfg(test)]
+mod physical_work_contract_tests {
+    use super::*;
+    use crate::colony::stations::StationType;
+
+    #[test]
+    fn one_physical_work_evaluator_classifies_station_and_resource_contributions() {
+        let station = StationWorkSnapshot {
+            entity_bits: 7,
+            station_type: StationType::Stove,
+            position: Position { x: 5, y: 5 },
+        };
+        let node = ResourceWorkSnapshot {
+            kind: ResourceNodeType::Trees,
+            position: Position { x: 8, y: 8 },
+            depleted: false,
+        };
+
+        let station_worker = SurvivorWorkSnapshot {
+            task: SurvivorTask::AssignedTo(7),
+            position: Position { x: 4, y: 5 },
+        };
+        assert_eq!(
+            evaluate_physical_work(&station_worker, &[station], &[node]),
+            PhysicalWorkEvaluation::Contributes(PhysicalWorkContribution::Station(station))
+        );
+
+        let gatherer = SurvivorWorkSnapshot {
+            task: SurvivorTask::Gathering(PoolKind::Materials),
+            position: Position { x: 8, y: 7 },
+        };
+        assert_eq!(
+            evaluate_physical_work(&gatherer, &[station], &[node]),
+            PhysicalWorkEvaluation::Contributes(PhysicalWorkContribution::Resource(node))
+        );
+    }
+}
+
 /// Processes production at day change: stations produce (only if staffed), survivors eat.
 pub(crate) fn process_production(
     mut colony_res: ResMut<ColonyResources>,
-    survivors_query: Query<&SurvivorTask, With<Survivor>>,
+    survivors_query: Query<(&Position, &SurvivorTask), With<Survivor>>,
     stations_query: Query<
-        (Entity, &crate::colony::stations::StationType),
+        (Entity, &Position, &crate::colony::stations::StationType),
         With<crate::colony::stations::Station>,
     >,
-    mode: Res<crate::spatial::GameMode>,
     mut days: bevy_ecs::message::MessageReader<crate::time::DayAdvanced>,
     mut draft: ResMut<DailyCycleDraft>,
+    station_catalog: Res<crate::colony::stations::StationCatalog>,
 ) {
-    if *mode != crate::spatial::GameMode::Outpost {
-        return;
-    }
     let Some(day) = days.read().last().map(|event| event.day) else {
         return;
     };
@@ -113,7 +322,22 @@ pub(crate) fn process_production(
     };
 
     // Survivors consume food
-    let survivor_count = survivors_query.iter().count() as i32;
+    let survivors = survivors_query
+        .iter()
+        .map(|(position, task)| SurvivorWorkSnapshot {
+            task: task.clone(),
+            position: *position,
+        })
+        .collect::<Vec<_>>();
+    let stations = stations_query
+        .iter()
+        .map(|(entity, position, station_type)| StationWorkSnapshot {
+            entity_bits: entity.to_bits(),
+            station_type: *station_type,
+            position: *position,
+        })
+        .collect::<Vec<_>>();
+    let survivor_count = survivors.len() as i32;
     if let Some(supplies) = colony_res.pools.get_mut(PoolKind::Supplies) {
         let required = survivor_count * crate::colony::survivors::FOOD_PER_SURVIVOR_PER_DAY;
         summary.food_consumed = required.min(supplies.current);
@@ -123,25 +347,25 @@ pub(crate) fn process_production(
         supplies.current -= summary.food_consumed;
     }
 
-    // Collect which station entities have at least one assigned worker
-    use std::collections::HashSet;
-    let staffed: HashSet<Entity> = survivors_query
+    let staffed = survivors
         .iter()
-        .filter_map(|t| match t {
-            SurvivorTask::AssignedTo(idx) => Some(Entity::from_bits(*idx)),
-            _ => None,
-        })
-        .collect();
+        .filter_map(
+            |worker| match evaluate_physical_work(worker, &stations, &[]) {
+                PhysicalWorkEvaluation::Contributes(PhysicalWorkContribution::Station(station)) => {
+                    Some(station.entity_bits)
+                }
+                _ => None,
+            },
+        )
+        .collect::<std::collections::HashSet<_>>();
 
-    // Stations produce resources — only if at least one survivor is assigned
-    let blueprints = crate::colony::stations::default_station_blueprints();
-    for (station_entity, station_type) in stations_query.iter() {
-        if !staffed.contains(&station_entity) {
-            continue; // no worker assigned — skip production
+    for station in &stations {
+        if !staffed.contains(&station.entity_bits) {
+            continue;
         }
         summary.staffed_stations += 1;
-        if let Some(bp) = blueprints.iter().find(|b| b.station_type == *station_type) {
-            if let Some((kind, amount)) = bp.produces {
+        if let Some(bp) = station_catalog.get(station.station_type) {
+            if let crate::colony::stations::StationEffect::Produce { kind, amount } = bp.effect {
                 if let Some(pool) = colony_res.pools.get_mut(kind) {
                     let before = pool.current;
                     pool.current = (pool.current + amount).min(pool.max);
@@ -171,12 +395,20 @@ pub(crate) fn finalize_daily_cycle(
     summary.faith_after = resource_value(&resources, PoolKind::Faith);
     game_log.push(
         format!(
-            "--- Day {} --- Supplies:{} Materials:{} Plants:{} Faith:{} | Food: -{}",
+            "Day {}: Supplies {}→{} ({:+}); Materials {}→{} ({:+}); Plants {}→{} ({:+}); Faith {}→{} ({:+}); Food -{}.",
             summary.day,
+            summary.supplies_before,
             summary.supplies_after,
+            summary.supplies_after - summary.supplies_before,
+            summary.materials_before,
             summary.materials_after,
+            summary.materials_after - summary.materials_before,
+            summary.wild_plants_before,
             summary.wild_plants_after,
+            summary.wild_plants_after - summary.wild_plants_before,
+            summary.faith_before,
             summary.faith_after,
+            summary.faith_after - summary.faith_before,
             summary.food_consumed
         ),
         LogLevel::Info,

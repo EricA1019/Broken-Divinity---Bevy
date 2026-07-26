@@ -5,8 +5,16 @@
 //! queue: a failure names the first unsupported player-visible step and must
 //! not be bypassed with direct ECS mutation.
 
-use bd_core::{direction::Direction, session::RunOutcome, signals::PoolKind, spatial::GameMode};
-use bd_test_support::FoundationDriver;
+use bd_core::{
+    direction::Direction,
+    map::SmokeMap,
+    pathfinding::{AStarPathfinder, Pathfinder},
+    session::RunOutcome,
+    signals::PoolKind,
+    spatial::GameMode,
+};
+use bd_test_support::{FoundationDriver, foundation_content};
+use std::collections::HashSet;
 
 const FIXED_DUNGEON: &str = "dungeon.foundation";
 
@@ -54,7 +62,7 @@ fn fixed_dungeon_loads_without_procgen() {
 
     assert_eq!(summary.mode, GameMode::Tactical);
     assert_eq!(summary.dungeon_id.as_deref(), Some(FIXED_DUNGEON));
-    assert_eq!(summary.map_size, (8, 6));
+    assert_eq!(summary.map_size, (12, 8));
     assert_eq!(summary.hostiles, 1);
     assert_eq!(summary.loose_items, 1);
     assert!(
@@ -64,6 +72,41 @@ fn fixed_dungeon_loads_without_procgen() {
             .any(|entry| entry.to_ascii_lowercase().contains("procgen")),
         "foundation transition invoked procgen: {:?}",
         summary.trace_events
+    );
+}
+
+#[test]
+fn healing_item_is_on_an_optional_route() {
+    let content = foundation_content();
+    let dungeon = content.dungeon(FIXED_DUNGEON).unwrap();
+    let map = SmokeMap::from_tiles(dungeon.width, dungeon.height, &dungeon.tiles);
+    let item = dungeon.item_placements[0].position;
+    let direct = AStarPathfinder
+        .find_path(&map, dungeon.entrance, dungeon.extraction, &HashSet::new())
+        .unwrap();
+    let to_item = AStarPathfinder
+        .find_path(&map, dungeon.entrance, item, &HashSet::new())
+        .unwrap();
+    let item_to_exit = AStarPathfinder
+        .find_path(&map, item, dungeon.extraction, &HashSet::new())
+        .unwrap();
+
+    assert!(
+        to_item.len() + item_to_exit.len() - 1 > direct.len(),
+        "healing loot must require a deliberate detour"
+    );
+}
+
+#[test]
+fn canonical_combat_requires_more_than_one_attack() {
+    let mut driver = dungeon_driver();
+    let hostile = driver.first_hostile().unwrap();
+    driver
+        .approach_and_attack_first_hostile("first pressure attack")
+        .unwrap();
+    assert!(
+        driver.entity_exists(hostile),
+        "the fixed-seed encounter must not end in one default attack"
     );
 }
 
@@ -123,6 +166,9 @@ fn canonical_dungeon_run_uses_actions() {
         .approach_and_defeat("dungeon run: defeat hostile", hostile)
         .unwrap();
     driver
+        .defeat_all_hostiles("dungeon run: clear remaining hostiles")
+        .unwrap();
+    driver
         .approach_and_pick_up("dungeon run: pick up healing item")
         .unwrap();
 
@@ -134,7 +180,7 @@ fn canonical_dungeon_run_uses_actions() {
 fn canonical_extraction_applies_loot_once() {
     let mut driver = dungeon_driver();
     driver
-        .approach_and_defeat_first_hostile("extraction: defeat hostile")
+        .defeat_all_hostiles("extraction: defeat hostiles")
         .unwrap();
     driver
         .approach_and_pick_up("extraction: collect loot")

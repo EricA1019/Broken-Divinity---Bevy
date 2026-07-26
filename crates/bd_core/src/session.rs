@@ -22,16 +22,36 @@ pub struct ActionReplayRecord {
 pub struct FoundationRuntime;
 
 /// Outcome of the current foundation run.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RunOutcome {
+    #[default]
     None,
     Extracted,
     Defeated,
 }
 
-impl Default for RunOutcome {
+#[derive(Resource, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct LastCompletedRun {
+    pub outcome: RunOutcome,
+    pub extracted_loot: u32,
+    pub dungeon_id: Option<String>,
+}
+
+impl Default for LastCompletedRun {
     fn default() -> Self {
-        Self::None
+        Self {
+            outcome: RunOutcome::None,
+            extracted_loot: 0,
+            dungeon_id: None,
+        }
+    }
+}
+
+impl LastCompletedRun {
+    pub fn record(&mut self, session: &RunSession) {
+        self.outcome = session.outcome;
+        self.extracted_loot = session.extracted_loot;
+        self.dungeon_id.clone_from(&session.dungeon_id);
     }
 }
 
@@ -127,11 +147,17 @@ impl RunSession {
         self.outcome = RunOutcome::Defeated;
         self.phase = GameMode::GameOver;
     }
+
+    pub fn complete_defeat(&mut self, last_completed: &mut LastCompletedRun) {
+        self.mark_defeated();
+        last_completed.record(self);
+    }
 }
 
 /// Register session state for the foundation runtime.
 pub(crate) fn register_session(app: &mut bevy_app::App, foundation: bool) {
     app.init_resource::<RunSession>();
+    app.init_resource::<LastCompletedRun>();
     app.add_systems(
         bevy_app::Update,
         synchronize_rng.in_set(crate::BdSet::Input),

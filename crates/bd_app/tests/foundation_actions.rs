@@ -96,7 +96,9 @@ fn survivor_task_assignment_resolves_through_action_pipeline() {
 
     assert!(matches!(
         driver.survivor_task(survivor),
-        Some(SurvivorTask::Gathering)
+        Some(SurvivorTask::Gathering(
+            bd_core::signals::PoolKind::Supplies
+        ))
     ));
 }
 
@@ -228,4 +230,83 @@ fn replay_includes_pickup_and_colony_actions() {
             .iter()
             .any(|record| record.action_id == "ability.pickup")
     );
+}
+
+#[test]
+fn valid_fixed_dungeon_movement_changes_one_cardinal_tile() {
+    let mut driver = dungeon_driver();
+    let player = driver.player().expect("fixed dungeon player must exist");
+    let before = driver
+        .position(player)
+        .expect("player must have a position");
+    let turn_before = driver.summary().turn;
+
+    driver
+        .expect_action(
+            "fixed dungeon valid movement",
+            player,
+            "ability.move",
+            Some(Direction::East),
+            None,
+        )
+        .expect("the floor east of the fixed entrance must be walkable");
+
+    let after = driver
+        .position(player)
+        .expect("player must remain positioned");
+    assert_eq!(
+        (after.x - before.x, after.y - before.y),
+        (1, 0),
+        "one accepted east move must change exactly one cardinal tile"
+    );
+    assert_eq!(driver.summary().turn, turn_before + 1);
+}
+
+#[test]
+fn fixed_dungeon_wall_movement_is_typed_and_atomic() {
+    let mut driver = dungeon_driver();
+    let player = driver.player().expect("fixed dungeon player must exist");
+    let before = driver.summary();
+
+    let reason = driver
+        .expect_denied_action(
+            "fixed dungeon wall movement",
+            player,
+            "ability.move",
+            Some(Direction::West),
+            None,
+        )
+        .expect("the wall west of the fixed entrance must emit a typed denial");
+
+    assert_eq!(reason, DenialReason::BlockedTile);
+    let after = driver.summary();
+    assert_eq!(after.player_position, before.player_position);
+    assert_eq!(after.turn, before.turn);
+    assert_eq!(after.replay_intents, before.replay_intents);
+}
+
+#[test]
+fn extraction_away_from_fixed_exit_is_typed_and_atomic() {
+    let mut driver = dungeon_driver();
+    let player = driver.player().expect("fixed dungeon player must exist");
+    let before = driver.summary();
+
+    driver
+        .expect_denied_action(
+            "fixed dungeon premature extraction",
+            player,
+            "ability.extract",
+            None,
+            None,
+        )
+        .expect("extracting away from the exit must emit a typed denial");
+
+    let after = driver.summary();
+    assert_eq!(after.mode, before.mode);
+    assert_eq!(after.player_position, before.player_position);
+    assert_eq!(after.turn, before.turn);
+    assert_eq!(after.outcome, before.outcome);
+    assert_eq!(after.storage_items, before.storage_items);
+    assert_eq!(after.extracted_loot, before.extracted_loot);
+    assert_eq!(after.replay_intents, before.replay_intents);
 }

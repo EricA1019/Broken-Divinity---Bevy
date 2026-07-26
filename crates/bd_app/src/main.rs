@@ -4,7 +4,10 @@
 //! and spawns the Phase 1 minimal terminal slice.
 
 use std::time::Duration;
-use std::{collections::HashMap, path::Path};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+};
 
 use bevy_app::{AppExit, PanicHandlerPlugin, ScheduleRunnerPlugin};
 use bevy_ecs::message::MessageWriter;
@@ -61,6 +64,7 @@ fn run_application() -> Result<(), String> {
             config::ConfigSource::File(p) => p.to_str().unwrap_or("unknown"),
         }
     );
+    let save_dir = resolve_save_directory(&loaded.config, &data_dir);
     let command_bindings = loaded
         .config
         .keybindings
@@ -79,13 +83,16 @@ fn run_application() -> Result<(), String> {
         bd_core::foundation_action_is_registered(app.world(), action_id)
     })
     .map_err(|error| format!("content error: {error}"))?;
+    app.insert_resource(bd_core::colony::stations::StationCatalog::new(
+        application_content.foundation.stations.clone(),
+    ));
     app.insert_resource(application_content.foundation);
 
     app.add_plugins(bd_tui::BdTuiPlugin);
     app.insert_resource(command_bindings);
     app.insert_resource(application_content.symbols);
     app.insert_resource(application_content.themes);
-    app.insert_resource(ManualSaveDirectory(data_dir.join("saves")));
+    app.insert_resource(ManualSaveDirectory(save_dir));
 
     configure_application_boundary_systems(&mut app);
 
@@ -96,6 +103,14 @@ fn run_application() -> Result<(), String> {
 
 #[derive(bevy_ecs::prelude::Resource)]
 struct ManualSaveDirectory(std::path::PathBuf);
+
+fn resolve_save_directory(config: &config::AppConfig, data_dir: &Path) -> PathBuf {
+    config
+        .save_dir_override
+        .as_deref()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| data_dir.join("saves"))
+}
 
 fn configure_application_boundary_systems(app: &mut bevy_app::App) {
     app.init_resource::<bd_tui::commands::ApplicationExitRequest>();
@@ -130,9 +145,12 @@ fn process_persistence_requests(world: &mut bevy_ecs::world::World) {
             Ok(path) => world
                 .resource_mut::<GameLog>()
                 .push(format!("Game saved to {}.", path.display()), LogLevel::Info),
-            Err(error) => world
-                .resource_mut::<GameLog>()
-                .push(format!("Save failed: {error}"), LogLevel::Warn),
+            Err(error) => {
+                tracing::warn!("Manual save failed: {error}");
+                world
+                    .resource_mut::<GameLog>()
+                    .push(player_facing_save_error(&error, false), LogLevel::Warn);
+            }
         }
     }
 
@@ -155,10 +173,31 @@ fn process_persistence_requests(world: &mut bevy_ecs::world::World) {
                     LogLevel::Info,
                 );
             }
-            Err(error) => world
-                .resource_mut::<GameLog>()
-                .push(format!("Load failed: {error}"), LogLevel::Warn),
+            Err(error) => {
+                tracing::warn!("Manual load failed: {error}");
+                world
+                    .resource_mut::<GameLog>()
+                    .push(player_facing_save_error(&error, true), LogLevel::Warn);
+            }
         }
+    }
+}
+
+fn player_facing_save_error(error: &bd_core::save::SaveError, loading: bool) -> String {
+    use bd_core::save::SaveError;
+    match error {
+        SaveError::Io(io) if loading && io.kind() == std::io::ErrorKind::NotFound => {
+            "No manual save exists yet.".into()
+        }
+        SaveError::Corrupt(_) => "The manual save is corrupt and could not be loaded.".into(),
+        SaveError::VersionMismatch { .. } | SaveError::ContentMismatch { .. } => {
+            "The manual save is incompatible with this build.".into()
+        }
+        SaveError::MissingBlueprint(_) => {
+            "The manual save references content unavailable in this build.".into()
+        }
+        SaveError::Io(_) if loading => "The manual save could not be accessed.".into(),
+        SaveError::Io(_) => "The game could not write the manual save.".into(),
     }
 }
 
@@ -235,12 +274,13 @@ fn run_validation() -> Result<(), String> {
     })
     .map_err(|error| format!("content error: {error}"))?;
     tracing::info!(
-        "Foundation: {} dungeons, {} items, {} skills, {} factions, {} actions, {} blueprints",
+        "Foundation: {} dungeons, {} items, {} skills, {} factions, {} actions, {} stations, {} blueprints",
         content.foundation.dungeons.len(),
         content.foundation.items.len(),
         content.foundation.skills.len(),
         content.foundation.factions.len(),
         content.foundation.actions.len(),
+        content.foundation.stations.len(),
         content.foundation.blueprints.len()
     );
     tracing::info!("Content validation PASSED");
@@ -271,6 +311,78 @@ mod application_tests {
         let error = load_application_content(&missing).unwrap_err();
         assert!(error.contains("content error"));
         assert!(error.contains("dungeons/foundation.ron"));
+    }
+
+    #[test]
+    fn persistence_errors_are_classified_without_internal_diagnostics() {
+        use bd_core::save::SaveError;
+
+        let cases = [
+            (
+                SaveError::Io(std::io::Error::new(
+                    std::io::ErrorKind::NotFound,
+                    "raw missing path",
+                )),
+                true,
+                "No manual save exists yet.",
+            ),
+            (
+                SaveError::Corrupt("raw parser detail".into()),
+                true,
+                "The manual save is corrupt and could not be loaded.",
+            ),
+            (
+                SaveError::VersionMismatch {
+                    expected: 2,
+                    found: 1,
+                },
+                true,
+                "The manual save is incompatible with this build.",
+            ),
+            (
+                SaveError::MissingBlueprint("blueprint.raw".into()),
+                true,
+                "The manual save references content unavailable in this build.",
+            ),
+            (
+                SaveError::Io(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "raw denied path",
+                )),
+                true,
+                "The manual save could not be accessed.",
+            ),
+            (
+                SaveError::Io(std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "raw denied path",
+                )),
+                false,
+                "The game could not write the manual save.",
+            ),
+        ];
+
+        for (error, loading, expected) in cases {
+            let message = player_facing_save_error(&error, loading);
+            assert_eq!(message, expected);
+            assert!(!message.contains("raw"));
+        }
+    }
+
+    #[test]
+    fn configured_save_directory_override_is_honored() {
+        let default_data_dir = Path::new("/default/data");
+        let mut config = config::AppConfig::default();
+        assert_eq!(
+            resolve_save_directory(&config, default_data_dir),
+            default_data_dir.join("saves")
+        );
+
+        config.save_dir_override = Some("/explicit/foundation-saves".into());
+        assert_eq!(
+            resolve_save_directory(&config, default_data_dir),
+            Path::new("/explicit/foundation-saves")
+        );
     }
 
     #[test]

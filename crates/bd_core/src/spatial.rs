@@ -11,8 +11,10 @@ use serde::{Deserialize, Serialize};
 
 use crate::map::SmokeMap;
 use crate::{
+    actions::{ActionDefinition, Effect, Requirement},
     components::{ExitTile, Player, Position},
     gamelog::{GameLog, LogLevel},
+    signals::PoolKind,
 };
 
 // ---------------------------------------------------------------------------
@@ -187,11 +189,18 @@ struct ExtractionContext<'w, 's> {
     >,
 }
 
+#[derive(SystemParam)]
+struct TransitionRunState<'w> {
+    mode: ResMut<'w, GameMode>,
+    session: ResMut<'w, crate::session::RunSession>,
+    last_completed: ResMut<'w, crate::session::LastCompletedRun>,
+}
+
+#[allow(clippy::too_many_arguments)] // Transition owners stay explicit across optional profiles.
 fn process_transitions(
     mut messages: bevy_ecs::message::MessageReader<TransitionIntent>,
     mut commands: Commands,
-    mut mode: ResMut<GameMode>,
-    mut session: ResMut<crate::session::RunSession>,
+    run_state: TransitionRunState,
     mut game_log: ResMut<GameLog>,
     mut map: ResMut<SmokeMap>,
     outpost: Res<OutpostState>,
@@ -208,6 +217,11 @@ fn process_transitions(
     player_query: Query<Entity, With<Player>>,
     mut extraction: ExtractionContext,
 ) {
+    let TransitionRunState {
+        mut mode,
+        mut session,
+        mut last_completed,
+    } = run_state;
     for msg in messages.read() {
         // Legacy tests historically set GameMode directly. Synchronize that
         // setup into the session once, while foundation gameplay uses the
@@ -227,8 +241,12 @@ fn process_transitions(
             continue;
         }
 
-        // Clean up transient entities when leaving tactical mode
-        if *mode == GameMode::Tactical && msg.target != GameMode::Tactical {
+        // Clean up transient dungeon entities when leaving an active or
+        // defeated run. Defeat switches mode directly to GameOver, so the
+        // later restart transition must still own location cleanup.
+        if matches!(*mode, GameMode::Tactical | GameMode::GameOver)
+            && msg.target != GameMode::Tactical
+        {
             for (entity, scope) in scoped_entities.iter() {
                 if *scope == EntityScope::DungeonTransient {
                     commands.entity(entity).despawn();
@@ -243,7 +261,6 @@ fn process_transitions(
         match msg.target {
             GameMode::Title => {}
             GameMode::Outpost => {
-                game_log.push("You return to the outpost.", LogLevel::Info);
                 if from == GameMode::Tactical && !session.extraction_applied {
                     let player = player_query.iter().next();
                     let mut transferred = 0usize;
@@ -256,13 +273,21 @@ fn process_transitions(
                         }
                     }
                     session.mark_extracted_with_loot(transferred as u32);
+                    last_completed.record(&session);
                     game_log.push(
-                        format!("Run extracted successfully. Loot secured: {transferred}."),
+                        format!("Extracted; loot secured: {transferred}."),
                         LogLevel::Info,
                     );
+                } else {
+                    game_log.push("You enter the shelter.", LogLevel::Info);
                 }
                 // Sync global map to shelter map so movement validation works
                 *map = outpost.map.clone();
+                if let Some(player) = player_query.iter().next() {
+                    commands
+                        .entity(player)
+                        .insert(crate::colony::shelter::SHELTER_RETURN_SPAWN);
+                }
 
                 // P15-C: Spawn Gabriel in shelter if he has appeared and not already present
                 if gabriel_state.as_ref().is_some_and(|state| state.appeared)
@@ -314,7 +339,7 @@ fn process_transitions(
         }
 
         if msg.target == GameMode::GameOver {
-            session.mark_defeated();
+            session.complete_defeat(&mut last_completed);
         }
 
         transition_complete.write(TransitionComplete {
@@ -537,18 +562,10 @@ pub fn initialize_outpost(
     if *mode != GameMode::Outpost {
         return;
     }
-    // Only initialize once
-    if !outpost.party.is_empty() {
-        return;
-    }
 
-    // Set the shelter map as the outpost map
-    outpost.map = crate::colony::shelter::create_shelter_map();
-    // Sync global map only if still using default 20x12 (not a test/custom map)
-    if map.width == 20 && map.height == 12 {
-        *map = outpost.map.clone();
-    }
-
+    // The shelter population is persistent, but the player run authority may
+    // have been cleaned up on defeat. Recreate exactly one player before the
+    // one-time colony initialization guard.
     if player_query.iter().next().is_none() {
         if let Some(blueprint) = foundation_content.as_deref().and_then(|content| {
             content
@@ -558,7 +575,7 @@ pub fn initialize_outpost(
         }) {
             let player = crate::factory::spawn_from_blueprint(
                 blueprint,
-                Some(Position { x: 1, y: 1 }),
+                Some(crate::colony::shelter::SHELTER_RETURN_SPAWN),
                 &[],
                 &mut commands,
             );
@@ -570,9 +587,21 @@ pub fn initialize_outpost(
         }
     }
 
+    // Only initialize persistent shelter entities once.
+    if !outpost.party.is_empty() {
+        return;
+    }
+
+    // Set the shelter map as the outpost map
+    outpost.map = crate::colony::shelter::create_shelter_map();
+    // Sync global map only if still using default 20x12 (not a test/custom map)
+    if map.width == 20 && map.height == 12 {
+        *map = outpost.map.clone();
+    }
+
     // Spawn a few starter survivors
     for i in 0..3 {
-        let x = 5 + i as i32 * 5;
+        let x = 5 + i * 5;
         let y = 5;
         let survivor = commands
             .spawn((
@@ -635,56 +664,47 @@ pub fn register_spatial(app: &mut App) {
 
     app.add_systems(
         bevy_app::Update,
-        initialize_outpost.in_set(crate::BdSet::IntentCollection),
-    );
-
-    // Exit tile detection — return to outpost when player steps on exit.
-    // Runs in Mutation after movement has applied the new position but before
-    // ResultEmission cleanup systems that might despawn the ExitTile entity.
-    app.add_systems(
-        bevy_app::Update,
-        detect_exit_tile.in_set(crate::BdSet::Mutation),
+        initialize_outpost
+            .after(process_transitions)
+            .in_set(crate::BdSet::IntentCollection),
     );
 
     tracing::info!("Spatial module registered");
 }
 
-/// When player steps on an ExitTile in Tactical or Outpost mode, transition.
-fn detect_exit_tile(
-    player: Query<&Position, With<Player>>,
-    exits: Query<&Position, With<ExitTile>>,
-    mode: Res<GameMode>,
-    mut game_log: ResMut<GameLog>,
-) {
-    match *mode {
-        GameMode::Tactical | GameMode::Outpost => {} // allow exit detection
-        _ => return,
-    }
-    let Ok(player_pos) = player.single() else {
-        return;
-    };
-    for exit_pos in exits.iter() {
-        if *player_pos == *exit_pos {
-            tracing::info!("Player on exit tile at {:?} in {:?} mode", player_pos, mode);
-            if *mode == GameMode::Tactical {
-                game_log.push(
-                    "The exit is here. Press r to extract.".to_string(),
-                    LogLevel::Info,
-                );
-            } else {
-                // Outpost mode: walking to the gate logs a hint, then 't' travels
-                game_log.push(
-                    "The shelter gate. Press t to travel.".to_string(),
-                    LogLevel::Info,
-                );
-            }
-            return;
-        }
-    }
-}
-
 /// Supplies deducted when traveling from outpost to a dungeon.
 pub const TRAVEL_SUPPLIES_COST: i32 = 2;
+
+/// Stable content identity for the hand-authored Foundation dungeon.
+pub const FOUNDATION_DUNGEON_ID: &str = "dungeon.foundation";
+
+/// Canonical paid shelter-to-dungeon action.
+pub fn register_foundation_entry_action() -> ActionDefinition {
+    ActionDefinition {
+        id: "ability.enter_foundation_dungeon".into(),
+        label: "Enter Foundation Dungeon".into(),
+        requirements: vec![
+            Requirement::InMode(GameMode::Outpost),
+            Requirement::EntityAlive,
+            Requirement::ResourcePoolAbove(PoolKind::Supplies, TRAVEL_SUPPLIES_COST),
+        ],
+        cost_effects: vec![Effect::ColonyPoolDelta {
+            kind: PoolKind::Supplies,
+            amount: -TRAVEL_SUPPLIES_COST,
+            reason: "Foundation dungeon entry".into(),
+        }],
+        effects: vec![
+            Effect::RequestLocationTransition {
+                target: GameMode::Tactical,
+                node_id: FOUNDATION_DUNGEON_ID.into(),
+            },
+            Effect::Log(
+                "You commit supplies and enter the ruin.".into(),
+                LogLevel::Info,
+            ),
+        ],
+    }
+}
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -867,7 +887,8 @@ mod tests {
         app.world_mut()
             .spawn((ExitTile, exit_pos, crate::components::Name("Exit".into())));
 
-        // The exit provides feedback but does not bypass the explicit action.
+        // The exit is projected by the TUI action list and does not bypass the
+        // explicit action.
         app.update();
         app.update();
 
@@ -875,12 +896,6 @@ mod tests {
             *app.world().resource::<GameMode>(),
             GameMode::Tactical,
             "Player on exit tile should remain tactical until extraction"
-        );
-        assert!(
-            app.world()
-                .resource::<GameLog>()
-                .iter()
-                .any(|entry| { entry.message.contains("Press r to extract") })
         );
     }
 

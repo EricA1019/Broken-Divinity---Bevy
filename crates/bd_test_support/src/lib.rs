@@ -2,15 +2,17 @@
 //!
 //! Provides deterministic RNG, minimal app builders, and snapshot helpers.
 
+pub mod contract_registry;
+
 use bd_core::content::FoundationContent;
 use bd_core::{
     BdSet,
     colony::{
         production::ColonyStorage,
-        stations::Station,
-        survivors::{Survivor, SurvivorTask},
+        stations::{Station, StationType},
+        survivors::{Survivor, SurvivorTask, WorkerActivity},
     },
-    components::{Player, Position, ResourceNode},
+    components::{Name, Player, Position, ResourceNode, ResourceNodeType, Tile},
     direction::Direction,
     gamelog::GameLog,
     inventory::Item,
@@ -25,9 +27,10 @@ use bd_core::{
     spatial::{EntityScope, GameMode, OutpostState, TransitionComplete, TransitionIntent},
     trace::SignalTrace,
 };
-use bevy_app::{App, Update};
+use bevy_app::{App, Plugin, Update};
 use bevy_ecs::{
     entity::Entity,
+    error::{BevyError, DefaultErrorHandler, ErrorContext},
     message::{MessageReader, Messages},
     prelude::{IntoScheduleConfigs, ResMut, Resource},
 };
@@ -36,8 +39,21 @@ use rand_chacha::ChaCha8Rng;
 use std::{
     collections::{HashMap, HashSet},
     fmt,
-    sync::atomic::{AtomicU64, Ordering},
+    sync::{
+        Mutex, OnceLock,
+        atomic::{AtomicU64, Ordering},
+    },
 };
+
+static COMMAND_ERRORS: OnceLock<Mutex<Vec<String>>> = OnceLock::new();
+
+fn record_command_error(error: BevyError, context: ErrorContext) {
+    COMMAND_ERRORS
+        .get_or_init(|| Mutex::new(Vec::new()))
+        .lock()
+        .expect("command-error recorder mutex must not be poisoned")
+        .push(format!("{context}: {error}"));
+}
 
 /// Create a deterministic RNG from a fixed seed for reproducible tests.
 pub fn seeded_rng(seed: u64) -> ChaCha8Rng {
@@ -56,7 +72,11 @@ pub fn minimal_app() -> App {
 pub fn foundation_app() -> App {
     let mut app = App::new();
     app.add_plugins(bd_core::BdFoundationPlugin);
-    app.insert_resource(foundation_content());
+    let content = foundation_content();
+    app.insert_resource(bd_core::colony::stations::StationCatalog::new(
+        content.stations.clone(),
+    ));
+    app.insert_resource(content);
     app
 }
 
@@ -78,6 +98,7 @@ pub struct FoundationSummary {
     pub mode: GameMode,
     pub session_phase: GameMode,
     pub outcome: RunOutcome,
+    pub last_completed_outcome: RunOutcome,
     pub dungeon_id: Option<String>,
     pub day: u64,
     pub turn: u64,
@@ -97,6 +118,70 @@ pub struct FoundationSummary {
     pub medicine_skill: i32,
     pub replay_intents: Vec<bd_core::session::ActionReplayRecord>,
     pub trace_events: Vec<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PoolFingerprint {
+    pub kind: PoolKind,
+    pub current: i32,
+    pub min: i32,
+    pub max: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlayerFingerprint {
+    pub position: Option<Position>,
+    pub pools: Vec<PoolFingerprint>,
+    pub inventory: Vec<String>,
+    pub skills: (i32, i32, i32, i32),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SurvivorFingerprint {
+    pub name: String,
+    pub position: Position,
+    pub task: String,
+    pub activity: String,
+    pub pools: Vec<PoolFingerprint>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StationFingerprint {
+    pub content_id: String,
+    pub station_type: StationType,
+    pub position: Position,
+    pub staffed_by: Vec<String>,
+    pub effect: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ResourceNodeFingerprint {
+    pub kind: ResourceNodeType,
+    pub position: Position,
+    pub depleted: bool,
+}
+
+/// Stable, entity-ID-independent state for durable Foundation comparisons.
+///
+/// Transient TUI interactions, pending actions, logs, and raw Bevy entity
+/// identifiers are intentionally excluded.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FoundationFingerprint {
+    pub mode: GameMode,
+    pub session_phase: GameMode,
+    pub outcome: RunOutcome,
+    pub last_completed_outcome: RunOutcome,
+    pub dungeon_id: Option<String>,
+    pub day: u64,
+    pub turn: u64,
+    pub map_size: (i32, i32),
+    pub player: Option<PlayerFingerprint>,
+    pub survivors: Vec<SurvivorFingerprint>,
+    pub stations: Vec<StationFingerprint>,
+    pub resource_nodes: Vec<ResourceNodeFingerprint>,
+    pub colony_pools: Vec<PoolFingerprint>,
+    pub colony_storage: Vec<(String, u32)>,
+    pub extracted_loot: u32,
 }
 
 /// Production save data captured by the Foundation driver.
@@ -142,6 +227,7 @@ struct ScenarioObservations {
     transitions: Vec<TransitionComplete>,
     days: Vec<bd_core::time::DayAdvanced>,
     daily_summaries: Vec<bd_core::colony::production::DailySummary>,
+    defeats: Vec<bd_core::signals::EntityDefeated>,
 }
 
 fn observe_scenario_results(
@@ -150,6 +236,7 @@ fn observe_scenario_results(
     mut transitions: MessageReader<TransitionComplete>,
     mut days: MessageReader<bd_core::time::DayAdvanced>,
     mut daily_summaries: MessageReader<bd_core::colony::production::DailySummary>,
+    mut defeats: MessageReader<bd_core::signals::EntityDefeated>,
     mut observations: ResMut<ScenarioObservations>,
 ) {
     observations.resolved.extend(resolved.read().cloned());
@@ -159,6 +246,56 @@ fn observe_scenario_results(
     observations
         .daily_summaries
         .extend(daily_summaries.read().cloned());
+    observations.defeats.extend(defeats.read().cloned());
+}
+
+fn pool_fingerprint(pools: &Pools) -> Vec<PoolFingerprint> {
+    let mut result = pools
+        .iter()
+        .map(|pool| PoolFingerprint {
+            kind: pool.kind,
+            current: pool.current,
+            min: pool.min,
+            max: pool.max,
+        })
+        .collect::<Vec<_>>();
+    result.sort_by_key(|pool| format!("{:?}", pool.kind));
+    result
+}
+
+fn activity_fingerprint(activity: Option<&WorkerActivity>) -> String {
+    match activity {
+        Some(WorkerActivity::Idle) => "Idle".into(),
+        Some(WorkerActivity::EnRoute {
+            target,
+            target_position,
+            distance,
+        }) => {
+            format!(
+                "EnRoute:{target}@{},{}:{distance}",
+                target_position.x, target_position.y
+            )
+        }
+        Some(WorkerActivity::Working {
+            target,
+            target_position,
+        }) => {
+            format!(
+                "Working:{target}@{},{}",
+                target_position.x, target_position.y
+            )
+        }
+        Some(WorkerActivity::Blocked {
+            target,
+            target_position,
+            reason,
+        }) => {
+            format!("Blocked:{target}:{target_position:?}:{reason:?}")
+        }
+        Some(WorkerActivity::Resting) => "Resting".into(),
+        Some(WorkerActivity::Defending) => "Defending".into(),
+        None => "Unresolved".into(),
+    }
 }
 
 /// Headless production-path driver for the canonical Foundation scenario.
@@ -172,7 +309,19 @@ pub struct FoundationDriver {
 
 impl FoundationDriver {
     pub fn new(seed: u64) -> Self {
+        Self::from_app(seed, foundation_app())
+    }
+
+    /// Build the production Foundation schedule with one additional runtime
+    /// plugin. This lets acceptance tests reproduce integration-only ordering
+    /// without exposing the ECS world for mutation.
+    pub fn new_with_plugin(seed: u64, plugin: impl Plugin) -> Self {
         let mut app = foundation_app();
+        app.add_plugins(plugin);
+        Self::from_app(seed, app)
+    }
+
+    fn from_app(seed: u64, mut app: App) -> Self {
         app.insert_resource(RunSession::new(seed));
         app.init_resource::<ScenarioObservations>();
         app.add_systems(
@@ -180,6 +329,215 @@ impl FoundationDriver {
             observe_scenario_results.in_set(BdSet::ViewModelBuild),
         );
         Self { app }
+    }
+
+    pub fn fingerprint(&mut self) -> FoundationFingerprint {
+        let entity_ids = self.entity_ids();
+        let world = self.app.world();
+        let session = world.resource::<RunSession>();
+        let last_completed = world.resource::<bd_core::session::LastCompletedRun>();
+        let mode = *world.resource::<GameMode>();
+        let map = world.resource::<SmokeMap>();
+        let station_catalog = world.resource::<bd_core::colony::stations::StationCatalog>();
+
+        let mut station_keys = HashMap::new();
+        for entity in &entity_ids {
+            let Some(station_type) = world.get::<StationType>(*entity).copied() else {
+                continue;
+            };
+            let Some(position) = world.get::<Position>(*entity).copied() else {
+                continue;
+            };
+            let content_id = station_catalog
+                .get(station_type)
+                .map_or_else(|| format!("{station_type:?}"), |entry| entry.id.clone());
+            station_keys.insert(
+                entity.to_bits(),
+                format!("{content_id}@{},{}", position.x, position.y),
+            );
+        }
+
+        let mut survivor_names = HashMap::new();
+        for entity in &entity_ids {
+            if world.entity(*entity).contains::<Survivor>() {
+                let name = world
+                    .get::<Name>(*entity)
+                    .map_or_else(|| "Unnamed survivor".into(), |name| name.0.clone());
+                survivor_names.insert(entity.to_bits(), name);
+            }
+        }
+
+        let player_entity = entity_ids
+            .iter()
+            .copied()
+            .find(|entity| world.entity(*entity).contains::<Player>());
+        let player = player_entity.map(|entity| {
+            let mut inventory = entity_ids
+                .iter()
+                .filter_map(|item| {
+                    let entity_ref = world.entity(*item);
+                    if !entity_ref.contains::<Item>()
+                        || !entity_ref
+                            .get::<ContainedIn>()
+                            .is_some_and(|container| container.0 == entity)
+                    {
+                        return None;
+                    }
+                    Some(
+                        entity_ref
+                            .get::<Name>()
+                            .map_or_else(|| "Unnamed item".into(), |name| name.0.clone()),
+                    )
+                })
+                .collect::<Vec<_>>();
+            inventory.sort();
+            let skills = world
+                .get::<SkillProgression>(entity)
+                .map_or((0, 0, 0, 0), |skills| {
+                    (skills.melee, skills.ranged, skills.repair, skills.medicine)
+                });
+            PlayerFingerprint {
+                position: world.get::<Position>(entity).copied(),
+                pools: world
+                    .get::<Pools>(entity)
+                    .map_or_else(Vec::new, pool_fingerprint),
+                inventory,
+                skills,
+            }
+        });
+
+        let mut survivors = entity_ids
+            .iter()
+            .filter_map(|entity| {
+                let entity_ref = world.entity(*entity);
+                if !entity_ref.contains::<Survivor>() {
+                    return None;
+                }
+                let name = survivor_names
+                    .get(&entity.to_bits())
+                    .cloned()
+                    .unwrap_or_else(|| "Unnamed survivor".into());
+                let position = entity_ref.get::<Position>().copied()?;
+                let task = match entity_ref.get::<SurvivorTask>() {
+                    Some(SurvivorTask::Idle) | None => "Idle".into(),
+                    Some(SurvivorTask::Gathering(kind)) => format!("Gathering:{kind:?}"),
+                    Some(SurvivorTask::Defending) => "Defending".into(),
+                    Some(SurvivorTask::Resting) => "Resting".into(),
+                    Some(SurvivorTask::AssignedTo(bits)) => {
+                        let target = station_keys
+                            .get(bits)
+                            .cloned()
+                            .unwrap_or_else(|| "MissingStation".into());
+                        format!("AssignedTo:{target}")
+                    }
+                };
+                Some(SurvivorFingerprint {
+                    name,
+                    position,
+                    task,
+                    activity: activity_fingerprint(entity_ref.get::<WorkerActivity>()),
+                    pools: entity_ref
+                        .get::<Pools>()
+                        .map_or_else(Vec::new, pool_fingerprint),
+                })
+            })
+            .collect::<Vec<_>>();
+        survivors.sort_by(|left, right| left.name.cmp(&right.name));
+
+        let mut stations = entity_ids
+            .iter()
+            .filter_map(|entity| {
+                let entity_ref = world.entity(*entity);
+                if !entity_ref.contains::<Station>() {
+                    return None;
+                }
+                let station_type = *entity_ref.get::<StationType>()?;
+                let position = *entity_ref.get::<Position>()?;
+                let blueprint = station_catalog.get(station_type);
+                let content_id =
+                    blueprint.map_or_else(|| format!("{station_type:?}"), |entry| entry.id.clone());
+                let mut staffed_by = entity_ids
+                    .iter()
+                    .filter_map(|survivor| {
+                        let task = world.get::<SurvivorTask>(*survivor)?;
+                        matches!(task, SurvivorTask::AssignedTo(bits) if *bits == entity.to_bits())
+                            .then(|| survivor_names.get(&survivor.to_bits()).cloned())
+                            .flatten()
+                    })
+                    .collect::<Vec<_>>();
+                staffed_by.sort();
+                Some(StationFingerprint {
+                    content_id,
+                    station_type,
+                    position,
+                    staffed_by,
+                    effect: blueprint.map_or_else(
+                        || "MissingCatalogEntry".into(),
+                        |entry| entry.effect_label(),
+                    ),
+                })
+            })
+            .collect::<Vec<_>>();
+        stations.sort_by(|left, right| {
+            (&left.content_id, left.position.y, left.position.x).cmp(&(
+                &right.content_id,
+                right.position.y,
+                right.position.x,
+            ))
+        });
+
+        let mut resource_nodes = entity_ids
+            .iter()
+            .filter_map(|entity| {
+                let entity_ref = world.entity(*entity);
+                let node = entity_ref.get::<ResourceNode>()?;
+                Some(ResourceNodeFingerprint {
+                    kind: node.kind,
+                    position: *entity_ref.get::<Position>()?,
+                    depleted: node.depleted,
+                })
+            })
+            .collect::<Vec<_>>();
+        resource_nodes
+            .sort_by_key(|node| (format!("{:?}", node.kind), node.position.y, node.position.x));
+
+        let colony_pools = world
+            .resource::<bd_core::colony::production::ColonyResources>()
+            .pools
+            .iter()
+            .map(|pool| PoolFingerprint {
+                kind: pool.kind,
+                current: pool.current,
+                min: pool.min,
+                max: pool.max,
+            })
+            .collect::<Vec<_>>();
+        let mut colony_pools = colony_pools;
+        colony_pools.sort_by_key(|pool| format!("{:?}", pool.kind));
+        let colony_storage = world
+            .resource::<ColonyStorage>()
+            .items
+            .iter()
+            .map(|(id, count)| (id.clone(), *count))
+            .collect();
+
+        FoundationFingerprint {
+            mode,
+            session_phase: session.phase,
+            outcome: session.outcome,
+            last_completed_outcome: last_completed.outcome,
+            dungeon_id: session.dungeon_id.clone(),
+            day: session.day,
+            turn: session.turn,
+            map_size: (map.width, map.height),
+            player,
+            survivors,
+            stations,
+            resource_nodes,
+            colony_pools,
+            colony_storage,
+            extracted_loot: session.extracted_loot,
+        }
     }
 
     pub fn from_checkpoint(checkpoint: &FoundationCheckpoint) -> Result<Self, ScenarioError> {
@@ -193,11 +551,29 @@ impl FoundationDriver {
     }
 
     pub fn enter_dungeon(&mut self, dungeon_id: &str) -> Result<(), ScenarioError> {
-        self.request_transition(
+        if dungeon_id != bd_core::spatial::FOUNDATION_DUNGEON_ID {
+            return Err(ScenarioError::new(
+                "colony → fixed dungeon",
+                format!("unsupported Foundation dungeon `{dungeon_id}`"),
+            ));
+        }
+        let player = self
+            .player()
+            .ok_or_else(|| ScenarioError::new("colony → fixed dungeon", "player unavailable"))?;
+        self.expect_action(
             "colony → fixed dungeon",
-            GameMode::Tactical,
-            Some(dungeon_id),
-        )
+            player,
+            "ability.enter_foundation_dungeon",
+            None,
+            None,
+        )?;
+        if self.summary().mode != GameMode::Tactical {
+            return Err(ScenarioError::new(
+                "colony → fixed dungeon",
+                "accepted entry action did not reach Tactical mode",
+            ));
+        }
+        Ok(())
     }
 
     pub fn return_to_colony(&mut self, step: &str) -> Result<(), ScenarioError> {
@@ -308,6 +684,29 @@ impl FoundationDriver {
             .ok_or_else(|| ScenarioError::new(step, "action did not emit a typed denial"))
     }
 
+    /// Submit a production action intent without requiring a gameplay result.
+    ///
+    /// This is used only to verify that already-buffered input targeting an
+    /// entity defeated earlier in the schedule is rejected safely.
+    pub fn submit_buffered_action(
+        &mut self,
+        actor: Entity,
+        action_id: &str,
+        direction: Option<Direction>,
+        target: Option<Entity>,
+    ) {
+        self.app
+            .world_mut()
+            .resource_mut::<Messages<ActionIntent>>()
+            .write(ActionIntent {
+                actor,
+                action_id: action_id.to_owned(),
+                direction,
+                target,
+            });
+        self.app.update();
+    }
+
     pub fn expect_station_assignment_action(
         &mut self,
         step: &str,
@@ -345,6 +744,19 @@ impl FoundationDriver {
         self.approach_and_defeat(step, hostile)
     }
 
+    pub fn defeat_all_hostiles(&mut self, step: &str) -> Result<(), ScenarioError> {
+        for _ in 0..16 {
+            let Some(hostile) = self.first_hostile() else {
+                return Ok(());
+            };
+            self.approach_and_defeat(step, hostile)?;
+        }
+        Err(ScenarioError::new(
+            step,
+            "hostiles remained after 16 canonical encounters",
+        ))
+    }
+
     pub fn approach_and_defeat(
         &mut self,
         step: &str,
@@ -367,7 +779,7 @@ impl FoundationDriver {
     }
 
     fn approach_hostile(&mut self, step: &str, hostile: Entity) -> Result<(), ScenarioError> {
-        for _ in 0..12 {
+        for _ in 0..32 {
             let player = self
                 .player()
                 .ok_or_else(|| ScenarioError::new(step, "player was defeated"))?;
@@ -382,11 +794,43 @@ impl FoundationDriver {
             if distance <= 1 {
                 return Ok(());
             }
-            self.expect_action(step, player, "ability.wait", None, None)?;
+            let map = self.app.world().resource::<SmokeMap>();
+            let candidates = [
+                Position {
+                    x: hostile_pos.x + 1,
+                    y: hostile_pos.y,
+                },
+                Position {
+                    x: hostile_pos.x - 1,
+                    y: hostile_pos.y,
+                },
+                Position {
+                    x: hostile_pos.x,
+                    y: hostile_pos.y + 1,
+                },
+                Position {
+                    x: hostile_pos.x,
+                    y: hostile_pos.y - 1,
+                },
+            ];
+            let next = candidates
+                .into_iter()
+                .filter(|candidate| map.is_walkable(candidate.x, candidate.y))
+                .filter_map(|candidate| {
+                    AStarPathfinder
+                        .find_path(map, player_pos, candidate, &HashSet::new())
+                        .map(|path| (path.len(), path))
+                })
+                .min_by_key(|(length, _)| *length)
+                .and_then(|(_, path)| path.get(1).copied())
+                .ok_or_else(|| ScenarioError::new(step, "no route to hostile"))?;
+            let direction = direction_between(player_pos, next)
+                .ok_or_else(|| ScenarioError::new(step, "hostile route was non-cardinal"))?;
+            self.expect_action(step, player, "ability.move", Some(direction), None)?;
         }
         Err(ScenarioError::new(
             step,
-            "hostile did not approach within 12 wait actions",
+            "hostile was not reached within 32 movement actions",
         ))
     }
 
@@ -566,6 +1010,29 @@ impl FoundationDriver {
         self.app.update();
     }
 
+    /// Replace Bevy's default command error handler with a test-local recorder.
+    ///
+    /// This is intentionally diagnostic-only: it observes scheduler/command
+    /// failures without changing gameplay state.
+    pub fn install_command_error_capture(&mut self) {
+        COMMAND_ERRORS
+            .get_or_init(|| Mutex::new(Vec::new()))
+            .lock()
+            .expect("command-error recorder mutex must not be poisoned")
+            .clear();
+        self.app
+            .world_mut()
+            .insert_resource(DefaultErrorHandler(record_command_error));
+    }
+
+    pub fn command_errors(&self) -> Vec<String> {
+        COMMAND_ERRORS
+            .get_or_init(|| Mutex::new(Vec::new()))
+            .lock()
+            .expect("command-error recorder mutex must not be poisoned")
+            .clone()
+    }
+
     /// Phase 2 fixture adapter for the pre-Phase-4 assignment message.
     ///
     /// This invokes the production assignment system and is intentionally not
@@ -644,6 +1111,49 @@ impl FoundationDriver {
             .collect()
     }
 
+    pub fn resource_node_kinds(&mut self) -> Vec<ResourceNodeType> {
+        self.resource_nodes()
+            .into_iter()
+            .filter_map(|entity| {
+                self.app
+                    .world()
+                    .get::<ResourceNode>(entity)
+                    .map(|node| node.kind)
+            })
+            .collect()
+    }
+
+    pub fn resource_nodes_with_state(&mut self) -> Vec<(Entity, ResourceNodeType, Position, bool)> {
+        self.resource_nodes()
+            .into_iter()
+            .filter_map(|entity| {
+                let node = self.app.world().get::<ResourceNode>(entity)?;
+                let position = self.app.world().get::<Position>(entity)?;
+                Some((entity, node.kind, *position, node.depleted))
+            })
+            .collect()
+    }
+
+    pub fn all_resource_nodes_reachable_from_shelter_spawn(&mut self) -> bool {
+        let nodes = self.resource_nodes();
+        let outpost = self.app.world().resource::<OutpostState>();
+        nodes.into_iter().all(|entity| {
+            self.app
+                .world()
+                .get::<Position>(entity)
+                .is_some_and(|destination| {
+                    AStarPathfinder
+                        .find_path(
+                            &outpost.map,
+                            bd_core::colony::shelter::SHELTER_RETURN_SPAWN,
+                            *destination,
+                            &HashSet::new(),
+                        )
+                        .is_some()
+                })
+        })
+    }
+
     pub fn log_messages(&self) -> Vec<String> {
         self.app
             .world()
@@ -660,11 +1170,38 @@ impl FoundationDriver {
             .find(|entity| self.app.world().entity(*entity).contains::<Player>())
     }
 
+    pub fn player_count(&mut self) -> usize {
+        let entities = self.entity_ids();
+        entities
+            .into_iter()
+            .filter(|entity| self.app.world().entity(*entity).contains::<Player>())
+            .count()
+    }
+
     pub fn first_survivor(&mut self) -> Option<Entity> {
         let entities = self.entity_ids();
         entities
             .into_iter()
             .find(|entity| self.app.world().entity(*entity).contains::<Survivor>())
+    }
+
+    pub fn survivors(&mut self) -> Vec<Entity> {
+        let entities = self.entity_ids();
+        entities
+            .into_iter()
+            .filter(|entity| self.app.world().entity(*entity).contains::<Survivor>())
+            .collect()
+    }
+
+    pub fn survivor_by_name(&mut self, expected_name: &str) -> Option<Entity> {
+        let entities = self.entity_ids();
+        entities.into_iter().find(|entity| {
+            let entity = self.app.world().entity(*entity);
+            entity.contains::<Survivor>()
+                && entity
+                    .get::<Name>()
+                    .is_some_and(|name| name.0 == expected_name)
+        })
     }
 
     pub fn survivor_task(&self, survivor: Entity) -> Option<SurvivorTask> {
@@ -676,6 +1213,40 @@ impl FoundationDriver {
         entities
             .into_iter()
             .find(|entity| self.app.world().entity(*entity).contains::<Station>())
+    }
+
+    pub fn stations(&mut self) -> Vec<Entity> {
+        let entities = self.entity_ids();
+        entities
+            .into_iter()
+            .filter(|entity| self.app.world().entity(*entity).contains::<Station>())
+            .collect()
+    }
+
+    pub fn station_type(&self, station: Entity) -> Option<bd_core::colony::stations::StationType> {
+        self.app
+            .world()
+            .get::<bd_core::colony::stations::StationType>(station)
+            .copied()
+    }
+
+    pub fn station_types(&mut self) -> Vec<bd_core::colony::stations::StationType> {
+        let mut station_types = self
+            .stations()
+            .into_iter()
+            .filter_map(|entity| {
+                self.app
+                    .world()
+                    .get::<bd_core::colony::stations::StationType>(entity)
+                    .copied()
+                    .map(|station_type| (entity.to_bits(), station_type))
+            })
+            .collect::<Vec<_>>();
+        station_types.sort_by_key(|(bits, _)| *bits);
+        station_types
+            .into_iter()
+            .map(|(_, station_type)| station_type)
+            .collect()
     }
 
     pub fn first_hostile(&mut self) -> Option<Entity> {
@@ -716,11 +1287,22 @@ impl FoundationDriver {
         })
     }
 
+    pub fn outpost_map(&self) -> SmokeMap {
+        self.app.world().resource::<OutpostState>().map.clone()
+    }
+
     pub fn pool_current(&mut self, kind: PoolKind) -> Option<i32> {
         self.player()
             .and_then(|player| self.app.world().get::<Pools>(player))
             .and_then(|pools| pools.get(kind))
             .map(|pool| pool.current)
+    }
+
+    pub fn player_pool_kinds(&mut self) -> Vec<PoolKind> {
+        self.player()
+            .and_then(|player| self.app.world().get::<Pools>(player))
+            .map(|pools| pools.iter().map(|pool| pool.kind).collect())
+            .unwrap_or_default()
     }
 
     pub fn entity_pool_current(&self, entity: Entity, kind: PoolKind) -> Option<i32> {
@@ -748,12 +1330,97 @@ impl FoundationDriver {
             .clone()
     }
 
+    pub fn colony_forecast(&mut self) -> bd_core::colony::production::ColonyForecast {
+        let survivors = self
+            .survivors()
+            .into_iter()
+            .filter_map(|entity| {
+                Some(bd_core::colony::production::SurvivorWorkSnapshot {
+                    task: self.app.world().get::<SurvivorTask>(entity)?.clone(),
+                    position: *self.app.world().get::<Position>(entity)?,
+                })
+            })
+            .collect::<Vec<_>>();
+        let stations = self
+            .stations()
+            .into_iter()
+            .filter_map(|entity| {
+                Some(bd_core::colony::production::StationWorkSnapshot {
+                    entity_bits: entity.to_bits(),
+                    station_type: *self
+                        .app
+                        .world()
+                        .get::<bd_core::colony::stations::StationType>(entity)?,
+                    position: *self.app.world().get::<Position>(entity)?,
+                })
+            })
+            .collect::<Vec<_>>();
+        let nodes = self
+            .resource_nodes_with_state()
+            .into_iter()
+            .map(|(_, kind, position, depleted)| {
+                bd_core::colony::production::ResourceWorkSnapshot {
+                    kind,
+                    position,
+                    depleted,
+                }
+            })
+            .collect::<Vec<_>>();
+        bd_core::colony::production::forecast_colony(
+            self.app
+                .world()
+                .resource::<bd_core::colony::production::ColonyResources>(),
+            &survivors,
+            &stations,
+            &nodes,
+            self.app
+                .world()
+                .resource::<bd_core::colony::stations::StationCatalog>(),
+        )
+    }
+
     pub fn last_day_advanced_count(&self) -> usize {
         self.app
             .world()
             .resource::<ScenarioObservations>()
             .days
             .len()
+    }
+
+    pub fn last_daily_summary_count(&self) -> usize {
+        self.app
+            .world()
+            .resource::<ScenarioObservations>()
+            .daily_summaries
+            .len()
+    }
+
+    pub fn last_resolved_count(&self) -> usize {
+        self.app
+            .world()
+            .resource::<ScenarioObservations>()
+            .resolved
+            .len()
+    }
+
+    pub fn last_denied_count(&self) -> usize {
+        self.app
+            .world()
+            .resource::<ScenarioObservations>()
+            .denied
+            .len()
+    }
+
+    pub fn last_defeat_count(&self) -> usize {
+        self.app
+            .world()
+            .resource::<ScenarioObservations>()
+            .defeats
+            .len()
+    }
+
+    pub fn entity_count(&self) -> usize {
+        self.app.world().entities().len() as usize
     }
 
     /// Phase 6 fixture setup for starvation boundary tests.
@@ -767,6 +1434,110 @@ impl FoundationDriver {
         {
             pool.current = value.clamp(pool.min, pool.max);
         }
+    }
+
+    /// Set an entity pool as scenario precondition; gameplay still owns all
+    /// behavior under test after setup.
+    pub fn fixture_set_entity_pool(&mut self, entity: Entity, kind: PoolKind, value: i32) {
+        if let Some(mut pools) = self.app.world_mut().get_mut::<Pools>(entity)
+            && let Some(pool) = pools.get_mut(kind)
+        {
+            pool.current = value.clamp(pool.min, pool.max);
+        }
+    }
+
+    pub fn fixture_set_position(
+        &mut self,
+        entity: Entity,
+        position: Position,
+    ) -> Result<(), ScenarioError> {
+        let Some(mut current) = self.app.world_mut().get_mut::<Position>(entity) else {
+            return Err(ScenarioError::new(
+                "position fixture",
+                format!("entity {entity:?} has no Position"),
+            ));
+        };
+        *current = position;
+        Ok(())
+    }
+
+    pub fn fixture_set_outpost_tile(&mut self, position: Position, tile: Tile) {
+        self.app
+            .world_mut()
+            .resource_mut::<SmokeMap>()
+            .set(position.x, position.y, tile);
+        self.app
+            .world_mut()
+            .resource_mut::<OutpostState>()
+            .map
+            .set(position.x, position.y, tile);
+    }
+
+    /// Activate or clear the production build interaction for action-gating tests.
+    pub fn fixture_set_build_interaction(&mut self, active: bool) {
+        *self
+            .app
+            .world_mut()
+            .resource_mut::<bd_core::colony::stations::BuildInteraction>() = if active {
+            bd_core::colony::stations::BuildInteraction::Selecting {
+                selected_station: bd_core::colony::stations::StationType::Stove,
+            }
+        } else {
+            bd_core::colony::stations::BuildInteraction::Inactive
+        };
+    }
+
+    /// Select station content while leaving construction to the production action.
+    pub fn fixture_select_station(&mut self, station_type: bd_core::colony::stations::StationType) {
+        let mut interaction = self
+            .app
+            .world_mut()
+            .resource_mut::<bd_core::colony::stations::BuildInteraction>();
+        *interaction = match &*interaction {
+            bd_core::colony::stations::BuildInteraction::Selecting { .. } => {
+                bd_core::colony::stations::BuildInteraction::Selecting {
+                    selected_station: station_type,
+                }
+            }
+            bd_core::colony::stations::BuildInteraction::Placing {
+                cursor, validation, ..
+            } => bd_core::colony::stations::BuildInteraction::Placing {
+                selected_station: station_type,
+                cursor: *cursor,
+                validation: validation.clone(),
+            },
+            bd_core::colony::stations::BuildInteraction::AwaitingResolution { cursor, .. } => {
+                bd_core::colony::stations::BuildInteraction::AwaitingResolution {
+                    selected_station: station_type,
+                    cursor: *cursor,
+                }
+            }
+            bd_core::colony::stations::BuildInteraction::Inactive => {
+                bd_core::colony::stations::BuildInteraction::AwaitingResolution {
+                    selected_station: station_type,
+                    cursor: Position { x: 0, y: 0 },
+                }
+            }
+        };
+    }
+
+    pub fn fixture_select_station_assignment(&mut self, station: Entity) {
+        self.app
+            .world_mut()
+            .resource_mut::<bd_core::colony::stations::PendingStationAssignment>()
+            .0 = Some(station);
+    }
+
+    /// Install an active event interaction without registering deferred event content.
+    pub fn fixture_set_event_interaction(&mut self, active: bool) {
+        self.app
+            .world_mut()
+            .insert_resource(bd_core::events::CurrentEvent {
+                event_id: "fixture.blocking_event".into(),
+                node_id: "start".into(),
+                previous_screen: "outpost".into(),
+                active,
+            });
     }
 
     pub fn deferred_resources_present(&self) -> Vec<&'static str> {
@@ -812,6 +1583,7 @@ impl FoundationDriver {
         let entity_ids = self.entity_ids();
         let world = self.app.world();
         let session = world.resource::<RunSession>().clone();
+        let last_completed = world.resource::<bd_core::session::LastCompletedRun>();
         let mode = *world.resource::<GameMode>();
         let map = world.resource::<SmokeMap>();
         let player = entity_ids
@@ -877,6 +1649,7 @@ impl FoundationDriver {
             mode,
             session_phase: session.phase,
             outcome: session.outcome,
+            last_completed_outcome: last_completed.outcome,
             dungeon_id: session.dungeon_id.clone(),
             day: session.day,
             turn: session.turn,
@@ -911,6 +1684,7 @@ impl FoundationDriver {
         observations.transitions.clear();
         observations.days.clear();
         observations.daily_summaries.clear();
+        observations.defeats.clear();
     }
 }
 
@@ -1084,8 +1858,8 @@ mod tests {
             app.world().resource::<GameMode>().clone(),
             GameMode::Tactical
         );
-        assert_eq!(app.world().resource::<bd_core::map::SmokeMap>().width, 8);
-        assert_eq!(app.world().resource::<bd_core::map::SmokeMap>().height, 6);
+        assert_eq!(app.world().resource::<bd_core::map::SmokeMap>().width, 12);
+        assert_eq!(app.world().resource::<bd_core::map::SmokeMap>().height, 8);
         let factioned_enemies = app
             .world_mut()
             .query_filtered::<&bd_core::relationships::FactionMember, With<bd_core::relationships::FactionMember>>()
@@ -1117,7 +1891,7 @@ mod tests {
 
         app.world_mut()
             .entity_mut(player.0)
-            .insert(Position { x: 6, y: 4 });
+            .insert(Position { x: 10, y: 6 });
 
         app.world_mut()
             .resource_mut::<Messages<bd_core::signals::ActionIntent>>()
@@ -1138,10 +1912,7 @@ mod tests {
             app.world().resource::<RunSession>().outcome,
             RunOutcome::Extracted
         );
-        assert_eq!(
-            app.world().resource::<RunSession>().extraction_applied,
-            true
-        );
+        assert!(app.world().resource::<RunSession>().extraction_applied);
         let survivor_count_after = app
             .world_mut()
             .query_filtered::<(), With<bd_core::colony::survivors::Survivor>>()

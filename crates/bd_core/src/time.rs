@@ -7,7 +7,11 @@ use bevy_app::App;
 use bevy_ecs::prelude::*;
 use serde::{Deserialize, Serialize};
 
-use crate::BdSet;
+use crate::{
+    BdSet,
+    actions::{ActionDefinition, Effect, Requirement},
+    gamelog::LogLevel,
+};
 
 // ── Constants ──
 
@@ -23,12 +27,33 @@ pub const TURNS_PER_DAY: u64 = 24;
 #[derive(Resource, Debug, Default, Serialize, Deserialize)]
 pub struct ShouldAdvanceTime(pub bool, pub bool);
 
+/// Typed plan compiled from one accepted player action.
+///
+/// `elapsed_turns` advances the authoritative clock. `outpost_worker_steps`
+/// is consumed by the colony movement resolver before the clock crosses any
+/// resulting day boundary. Tactical actions therefore advance the clock
+/// without advancing colony workers.
+#[derive(Resource, Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct TimeAdvancePlan {
+    pub elapsed_turns: u64,
+    pub outpost_worker_steps: u64,
+    pub cause: TimeAdvanceCause,
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub enum TimeAdvanceCause {
+    #[default]
+    None,
+    AcceptedAction,
+    RestUntilNextDay,
+}
+
 /// Prevents a second player action while the enemy phase is resolving.
 #[derive(Component, Debug, Default)]
 pub struct AwaitingEnemyPhase;
 
 /// Tracks the current game day and turn.
-#[derive(Resource, Debug, Clone, Serialize, Deserialize)]
+#[derive(Resource, Debug, Default, Clone, Serialize, Deserialize)]
 pub struct GameTime {
     pub day: u64,
     pub turn: u64,
@@ -44,19 +69,36 @@ pub struct DayAdvanced {
     pub day: u64,
 }
 
-impl Default for GameTime {
-    fn default() -> Self {
-        Self { day: 0, turn: 0 }
-    }
-}
+/// Typed request emitted by the validated colony Rest action.
+#[derive(Message, Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RestUntilNextDayRequested;
 
 // ── Plugin registration ──
 
 pub(crate) fn register_time(app: &mut App) {
     app.insert_resource(GameTime::default());
     app.init_resource::<ShouldAdvanceTime>();
+    app.init_resource::<TimeAdvancePlan>();
     app.add_message::<DayAdvanced>();
+    app.add_message::<RestUntilNextDayRequested>();
     app.add_systems(bevy_app::Update, advance_time.in_set(BdSet::ResultEmission));
+}
+
+pub(crate) fn register_rest_until_next_day_action() -> ActionDefinition {
+    ActionDefinition {
+        id: "ability.rest_until_next_day".into(),
+        label: "Rest Until Next Day".into(),
+        requirements: vec![
+            Requirement::EntityAlive,
+            Requirement::InMode(crate::spatial::GameMode::Outpost),
+            Requirement::NoBlockingInteraction,
+        ],
+        cost_effects: vec![],
+        effects: vec![
+            Effect::RequestRestUntilNextDay,
+            Effect::Log("You rest until the next day.".into(), LogLevel::Info),
+        ],
+    }
 }
 
 // ── System ──
@@ -68,17 +110,31 @@ fn advance_time(
     mut game_time: ResMut<GameTime>,
     mut session: ResMut<crate::session::RunSession>,
     mut should_advance: ResMut<ShouldAdvanceTime>,
+    mut plan: ResMut<TimeAdvancePlan>,
+    mut rest_requests: MessageReader<RestUntilNextDayRequested>,
     mut day_advanced: bevy_ecs::message::MessageWriter<DayAdvanced>,
 ) {
-    if !should_advance.0 {
+    let rest_requested = rest_requests.read().next().is_some();
+    if plan.elapsed_turns == 0 && !should_advance.0 && !rest_requested {
         return;
     }
+    let elapsed_turns = if plan.elapsed_turns > 0 {
+        plan.elapsed_turns
+    } else if rest_requested {
+        TURNS_PER_DAY - game_time.turn
+    } else {
+        // Compatibility boundary for isolated tests and deferred systems that
+        // still request one turn through ShouldAdvanceTime.
+        1
+    };
     should_advance.0 = false;
-    game_time.turn += 1;
-    if game_time.turn >= TURNS_PER_DAY {
-        game_time.day += 1;
-        game_time.turn = 0;
-        day_advanced.write(DayAdvanced { day: game_time.day });
+    *plan = TimeAdvancePlan::default();
+    let previous_day = game_time.day;
+    let total_turns = game_time.turn + elapsed_turns;
+    game_time.day += total_turns / TURNS_PER_DAY;
+    game_time.turn = total_turns % TURNS_PER_DAY;
+    for day in (previous_day + 1)..=game_time.day {
+        day_advanced.write(DayAdvanced { day });
     }
     session.day = game_time.day;
     session.turn = game_time.turn;

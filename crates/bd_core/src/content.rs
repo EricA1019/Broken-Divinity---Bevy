@@ -85,6 +85,7 @@ pub struct FoundationContent {
     pub skills: Vec<SkillDefinition>,
     pub factions: Vec<FactionDefinition>,
     pub actions: Vec<ActionReference>,
+    pub stations: Vec<crate::colony::stations::StationBlueprint>,
     pub blueprints: Vec<EntityBlueprint>,
 }
 

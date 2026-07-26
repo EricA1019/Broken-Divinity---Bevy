@@ -244,6 +244,9 @@ dependencies = [
  "insta",
  "rand 0.10.1",
  "rand_chacha 0.10.0",
+ "ron",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

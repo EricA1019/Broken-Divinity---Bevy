@@ -20,10 +20,10 @@ pub enum UiCommand {
     MoveEast,
     MoveWest,
     Wait,
+    RestUntilNextDay,
     Attack,
     Guard,
     Inventory,
-    CombatScreen,
     Pickup,
     UseItem,
     Help,
@@ -85,6 +85,16 @@ pub fn game_over_input(bindings: &CommandBindings, key: &KeyCode) -> Option<Game
     }
 }
 
+pub fn inventory_toggle_destination(current_screen: &str, mode: GameMode) -> &'static str {
+    if current_screen != "inventory" {
+        "inventory"
+    } else if mode == GameMode::Outpost {
+        "outpost"
+    } else {
+        "combat"
+    }
+}
+
 pub fn terminal_layout(width: u16, height: u16) -> TerminalLayout {
     if width < MIN_TERMINAL_WIDTH || height < MIN_TERMINAL_HEIGHT {
         TerminalLayout::TooSmall
@@ -101,6 +111,7 @@ pub fn command_action_id(command: UiCommand) -> Option<&'static str> {
             Some("ability.move")
         }
         UiCommand::Wait => Some("ability.wait"),
+        UiCommand::RestUntilNextDay => Some("ability.rest_until_next_day"),
         UiCommand::Attack => Some("ability.quick_attack"),
         UiCommand::Guard => Some("ability.guard"),
         UiCommand::Pickup => Some("ability.pickup"),
@@ -110,6 +121,26 @@ pub fn command_action_id(command: UiCommand) -> Option<&'static str> {
         UiCommand::Build => Some("ability.build"),
         _ => None,
     }
+}
+
+pub(crate) fn is_buffered_gameplay(command: UiCommand) -> bool {
+    matches!(
+        command,
+        UiCommand::MoveNorth
+            | UiCommand::MoveSouth
+            | UiCommand::MoveEast
+            | UiCommand::MoveWest
+            | UiCommand::Wait
+            | UiCommand::RestUntilNextDay
+            | UiCommand::Attack
+            | UiCommand::Guard
+            | UiCommand::Pickup
+            | UiCommand::UseItem
+            | UiCommand::Travel
+            | UiCommand::Extract
+            | UiCommand::AssignTask
+            | UiCommand::AssignStation
+    )
 }
 
 #[derive(Resource, Debug, Clone)]
@@ -129,16 +160,16 @@ impl Default for CommandBindings {
                 (UiCommand::MoveEast, KeyCode::Char('d')),
                 (UiCommand::MoveWest, KeyCode::Char('a')),
                 (UiCommand::Wait, KeyCode::Char('.')),
+                (UiCommand::RestUntilNextDay, KeyCode::Char('n')),
                 (UiCommand::Attack, KeyCode::Char('f')),
                 (UiCommand::Guard, KeyCode::Char('g')),
                 (UiCommand::Inventory, KeyCode::Char('i')),
-                (UiCommand::CombatScreen, KeyCode::Char('z')),
                 (UiCommand::Pickup, KeyCode::Char('p')),
                 (UiCommand::UseItem, KeyCode::Char('u')),
                 (UiCommand::Help, KeyCode::Char('?')),
                 (UiCommand::Travel, KeyCode::Char('t')),
                 (UiCommand::Extract, KeyCode::Char('r')),
-                (UiCommand::AssignTask, KeyCode::Char('a')),
+                (UiCommand::AssignTask, KeyCode::Char('c')),
                 (UiCommand::AssignStation, KeyCode::Char('e')),
                 (UiCommand::Build, KeyCode::Char('b')),
                 (UiCommand::Save, KeyCode::F(5)),
@@ -235,8 +266,15 @@ fn arrow_alias(key: &KeyCode, interaction: InteractionMode) -> Option<UiCommand>
 pub struct HelpEntry {
     pub command: UiCommand,
     pub key: String,
-    pub label: &'static str,
-    pub description: &'static str,
+    pub label: String,
+    pub description: String,
+    pub kind: HelpEntryKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HelpEntryKind {
+    Control,
+    Legend,
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -253,21 +291,21 @@ fn descriptor(command: UiCommand) -> Descriptor {
         UiCommand::MoveEast => ("Move east", "Move one tile east"),
         UiCommand::MoveWest => ("Move west", "Move one tile west"),
         UiCommand::Wait => ("Wait", "End the turn"),
+        UiCommand::RestUntilNextDay => ("Rest", "Rest to next day"),
         UiCommand::Attack => ("Attack", "Attack nearest enemy"),
         UiCommand::Guard => ("Guard", "Guard against damage"),
         UiCommand::Inventory => ("Inventory", "Open inventory"),
-        UiCommand::CombatScreen => ("Map", "Return to the map"),
         UiCommand::Pickup => ("Pickup", "Pick up item"),
         UiCommand::UseItem => ("Use", "Use carried item"),
-        UiCommand::Help => ("Help", "Toggle contextual help"),
-        UiCommand::Travel => ("Travel", "Enter the foundation dungeon"),
-        UiCommand::Extract => ("Extract", "Leave the dungeon"),
-        UiCommand::AssignTask => ("Assign task", "Cycle nearest survivor task"),
-        UiCommand::AssignStation => ("Staff station", "Assign survivor to station"),
-        UiCommand::Build => ("Build", "Build or cancel station"),
-        UiCommand::Save => ("Save", "Save the current run"),
-        UiCommand::Load => ("Load", "Load the manual save"),
-        UiCommand::Quit => ("Quit", "Quit Broken Divinity"),
+        UiCommand::Help => ("Help", "Show or close Help"),
+        UiCommand::Travel => ("Travel", "Enter dungeon"),
+        UiCommand::Extract => ("Extract", "Leave dungeon"),
+        UiCommand::AssignTask => ("Assign task", "Manage survivor tasks"),
+        UiCommand::AssignStation => ("Staff station", "Staff stations"),
+        UiCommand::Build => ("Build", "Build a station"),
+        UiCommand::Save => ("Save", "Save game"),
+        UiCommand::Load => ("Load", "Load game"),
+        UiCommand::Quit => ("Quit", "Quit"),
         UiCommand::Restart => ("Restart", "Return to title"),
     };
     Descriptor {
@@ -294,35 +332,35 @@ fn command_order(mode: GameMode, interaction: InteractionMode) -> &'static [UiCo
     ];
     const TITLE: &[UiCommand] = &[UiCommand::Load, UiCommand::Quit];
     const COLONY: &[UiCommand] = &[
+        UiCommand::Travel,
         UiCommand::MoveNorth,
         UiCommand::MoveSouth,
         UiCommand::MoveEast,
         UiCommand::MoveWest,
-        UiCommand::Wait,
+        UiCommand::RestUntilNextDay,
+        UiCommand::Build,
         UiCommand::Inventory,
         UiCommand::UseItem,
-        UiCommand::Build,
+        UiCommand::Wait,
         UiCommand::AssignTask,
         UiCommand::AssignStation,
-        UiCommand::Travel,
         UiCommand::Help,
         UiCommand::Save,
         UiCommand::Load,
         UiCommand::Quit,
     ];
     const DUNGEON: &[UiCommand] = &[
+        UiCommand::Extract,
+        UiCommand::Attack,
+        UiCommand::Inventory,
+        UiCommand::UseItem,
         UiCommand::MoveNorth,
         UiCommand::MoveSouth,
         UiCommand::MoveEast,
         UiCommand::MoveWest,
         UiCommand::Wait,
-        UiCommand::Attack,
         UiCommand::Guard,
-        UiCommand::Inventory,
-        UiCommand::CombatScreen,
         UiCommand::Pickup,
-        UiCommand::UseItem,
-        UiCommand::Extract,
         UiCommand::Help,
         UiCommand::Save,
         UiCommand::Load,
@@ -357,6 +395,21 @@ fn key_label(key: &KeyCode) -> String {
         KeyCode::Down => "↓".into(),
         KeyCode::Left => "←".into(),
         KeyCode::Right => "→".into(),
+        other => format!("{other:?}"),
+    }
+}
+
+/// Serialize a supported binding into the user-configuration spelling.
+pub fn config_key_name(key: &KeyCode) -> String {
+    match key {
+        KeyCode::Char(value) => value.to_string(),
+        KeyCode::F(number) => format!("F{number}"),
+        KeyCode::Esc => "Esc".into(),
+        KeyCode::Enter => "Enter".into(),
+        KeyCode::Up => "Up".into(),
+        KeyCode::Down => "Down".into(),
+        KeyCode::Left => "Left".into(),
+        KeyCode::Right => "Right".into(),
         other => format!("{other:?}"),
     }
 }
@@ -401,11 +454,96 @@ pub fn help_entries(
             HelpEntry {
                 command: descriptor.command,
                 key: display_key(bindings, command),
-                label: descriptor.label,
-                description: descriptor.description,
+                label: descriptor.label.into(),
+                description: descriptor.description.into(),
+                kind: HelpEntryKind::Control,
             }
         })
         .collect()
+}
+
+pub fn help_entries_with_legend(
+    bindings: &CommandBindings,
+    mode: GameMode,
+    interaction: InteractionMode,
+    symbols: &crate::visual::SymbolRegistry,
+    stations: &bd_core::colony::stations::StationCatalog,
+) -> Vec<HelpEntry> {
+    use crate::visual::VisualToken;
+
+    fn glyph(symbols: &crate::visual::SymbolRegistry, token: VisualToken) -> String {
+        symbols
+            .get(token)
+            .map_or_else(|| "?".into(), |symbol| symbol.glyph.to_string())
+    }
+
+    let mut entries = help_entries(bindings, mode, interaction);
+    if interaction != InteractionMode::Normal {
+        return entries;
+    }
+
+    let mut legend = Vec::new();
+    let mut add = |key: String, label: &str, description: &str| {
+        legend.push(HelpEntry {
+            command: UiCommand::Help,
+            key,
+            label: label.into(),
+            description: description.into(),
+            kind: HelpEntryKind::Legend,
+        });
+    };
+    add(glyph(symbols, VisualToken::Player), "Player", "Player");
+    if mode == GameMode::Outpost {
+        add(
+            glyph(symbols, VisualToken::Trees),
+            "Trees",
+            "Trees: Materials",
+        );
+        add(
+            glyph(symbols, VisualToken::WaterSource),
+            "Water Source",
+            "Water Source: Supplies",
+        );
+        add(
+            glyph(symbols, VisualToken::WildPlants),
+            "Wild Plants",
+            "Wild Plants: Medicine",
+        );
+        let worker_glyphs = [
+            VisualToken::WorkerIdle,
+            VisualToken::WorkerEnRoute,
+            VisualToken::WorkerWorking,
+            VisualToken::WorkerBlocked,
+            VisualToken::WorkerResting,
+            VisualToken::WorkerDefending,
+        ]
+        .map(|token| glyph(symbols, token))
+        .join("/");
+        add(worker_glyphs, "Workers", "Worker states");
+        let station_glyphs = stations
+            .entries()
+            .iter()
+            .map(|station| format!("{}/{}", station.glyph, station.staffed_glyph))
+            .collect::<Vec<_>>()
+            .join(" ");
+        add(station_glyphs, "Stations", "Stations");
+        add(
+            glyph(symbols, VisualToken::Exit),
+            "Shelter gate",
+            "Shelter gate",
+        );
+        add("↑↓←→".into(), "Off-screen target", "Off-screen target");
+    } else if mode == GameMode::Tactical {
+        add(
+            format!("{}/r/S/B", glyph(symbols, VisualToken::Enemy)),
+            "Enemy",
+            "Enemy",
+        );
+        add(glyph(symbols, VisualToken::Item), "Item", "Loot item");
+        add(glyph(symbols, VisualToken::Exit), "Exit", "Dungeon exit");
+    }
+    entries.extend(legend);
+    entries
 }
 
 pub fn footer_text(
@@ -415,6 +553,7 @@ pub fn footer_text(
 ) -> String {
     help_entries(bindings, mode, interaction)
         .into_iter()
+        .filter(|entry| entry.kind == HelpEntryKind::Control)
         .map(|entry| format!("{}:{}", entry.label, entry.key))
         .collect::<Vec<_>>()
         .join(" | ")
@@ -431,6 +570,10 @@ pub struct ActionAvailability {
     pub can_build: bool,
     pub survivor_available: bool,
     pub station_available: bool,
+    pub at_exit: bool,
+    pub can_travel: bool,
+    pub day: u64,
+    pub turn: u64,
 }
 
 impl ActionAvailability {
@@ -451,17 +594,61 @@ impl ActionAvailability {
             can_build: false,
             survivor_available: false,
             station_available: false,
+            at_exit: false,
+            can_travel: false,
+            day: 0,
+            turn: 0,
         }
+    }
+
+    pub fn outpost(
+        has_ap: bool,
+        can_move: bool,
+        can_build: bool,
+        survivor_available: bool,
+        station_available: bool,
+    ) -> Self {
+        Self {
+            mode: GameMode::Outpost,
+            has_ap,
+            enemy_in_range: false,
+            can_move,
+            item_here: false,
+            usable_item: false,
+            can_build,
+            survivor_available,
+            station_available,
+            at_exit: false,
+            can_travel: true,
+            day: 0,
+            turn: 0,
+        }
+    }
+
+    pub fn at_exit(mut self, at_exit: bool) -> Self {
+        self.at_exit = at_exit;
+        self
+    }
+
+    pub fn can_travel(mut self, can_travel: bool) -> Self {
+        self.can_travel = can_travel;
+        self
+    }
+
+    pub fn time(mut self, day: u64, turn: u64) -> Self {
+        self.day = day;
+        self.turn = turn;
+        self
     }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ActionProjection {
     pub command: UiCommand,
-    pub label: &'static str,
+    pub label: String,
     pub key: String,
     pub enabled: bool,
-    pub denial_reason: Option<&'static str>,
+    pub denial_reason: Option<String>,
 }
 
 pub fn action_panel(
@@ -470,21 +657,22 @@ pub fn action_panel(
 ) -> Vec<ActionProjection> {
     let commands: &[UiCommand] = match availability.mode {
         GameMode::Outpost => &[
-            UiCommand::MoveNorth,
-            UiCommand::Wait,
+            UiCommand::Travel,
             UiCommand::Build,
             UiCommand::AssignTask,
             UiCommand::AssignStation,
-            UiCommand::Travel,
-        ],
-        GameMode::Tactical => &[
+            UiCommand::RestUntilNextDay,
             UiCommand::MoveNorth,
             UiCommand::Wait,
+        ],
+        GameMode::Tactical => &[
+            UiCommand::Extract,
             UiCommand::Attack,
+            UiCommand::MoveNorth,
+            UiCommand::Wait,
             UiCommand::Guard,
             UiCommand::Pickup,
             UiCommand::UseItem,
-            UiCommand::Extract,
         ],
         _ => &[],
     };
@@ -492,22 +680,23 @@ pub fn action_panel(
     commands
         .iter()
         .copied()
+        .filter(|command| *command != UiCommand::Extract || availability.at_exit)
         .map(|command| {
             let (enabled, denial_reason) = match command {
                 UiCommand::MoveNorth => {
                     if !availability.has_ap {
-                        (false, Some("No AP"))
+                        (false, Some("No AP".into()))
                     } else if !availability.can_move {
-                        (false, Some("Blocked"))
+                        (false, Some("Blocked".into()))
                     } else {
                         (true, None)
                     }
                 }
                 UiCommand::Attack => {
                     if !availability.has_ap {
-                        (false, Some("No AP"))
+                        (false, Some("No AP".into()))
                     } else if !availability.enemy_in_range {
-                        (false, Some("No target in range"))
+                        (false, Some("No target in range".into()))
                     } else {
                         (true, None)
                     }
@@ -516,56 +705,144 @@ pub fn action_panel(
                     if availability.has_ap {
                         (true, None)
                     } else {
-                        (false, Some("No AP"))
+                        (false, Some("No AP".into()))
                     }
                 }
                 UiCommand::Pickup => {
                     if availability.item_here {
                         (true, None)
                     } else {
-                        (false, Some("Nothing here"))
+                        (false, Some("Nothing here".into()))
                     }
                 }
                 UiCommand::UseItem => {
                     if availability.usable_item {
                         (true, None)
                     } else {
-                        (false, Some("No usable item"))
+                        (false, Some("No usable item".into()))
                     }
                 }
                 UiCommand::Build => {
                     if availability.can_build {
                         (true, None)
                     } else {
-                        (false, Some("Insufficient supplies"))
+                        (false, Some("Insufficient supplies".into()))
                     }
                 }
                 UiCommand::AssignTask => {
                     if availability.survivor_available {
                         (true, None)
                     } else {
-                        (false, Some("No survivor"))
+                        (false, Some("No survivor".into()))
                     }
                 }
                 UiCommand::AssignStation => {
                     if !availability.survivor_available {
-                        (false, Some("No survivor"))
+                        (false, Some("No survivor".into()))
                     } else if !availability.station_available {
-                        (false, Some("No station"))
+                        (false, Some("No station".into()))
                     } else {
                         (true, None)
+                    }
+                }
+                UiCommand::Travel => {
+                    if availability.can_travel {
+                        (true, None)
+                    } else {
+                        (
+                            false,
+                            Some(format!(
+                                "Need {} Supplies",
+                                bd_core::spatial::TRAVEL_SUPPLIES_COST
+                            )),
+                        )
                     }
                 }
                 _ => (true, None),
             };
             let descriptor = descriptor(command);
+            let label = if command == UiCommand::RestUntilNextDay {
+                format!(
+                    "Rest to Day {} ({} turns)",
+                    availability.day + 1,
+                    bd_core::time::TURNS_PER_DAY - availability.turn
+                )
+            } else {
+                descriptor.label.into()
+            };
             ActionProjection {
                 command,
-                label: descriptor.label,
+                label,
                 key: display_key(bindings, command),
                 enabled,
                 denial_reason,
             }
         })
         .collect()
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct FooterControlLines {
+    pub contextual: String,
+    pub global: String,
+}
+
+pub fn footer_control_lines(
+    bindings: &CommandBindings,
+    mode: GameMode,
+    interaction: InteractionMode,
+    screen_id: &str,
+    width: u16,
+) -> FooterControlLines {
+    fn pack(tokens: &[String], width: usize) -> String {
+        let mut line = String::new();
+        for token in tokens {
+            let separator = if line.is_empty() { "" } else { " | " };
+            if line.len() + separator.len() + token.len() > width {
+                break;
+            }
+            line.push_str(separator);
+            line.push_str(token);
+        }
+        line
+    }
+
+    let inventory = screen_id == "inventory";
+    let mut contextual = Vec::new();
+    let mut global = Vec::new();
+    for entry in help_entries(bindings, mode, interaction) {
+        if entry.kind != HelpEntryKind::Control {
+            continue;
+        }
+        if entry.command == UiCommand::Extract {
+            continue;
+        }
+        let label = if inventory && entry.command == UiCommand::Inventory {
+            "Back"
+        } else if interaction == InteractionMode::Build && entry.command == UiCommand::Quit {
+            "Cancel"
+        } else {
+            entry.label.as_str()
+        };
+        let token = format!("{label}:{}", entry.key);
+        let is_global = matches!(
+            entry.command,
+            UiCommand::Help
+                | UiCommand::Save
+                | UiCommand::Load
+                | UiCommand::Quit
+                | UiCommand::Restart
+        ) || (inventory
+            && matches!(entry.command, UiCommand::Inventory | UiCommand::UseItem));
+        if is_global {
+            global.push(token);
+        } else {
+            contextual.push(token);
+        }
+    }
+
+    FooterControlLines {
+        contextual: pack(&contextual, width as usize),
+        global: pack(&global, width as usize),
+    }
 }

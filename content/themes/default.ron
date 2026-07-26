@@ -6,6 +6,8 @@
     ThemeDef(style_token: Terrain, fg: "gray", bg: None, bold: false),
     ThemeDef(style_token: Wall, fg: "darkgray", bg: None, bold: false),
     ThemeDef(style_token: Item, fg: "cyan", bg: None, bold: false),
+    ThemeDef(style_token: Station, fg: "lightblue", bg: None, bold: true),
+    ThemeDef(style_token: ResourceNode, fg: "green", bg: None, bold: false),
     ThemeDef(style_token: Exit, fg: "magenta", bg: None, bold: true),
     ThemeDef(style_token: Danger, fg: "red", bg: None, bold: true),
     ThemeDef(style_token: Muted, fg: "darkgray", bg: None, bold: false),

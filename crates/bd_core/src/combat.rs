@@ -123,13 +123,13 @@ pub fn register_aimed_attack_action() -> ActionDefinition {
             },
         ],
         effects: vec![
+            Effect::Log("Aimed attack!".into(), crate::gamelog::LogLevel::Combat),
             Effect::PoolDelta {
                 kind: PoolKind::Health,
                 amount: -8,
                 tags: vec![DeltaTag::Slash],
                 reason: "aimed attack".into(),
             },
-            Effect::Log("Aimed attack!".into(), crate::gamelog::LogLevel::Combat),
         ],
     }
 }
@@ -151,13 +151,13 @@ pub fn register_quick_attack_action() -> ActionDefinition {
             reason: "quick attack cost".into(),
         }],
         effects: vec![
+            Effect::Log("Quick attack!".into(), crate::gamelog::LogLevel::Combat),
             Effect::PoolDelta {
                 kind: PoolKind::Health,
                 amount: -3,
                 tags: vec![DeltaTag::Ballistic],
                 reason: "quick attack".into(),
             },
-            Effect::Log("Quick attack!".into(), crate::gamelog::LogLevel::Combat),
         ],
     }
 }
@@ -221,13 +221,42 @@ mod tests {
     }
 
     #[test]
+    fn quick_attack_logs_cause_before_damage_effect() {
+        let definition = register_quick_attack_action();
+        let log_index = definition
+            .effects
+            .iter()
+            .position(|effect| matches!(effect, Effect::Log(_, _)))
+            .expect("quick attack must emit its cause");
+        let damage_index = definition
+            .effects
+            .iter()
+            .position(|effect| {
+                matches!(
+                    effect,
+                    Effect::PoolDelta {
+                        kind: PoolKind::Health,
+                        amount,
+                        ..
+                    } if *amount < 0
+                )
+            })
+            .expect("quick attack must emit damage");
+
+        assert!(
+            log_index < damage_index,
+            "the visible attack cause must precede its damage result"
+        );
+    }
+
+    #[test]
     fn d100_roll_in_range() {
         let mut rng = CombatRng::from_seed(42);
         for _ in 0..100 {
             let roll = CombatRng::d100(Some(&mut rng));
             assert!(roll.is_some());
             let r = roll.unwrap();
-            assert!(r >= 1 && r <= 100, "d100 roll out of range: {}", r);
+            assert!((1..=100).contains(&r), "d100 roll out of range: {}", r);
         }
     }
 
@@ -289,7 +318,9 @@ mod tests {
     fn cover_reduces_damage_by_pct() {
         // Cover reduction is tested via the resolve_pool_deltas system integration
         // Unit: verify COVER_DAMAGE_REDUCTION_PCT constant is reasonable
-        assert!(COVER_DAMAGE_REDUCTION_PCT > 0 && COVER_DAMAGE_REDUCTION_PCT <= 100);
+        const {
+            assert!(COVER_DAMAGE_REDUCTION_PCT > 0 && COVER_DAMAGE_REDUCTION_PCT <= 100);
+        }
     }
 
     #[test]

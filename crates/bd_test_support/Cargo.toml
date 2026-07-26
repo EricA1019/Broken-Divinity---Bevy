@@ -17,3 +17,6 @@ bevy_ecs.workspace = true
 insta.workspace = true
 rand.workspace = true
 rand_chacha.workspace = true
+ron.workspace = true
+serde.workspace = true
+serde_json.workspace = true

@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 
 use bd_core::{
     BdSet,
-    components::{BlocksMovement, Name, Player, Position, Tile},
+    components::{BlocksMovement, ExitTile, Name, Player, Position, Tile},
     gamelog::{GameLog, LogLevel},
     inventory::Item,
     map::SmokeMap,
@@ -34,8 +34,28 @@ pub struct StatsViewModel {
     pub extracted_loot: u32,
     pub day: u64,
     pub party_names: Vec<String>,
+    pub station_status: Vec<String>,
+    pub next_day_forecast: String,
+    pub management: Option<ManagementMenuVm>,
     /// Compact faction standings: (label, value, status_text).
     pub faction_standings: Vec<(String, i32, String)>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ManagementMenuVm {
+    pub kind: ManagementMenuKind,
+    pub survivors: Vec<String>,
+    pub tasks: Vec<String>,
+    pub selected_survivor: Option<usize>,
+    pub selected_task: Option<usize>,
+    pub resources: String,
+    pub forecast: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ManagementMenuKind {
+    TaskAssignment,
+    StationStaffing,
 }
 
 #[derive(Resource, Debug, Clone, Default)]
@@ -68,31 +88,40 @@ pub struct MapViewModel {
     pub height: i32,
     pub tiles: Vec<Tile>,
     pub player_pos: Option<Position>,
-    pub enemy_positions: Vec<Position>,
-    /// Per-enemy glyph characters at corresponding indices to enemy_positions.
-    /// When empty, all enemies render as default 'E'.
-    pub enemy_glyphs: Vec<(Position, char)>,
-    /// Survivor positions and glyphs for outpost map rendering.
-    pub survivor_glyphs: Vec<(Position, char)>,
-    /// Station positions and glyphs for outpost map rendering.
-    pub station_glyphs: Vec<(Position, char)>,
-    /// Gabriel position and glyph for outpost map rendering. None if not present.
-    pub gabriel_glyph: Option<(Position, char)>,
-    /// Resource node positions and glyphs for outpost map rendering.
-    pub resource_glyphs: Vec<(Position, char)>,
-    /// Exit tile positions and glyphs (shelter gate, dungeon exits).
-    pub exit_glyphs: Vec<(Position, char)>,
+    /// Unified semantic entity/fixture projection consumed by the map renderer.
+    pub visuals: Vec<MapVisualVm>,
+    /// Physical targets of active survivor assignments.
+    pub assigned_targets: Vec<Position>,
     /// Build ghost cursor position and glyph for outpost map rendering.
     pub build_ghost: Option<(Position, char)>,
+    /// Typed production-domain reason why the current preview cannot be built.
+    pub build_ghost_denial: Option<String>,
+    /// Catalog-owned detail retained while choosing the placement tile.
+    pub build_placement: Option<BuildPlacementVm>,
     /// Build menu entries with highlight index (None if menu closed).
     pub build_menu: Option<BuildMenuVm>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct MapVisualVm {
+    pub position: Position,
+    pub token: crate::visual::VisualToken,
+    pub glyph: Option<char>,
+}
+
+#[derive(Debug, Clone)]
+pub struct BuildPlacementVm {
+    pub label: String,
+    pub supply_cost: i32,
+    pub effect: String,
 }
 
 /// Build menu data for the station selection popup.
 #[derive(Debug, Clone)]
 pub struct BuildMenuVm {
-    pub options: Vec<(String, i32)>, // (label, supply_cost)
+    pub options: Vec<(String, i32, String)>, // (label, supply_cost, effect)
     pub selected: usize,
+    pub available_supplies: i32,
 }
 
 #[derive(Resource, Debug, Clone, Default)]
@@ -117,15 +146,9 @@ pub struct ItemEntryVm {
 
 // ── Event view model ──
 
-#[derive(Resource, Debug, Clone, Serialize, Deserialize)]
+#[derive(Resource, Debug, Default, Clone, Serialize, Deserialize)]
 pub struct HelpViewModel {
     pub keys: Vec<(String, String)>,
-}
-
-impl Default for HelpViewModel {
-    fn default() -> Self {
-        Self { keys: Vec::new() }
-    }
 }
 
 #[derive(Resource, Debug, Clone, Default)]
@@ -161,13 +184,21 @@ pub(crate) fn register_view_models(app: &mut App) {
     );
 }
 
+type SurvivorPartyItem<'a> = (
+    Entity,
+    &'a Name,
+    &'a bd_core::colony::survivors::SurvivorTask,
+    Option<&'a Pools>,
+    Option<&'a bd_core::spatial::EntityScope>,
+);
+
 fn build_stats_vm(
     player_pools: Query<&Pools, With<Player>>,
     mut vm: ResMut<StatsViewModel>,
     colony_res: Res<bd_core::colony::production::ColonyResources>,
     colony_storage: Res<bd_core::colony::production::ColonyStorage>,
     game_time: Res<bd_core::time::GameTime>,
-    session: Res<bd_core::session::RunSession>,
+    last_completed: Res<bd_core::session::LastCompletedRun>,
     faction_rep: Option<Res<bd_core::factions::FactionReputation>>,
 ) {
     if let Ok(pools) = player_pools.single() {
@@ -196,10 +227,10 @@ fn build_stats_vm(
         .items
         .iter()
         .map(|(id, count)| (id.clone(), *count))
-        .collect();
+        .collect::<Vec<_>>();
     vm.day = game_time.day;
-    vm.run_outcome = session.outcome;
-    vm.extracted_loot = session.extracted_loot;
+    vm.run_outcome = last_completed.outcome;
+    vm.extracted_loot = last_completed.extracted_loot;
 
     // P17-D: Faction standings
     vm.faction_standings.clear();
@@ -228,19 +259,209 @@ fn build_stats_vm(
     }
 }
 
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
 fn build_party_vm(
-    survivors: Query<
-        (&Name, Option<&bd_core::spatial::EntityScope>),
+    survivors: Query<SurvivorPartyItem, With<bd_core::colony::survivors::Survivor>>,
+    stations: Query<
+        (
+            Entity,
+            &Name,
+            &Position,
+            &bd_core::colony::stations::StationType,
+            Option<&bd_core::spatial::EntityScope>,
+        ),
+        With<bd_core::colony::stations::Station>,
+    >,
+    work_survivors: Query<
+        (&Position, &bd_core::colony::survivors::SurvivorTask),
         With<bd_core::colony::survivors::Survivor>,
     >,
+    work_stations: Query<
+        (Entity, &Position, &bd_core::colony::stations::StationType),
+        With<bd_core::colony::stations::Station>,
+    >,
+    work_nodes: Query<(&Position, &bd_core::components::ResourceNode)>,
+    colony_resources: Res<bd_core::colony::production::ColonyResources>,
+    station_catalog: Res<bd_core::colony::stations::StationCatalog>,
+    management: Res<crate::ManagementMenuState>,
     mode: Res<bd_core::spatial::GameMode>,
     mut vm: ResMut<StatsViewModel>,
 ) {
-    vm.party_names = survivors
+    let mut active_survivors: Vec<_> = survivors
         .iter()
-        .filter(|(_, scope)| scope_active(*scope, *mode))
-        .map(|(name, _)| name.0.clone())
+        .filter(|(_, _, _, _, scope)| scope_active(*scope, *mode))
+        .collect::<Vec<_>>();
+    active_survivors.sort_by(|left, right| left.1.0.cmp(&right.1.0));
+    let mut active_stations: Vec<_> = stations
+        .iter()
+        .filter(|(_, _, _, _, scope)| scope_active(*scope, *mode))
+        .collect::<Vec<_>>();
+    active_stations.sort_by(|left, right| {
+        (&left.1.0, left.2.y, left.2.x).cmp(&(&right.1.0, right.2.y, right.2.x))
+    });
+    vm.party_names = active_survivors
+        .iter()
+        .map(|(_, name, task, pools, _)| {
+            let task = match task {
+                bd_core::colony::survivors::SurvivorTask::Idle => "Idle".into(),
+                bd_core::colony::survivors::SurvivorTask::Gathering(kind) => {
+                    format!("Gather {kind:?}")
+                }
+                bd_core::colony::survivors::SurvivorTask::Defending => "Defend".into(),
+                bd_core::colony::survivors::SurvivorTask::Resting => "Rest".into(),
+                bd_core::colony::survivors::SurvivorTask::AssignedTo(bits) => active_stations
+                    .iter()
+                    .find(|(entity, _, _, _, _)| entity.to_bits() == *bits)
+                    .map_or_else(
+                        || "Invalid station".into(),
+                        |(_, name, _, _, _)| name.0.clone(),
+                    ),
+            };
+            let mood = pools
+                .and_then(|pools| pools.get(PoolKind::Mood))
+                .map_or(0, |mood| mood.current);
+            format!("{} — {} (Mood {})", name.0, task, mood)
+        })
         .collect();
+    vm.station_status = active_stations
+        .iter()
+        .map(|(entity, name, _, station_type, _)| {
+            let effect = station_catalog
+                .get(**station_type)
+                .map_or_else(|| "Unknown effect".into(), |entry| entry.effect_label());
+            let worker = active_survivors
+                .iter()
+                .find(|(_, _, task, _, _)| {
+                    matches!(
+                        task,
+                        bd_core::colony::survivors::SurvivorTask::AssignedTo(bits)
+                            if *bits == entity.to_bits()
+                    )
+                })
+                .map_or("Unstaffed", |(_, name, _, _, _)| name.0.as_str());
+            format!("{} — {} — {}", name.0, effect, worker)
+        })
+        .collect();
+    let work_survivors = work_survivors
+        .iter()
+        .map(
+            |(position, task)| bd_core::colony::production::SurvivorWorkSnapshot {
+                task: task.clone(),
+                position: *position,
+            },
+        )
+        .collect::<Vec<_>>();
+    let work_stations = work_stations
+        .iter()
+        .map(
+            |(entity, position, station_type)| bd_core::colony::production::StationWorkSnapshot {
+                entity_bits: entity.to_bits(),
+                station_type: *station_type,
+                position: *position,
+            },
+        )
+        .collect::<Vec<_>>();
+    let work_nodes = work_nodes
+        .iter()
+        .map(
+            |(position, node)| bd_core::colony::production::ResourceWorkSnapshot {
+                kind: node.kind,
+                position: *position,
+                depleted: node.depleted,
+            },
+        )
+        .collect::<Vec<_>>();
+    let forecast = bd_core::colony::production::forecast_colony(
+        &colony_resources,
+        &work_survivors,
+        &work_stations,
+        &work_nodes,
+        &station_catalog,
+    );
+    vm.next_day_forecast = format!(
+        "Next Sup: -{}food {:+}stn {:+}gath={:+}→{} M{:+} P{:+} F{:+}",
+        forecast.food_consumed,
+        forecast.station_supplies,
+        forecast.gathered_supplies,
+        forecast.supplies_net,
+        forecast.supplies_after,
+        forecast.materials_net,
+        forecast.plants_net,
+        forecast.faith_net,
+    );
+
+    vm.management = management.active.then(|| {
+        let selected_task = management.selected_choice.and_then(|choice| match choice {
+            crate::ManagementChoice::Action("ability.assign_idle") => Some(0),
+            crate::ManagementChoice::Action("ability.gather_supplies") => Some(1),
+            crate::ManagementChoice::Action("ability.gather_materials") => Some(2),
+            crate::ManagementChoice::Action("ability.gather_plants") => Some(3),
+            crate::ManagementChoice::Action("ability.assign_resting") => Some(4),
+            crate::ManagementChoice::Action(_) => None,
+            crate::ManagementChoice::Station(selected) => active_stations
+                .iter()
+                .position(|(entity, _, _, _, _)| *entity == selected),
+        });
+        let task_options = match management.kind {
+            crate::ManagementMenuKind::TaskAssignment => vec![
+                "1. Idle".into(),
+                "2. Gather Supplies".into(),
+                "3. Gather Materials".into(),
+                "4. Gather Plants".into(),
+                "5. Rest".into(),
+            ],
+            crate::ManagementMenuKind::StationStaffing => active_stations
+                .iter()
+                .enumerate()
+                .map(|(index, (entity, name, _, station_type, _))| {
+                    let effect = station_catalog
+                        .get(**station_type)
+                        .map_or_else(|| "Unknown effect".into(), |entry| entry.effect_label());
+                    let worker = active_survivors
+                        .iter()
+                        .find(|(_, _, task, _, _)| {
+                            matches!(
+                                task,
+                                bd_core::colony::survivors::SurvivorTask::AssignedTo(bits)
+                                    if *bits == entity.to_bits()
+                            )
+                        })
+                        .map_or("Unstaffed", |(_, name, _, _, _)| name.0.as_str());
+                    format!("{}. {} — {} — {}", index + 1, name.0, effect, worker)
+                })
+                .collect(),
+        };
+        ManagementMenuVm {
+            kind: match management.kind {
+                crate::ManagementMenuKind::TaskAssignment => ManagementMenuKind::TaskAssignment,
+                crate::ManagementMenuKind::StationStaffing => ManagementMenuKind::StationStaffing,
+            },
+            survivors: vm.party_names.clone(),
+            tasks: task_options,
+            selected_survivor: management.selected_survivor,
+            selected_task,
+            resources: format!(
+                "Sup {}  Mat {}  Plant {}  Faith {}",
+                colony_resources
+                    .pools
+                    .get(PoolKind::Supplies)
+                    .map_or(0, |pool| pool.current),
+                colony_resources
+                    .pools
+                    .get(PoolKind::Materials)
+                    .map_or(0, |pool| pool.current),
+                colony_resources
+                    .pools
+                    .get(PoolKind::WildPlants)
+                    .map_or(0, |pool| pool.current),
+                colony_resources
+                    .pools
+                    .get(PoolKind::Faith)
+                    .map_or(0, |pool| pool.current),
+            ),
+            forecast: vm.next_day_forecast.clone(),
+        }
+    });
 }
 
 fn build_log_vm(log: Res<GameLog>, mut vm: ResMut<LogViewModel>) {
@@ -251,8 +472,44 @@ fn build_log_vm(log: Res<GameLog>, mut vm: ResMut<LogViewModel>) {
             level: e.level,
         })
         .collect();
+    vm.entries.reverse();
 }
 
+#[cfg(test)]
+mod stabilization_tests {
+    use super::*;
+
+    #[test]
+    fn rendered_combat_log_is_chronological() {
+        let mut app = App::new();
+        app.insert_resource(GameLog::default());
+        app.insert_resource(LogViewModel::default());
+        app.add_systems(bevy_app::Update, build_log_vm);
+        app.world_mut()
+            .resource_mut::<GameLog>()
+            .push("Player attacks.", LogLevel::Combat);
+        app.world_mut()
+            .resource_mut::<GameLog>()
+            .push("Rat takes 3 damage.", LogLevel::Combat);
+
+        app.update();
+
+        let messages = app
+            .world()
+            .resource::<LogViewModel>()
+            .entries
+            .iter()
+            .map(|entry| entry.message.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            messages,
+            ["Player attacks.", "Rat takes 3 damage."],
+            "the rendered window must show cause before result"
+        );
+    }
+}
+
+#[allow(clippy::type_complexity, clippy::too_many_arguments)] // One read-only projection over distinct ECS owners.
 fn build_action_list_vm(
     player: Query<
         (
@@ -290,8 +547,11 @@ fn build_action_list_vm(
         Option<&bd_core::spatial::EntityScope>,
         With<bd_core::colony::stations::Station>,
     >,
+    exits: Query<(&Position, Option<&bd_core::spatial::EntityScope>), With<ExitTile>>,
     colony_resources: Res<bd_core::colony::production::ColonyResources>,
+    game_time: Res<bd_core::time::GameTime>,
     bindings: Res<crate::commands::CommandBindings>,
+    station_catalog: Res<bd_core::colony::stations::StationCatalog>,
     mut vm: ResMut<ActionListViewModel>,
 ) {
     let Some((player_entity, pp, pools, _)) = player
@@ -342,8 +602,8 @@ fn build_action_list_vm(
         scope_active(scope, *mode) && matches!(task, bd_core::colony::survivors::SurvivorTask::Idle)
     });
     let station_available = stations.iter().any(|scope| scope_active(scope, *mode));
-    let minimum_build_cost = bd_core::colony::stations::default_station_blueprints()
-        .iter()
+    let minimum_build_cost = station_catalog
+        .buildable()
         .map(|blueprint| blueprint.build_cost_supplies)
         .min()
         .unwrap_or_default();
@@ -351,6 +611,9 @@ fn build_action_list_vm(
         .pools
         .get(PoolKind::Supplies)
         .map_or(0, |pool| pool.current);
+    let at_exit = exits
+        .iter()
+        .any(|(position, scope)| scope_active(scope, *mode) && *position == *pp);
     let availability = crate::commands::ActionAvailability {
         mode: *mode,
         has_ap,
@@ -361,6 +624,10 @@ fn build_action_list_vm(
         can_build: supplies >= minimum_build_cost,
         survivor_available,
         station_available,
+        at_exit,
+        can_travel: supplies >= bd_core::spatial::TRAVEL_SUPPLIES_COST,
+        day: game_time.day,
+        turn: game_time.turn,
     };
     let mut projections = crate::commands::action_panel(&bindings, availability);
     if let Some(staff) = projections
@@ -369,16 +636,16 @@ fn build_action_list_vm(
         && !idle_survivor_available
     {
         staff.enabled = false;
-        staff.denial_reason = Some("No idle survivor");
+        staff.denial_reason = Some("No idle survivor".into());
     }
 
     vm.actions = projections
         .into_iter()
         .map(|action| ActionItemVm {
-            label: action.label.into(),
+            label: action.label,
             key_hint: action.key,
             enabled: action.enabled,
-            denial_reason: action.denial_reason.map(str::to_owned),
+            denial_reason: action.denial_reason,
         })
         .collect();
 }
@@ -386,23 +653,31 @@ fn build_action_list_vm(
 fn build_help_vm(
     bindings: Res<crate::commands::CommandBindings>,
     mode: Res<bd_core::spatial::GameMode>,
-    build_ghost: Res<bd_core::colony::stations::BuildGhostState>,
-    build_menu: Res<bd_core::colony::stations::BuildMenuState>,
+    build: Res<bd_core::colony::stations::BuildInteraction>,
+    symbols: Res<crate::visual::SymbolRegistry>,
+    stations: Res<bd_core::colony::stations::StationCatalog>,
     mut vm: ResMut<HelpViewModel>,
 ) {
     let interaction = if *mode == bd_core::spatial::GameMode::GameOver {
         crate::commands::InteractionMode::GameOver
-    } else if build_ghost.active || build_menu.active {
+    } else if build.is_active() {
         crate::commands::InteractionMode::Build
     } else {
         crate::commands::InteractionMode::Normal
     };
-    vm.keys = crate::commands::help_entries(&bindings, *mode, interaction)
-        .into_iter()
-        .map(|entry| (entry.key, entry.description.into()))
-        .collect();
+    vm.keys = crate::commands::help_entries_with_legend(
+        &bindings,
+        *mode,
+        interaction,
+        &symbols,
+        &stations,
+    )
+    .into_iter()
+    .map(|entry| (entry.key, entry.description))
+    .collect();
 }
 
+#[allow(clippy::type_complexity, clippy::too_many_arguments)] // Map projection reads independent scoped entity layers.
 fn build_map_vm(
     map: Res<SmokeMap>,
     player_pos: Query<(&Position, Option<&bd_core::spatial::EntityScope>), With<Player>>,
@@ -419,11 +694,13 @@ fn build_map_vm(
             &Position,
             Option<&bd_core::components::Name>,
             &bd_core::colony::survivors::SurvivorTask,
+            Option<&bd_core::colony::survivors::WorkerActivity>,
             Option<&bd_core::spatial::EntityScope>,
         ),
         With<bd_core::colony::survivors::Survivor>,
     >,
     stations: Query<(
+        Entity,
         &Position,
         &bd_core::colony::stations::StationType,
         Option<&bd_core::spatial::EntityScope>,
@@ -437,12 +714,21 @@ fn build_map_vm(
         &bd_core::components::ResourceNode,
         Option<&bd_core::spatial::EntityScope>,
     )>,
+    items: Query<
+        (
+            &Position,
+            Option<&ContainedIn>,
+            Option<&bd_core::spatial::EntityScope>,
+        ),
+        With<Item>,
+    >,
     exit_tiles: Query<
         (&Position, Option<&bd_core::spatial::EntityScope>),
         With<bd_core::components::ExitTile>,
     >,
-    build_ghost: Res<bd_core::colony::stations::BuildGhostState>,
-    build_menu: Res<bd_core::colony::stations::BuildMenuState>,
+    build: Res<bd_core::colony::stations::BuildInteraction>,
+    colony_resources: Res<bd_core::colony::production::ColonyResources>,
+    station_catalog: Res<bd_core::colony::stations::StationCatalog>,
     mut vm: ResMut<MapViewModel>,
     mode: Res<bd_core::spatial::GameMode>,
     outpost: Res<bd_core::spatial::OutpostState>,
@@ -466,114 +752,255 @@ fn build_map_vm(
         .iter()
         .find(|(_, scope)| scope_active(*scope, *mode))
         .map(|(position, _)| *position);
-    vm.enemy_positions.clear();
-    vm.enemy_glyphs.clear();
+    vm.visuals.clear();
+    if let Some(position) = vm.player_pos {
+        vm.visuals.push(MapVisualVm {
+            position,
+            token: crate::visual::VisualToken::Player,
+            glyph: None,
+        });
+    }
     // Only collect enemies in tactical/dungeon mode — shelter has no enemies
     if *mode != bd_core::spatial::GameMode::Outpost {
         for (pos, name, scope) in enemies.iter() {
             if !scope_active(scope, *mode) {
                 continue;
             }
-            vm.enemy_positions.push(*pos);
             let glyph = name.map_or('E', |n| match n.0.as_str() {
                 "Rat" => 'r',
                 "Skeleton" => 'S',
                 "Boss" => 'B',
                 _ => 'E',
             });
-            vm.enemy_glyphs.push((*pos, glyph));
+            vm.visuals.push(MapVisualVm {
+                position: *pos,
+                token: crate::visual::VisualToken::Enemy,
+                glyph: Some(glyph),
+            });
         }
     }
-    vm.survivor_glyphs.clear();
-    for (pos, _name, task, scope) in survivors.iter() {
+    vm.assigned_targets.clear();
+    for (pos, _name, task, activity, scope) in survivors.iter() {
         if !scope_active(scope, *mode) {
             continue;
         }
-        let glyph = match task {
-            bd_core::colony::survivors::SurvivorTask::Idle => 'A',
-            bd_core::colony::survivors::SurvivorTask::Gathering => 'G',
-            bd_core::colony::survivors::SurvivorTask::Defending => 'D',
-            bd_core::colony::survivors::SurvivorTask::Resting => 'R',
-            _ => 'A',
+        let token = match activity {
+            Some(bd_core::colony::survivors::WorkerActivity::Idle) => {
+                crate::visual::VisualToken::WorkerIdle
+            }
+            Some(bd_core::colony::survivors::WorkerActivity::EnRoute { .. }) => {
+                crate::visual::VisualToken::WorkerEnRoute
+            }
+            Some(bd_core::colony::survivors::WorkerActivity::Working { .. }) => {
+                crate::visual::VisualToken::WorkerWorking
+            }
+            Some(bd_core::colony::survivors::WorkerActivity::Blocked { .. }) => {
+                crate::visual::VisualToken::WorkerBlocked
+            }
+            Some(bd_core::colony::survivors::WorkerActivity::Resting) => {
+                crate::visual::VisualToken::WorkerResting
+            }
+            Some(bd_core::colony::survivors::WorkerActivity::Defending) => {
+                crate::visual::VisualToken::WorkerDefending
+            }
+            None => match task {
+                bd_core::colony::survivors::SurvivorTask::Idle => {
+                    crate::visual::VisualToken::WorkerIdle
+                }
+                bd_core::colony::survivors::SurvivorTask::Gathering(_)
+                | bd_core::colony::survivors::SurvivorTask::AssignedTo(_) => {
+                    crate::visual::VisualToken::WorkerEnRoute
+                }
+                bd_core::colony::survivors::SurvivorTask::Defending => {
+                    crate::visual::VisualToken::WorkerDefending
+                }
+                bd_core::colony::survivors::SurvivorTask::Resting => {
+                    crate::visual::VisualToken::WorkerResting
+                }
+            },
         };
-        vm.survivor_glyphs.push((*pos, glyph));
+        vm.visuals.push(MapVisualVm {
+            position: *pos,
+            token,
+            glyph: None,
+        });
+        let target_position = match activity {
+            Some(bd_core::colony::survivors::WorkerActivity::EnRoute {
+                target_position, ..
+            })
+            | Some(bd_core::colony::survivors::WorkerActivity::Working {
+                target_position, ..
+            }) => Some(*target_position),
+            Some(bd_core::colony::survivors::WorkerActivity::Blocked {
+                target_position, ..
+            }) => *target_position,
+            _ => None,
+        };
+        if let Some(target_position) = target_position {
+            vm.assigned_targets.push(target_position);
+        }
     }
-    vm.station_glyphs.clear();
-    for (pos, stype, scope) in stations.iter() {
+    vm.assigned_targets
+        .sort_by_key(|position| (position.y, position.x));
+    vm.assigned_targets.dedup();
+    let staffed = survivors
+        .iter()
+        .filter_map(|(_, _, task, _, scope)| {
+            if !scope_active(scope, *mode) {
+                return None;
+            }
+            match task {
+                bd_core::colony::survivors::SurvivorTask::AssignedTo(bits) => Some(*bits),
+                _ => None,
+            }
+        })
+        .collect::<std::collections::HashSet<_>>();
+    for (entity, pos, stype, scope) in stations.iter() {
         if !scope_active(scope, *mode) {
             continue;
         }
-        let glyph = match stype {
-            bd_core::colony::stations::StationType::Stove => 'F',
-            bd_core::colony::stations::StationType::Altar => 'A',
-            bd_core::colony::stations::StationType::Workshop => 'W',
-            bd_core::colony::stations::StationType::Bed => 'B',
-            bd_core::colony::stations::StationType::Storage => 'S',
-        };
-        vm.station_glyphs.push((*pos, glyph));
+        let glyph = station_catalog.get(*stype).map_or('?', |entry| {
+            if staffed.contains(&entity.to_bits()) {
+                entry.staffed_glyph
+            } else {
+                entry.glyph
+            }
+        });
+        vm.visuals.push(MapVisualVm {
+            position: *pos,
+            token: crate::visual::VisualToken::Station,
+            glyph: Some(glyph),
+        });
     }
 
     // P15-C: Gabriel glyph on shelter map
-    vm.gabriel_glyph = gabriel_q
+    let gabriel_glyph = gabriel_q
         .iter()
         .find(|(_, scope)| scope_active(*scope, *mode))
         .map(|(position, _)| (*position, 'G'));
+    if let Some((position, glyph)) = gabriel_glyph {
+        vm.visuals.push(MapVisualVm {
+            position,
+            token: crate::visual::VisualToken::Ally,
+            glyph: Some(glyph),
+        });
+    }
 
     // P22-D: Resource node glyphs on shelter map
-    vm.resource_glyphs.clear();
     for (pos, node, scope) in resource_nodes.iter() {
         if !scope_active(scope, *mode) {
             continue;
         }
-        let glyph = match node.kind {
-            bd_core::components::ResourceNodeType::Trees => 'T',
-            bd_core::components::ResourceNodeType::WaterSource => 'W',
-            bd_core::components::ResourceNodeType::WildPlants => 'P',
+        let token = match node.kind {
+            bd_core::components::ResourceNodeType::Trees => crate::visual::VisualToken::Trees,
+            bd_core::components::ResourceNodeType::WaterSource => {
+                crate::visual::VisualToken::WaterSource
+            }
+            bd_core::components::ResourceNodeType::WildPlants => {
+                crate::visual::VisualToken::WildPlants
+            }
         };
-        vm.resource_glyphs.push((*pos, glyph));
+        vm.visuals.push(MapVisualVm {
+            position: *pos,
+            token,
+            glyph: None,
+        });
     }
 
+    for (position, contained, scope) in items.iter() {
+        if contained.is_none() && scope_active(scope, *mode) {
+            vm.visuals.push(MapVisualVm {
+                position: *position,
+                token: crate::visual::VisualToken::Item,
+                glyph: None,
+            });
+        }
+    }
     // P3-A: Exit tile glyphs on the shelter map (gate, dungeon exits)
-    vm.exit_glyphs.clear();
     for (pos, scope) in exit_tiles.iter() {
         if !scope_active(scope, *mode) {
             continue;
         }
-        vm.exit_glyphs.push((*pos, '>'));
+        vm.visuals.push(MapVisualVm {
+            position: *pos,
+            token: crate::visual::VisualToken::Exit,
+            glyph: None,
+        });
     }
+    vm.visuals.sort_by_key(|visual| {
+        (
+            visual.position.y,
+            visual.position.x,
+            visual.token as u8,
+            visual.glyph,
+        )
+    });
 
-    // P2-C: Build ghost cursor on shelter map
-    vm.build_ghost = if build_ghost.active {
-        let glyph = match build_ghost.station_type {
-            Some(bd_core::colony::stations::StationType::Stove) => 'f',
-            Some(bd_core::colony::stations::StationType::Altar) => 'a',
-            Some(bd_core::colony::stations::StationType::Workshop) => 'w',
-            Some(bd_core::colony::stations::StationType::Bed) => 'b',
-            Some(bd_core::colony::stations::StationType::Storage) => 's',
-            None => '?',
-        };
-        Some((build_ghost.cursor, glyph))
-    } else {
-        None
+    // P2-C: Build transaction projection on the shelter map.
+    let placement = match &*build {
+        bd_core::colony::stations::BuildInteraction::Placing {
+            selected_station,
+            cursor,
+            validation,
+        } => Some((*selected_station, *cursor, validation.as_ref().err())),
+        bd_core::colony::stations::BuildInteraction::AwaitingResolution {
+            selected_station,
+            cursor,
+        } => Some((*selected_station, *cursor, None)),
+        _ => None,
     };
+    vm.build_ghost = placement.map(|(station_type, cursor, _)| {
+        let glyph = station_catalog
+            .get(station_type)
+            .map_or('?', |entry| entry.glyph);
+        (cursor, glyph)
+    });
+    vm.build_ghost_denial = placement
+        .and_then(|(_, _, denial)| denial)
+        .map(ToString::to_string);
+    vm.build_placement = placement
+        .map(|(station_type, _, _)| station_type)
+        .and_then(|station_type| station_catalog.get(station_type))
+        .map(|entry| BuildPlacementVm {
+            label: entry.label.clone(),
+            supply_cost: entry.build_cost_supplies,
+            effect: entry.effect_label(),
+        });
 
     // P2: Build menu popup
-    vm.build_menu = if build_menu.active {
-        let bps = bd_core::colony::stations::default_station_blueprints();
-        let options: Vec<(String, i32)> = bps
-            .iter()
-            .map(|bp| (bp.label.to_string(), bp.build_cost_supplies))
-            .collect();
-        Some(BuildMenuVm {
-            options,
-            selected: build_menu.selected,
-        })
-    } else {
-        None
-    };
+    vm.build_menu =
+        if let bd_core::colony::stations::BuildInteraction::Selecting { selected_station } = *build
+        {
+            let options: Vec<(String, i32, String)> = station_catalog
+                .entries()
+                .iter()
+                .map(|bp| {
+                    (
+                        bp.label.to_string(),
+                        bp.build_cost_supplies,
+                        bp.effect_label(),
+                    )
+                })
+                .collect();
+            Some(BuildMenuVm {
+                options,
+                selected: station_catalog
+                    .entries()
+                    .iter()
+                    .position(|entry| entry.station_type == selected_station)
+                    .unwrap_or(0),
+                available_supplies: colony_resources
+                    .pools
+                    .get(PoolKind::Supplies)
+                    .map_or(0, |pool| pool.current),
+            })
+        } else {
+            None
+        };
 }
 
 /// Build the inventory container view model for the player.
+#[allow(clippy::type_complexity)] // Inventory projection reads optional item facets in one query.
 fn build_container_vm(
     player: Query<(Entity, Option<&bd_core::spatial::EntityScope>), With<Player>>,
     items: Query<(
@@ -744,6 +1171,33 @@ mod tests {
     }
 
     #[test]
+    fn extraction_action_reflects_exit_location_without_writing_a_hint() {
+        let mut app = test_app();
+        let exit = Position { x: 5, y: 5 };
+        app.world_mut().spawn((
+            Player,
+            exit,
+            Pools::new(vec![Pool::new(PoolKind::ActionPoints, 3, 0, 3)]),
+        ));
+        app.world_mut().spawn((ExitTile, exit));
+        app.world_mut()
+            .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
+        let log_before = app.world().resource::<GameLog>().iter().count();
+
+        app.update();
+
+        let extract = app
+            .world()
+            .resource::<ActionListViewModel>()
+            .actions
+            .iter()
+            .find(|action| action.label == "Extract")
+            .expect("tactical action list must expose extraction");
+        assert!(extract.enabled);
+        assert_eq!(app.world().resource::<GameLog>().iter().count(), log_before);
+    }
+
+    #[test]
     fn map_view_model_contains_tiles() {
         let mut app = test_app();
         app.world_mut().spawn((
@@ -817,32 +1271,34 @@ mod tests {
         app.update();
 
         let vm = app.world().resource::<MapViewModel>();
+        let enemies = vm
+            .visuals
+            .iter()
+            .filter(|visual| visual.token == crate::visual::VisualToken::Enemy)
+            .collect::<Vec<_>>();
         assert_eq!(
-            vm.enemy_positions.len(),
+            enemies.len(),
             3,
             "Should find 3 enemy positions, got {:?}",
-            vm.enemy_positions
+            enemies
         );
         // Find the glyph for the Rat at (3,3)
-        let rat_glyph = vm
-            .enemy_glyphs
+        let rat_glyph = enemies
             .iter()
-            .find(|(p, _)| p.x == 3 && p.y == 3)
-            .map(|(_, g)| *g);
+            .find(|visual| visual.position == Position { x: 3, y: 3 })
+            .and_then(|visual| visual.glyph);
         assert_eq!(rat_glyph, Some('r'), "Rat should map to glyph 'r'");
         // Find the glyph for the Skeleton at (5,5)
-        let skel_glyph = vm
-            .enemy_glyphs
+        let skel_glyph = enemies
             .iter()
-            .find(|(p, _)| p.x == 5 && p.y == 5)
-            .map(|(_, g)| *g);
+            .find(|visual| visual.position == Position { x: 5, y: 5 })
+            .and_then(|visual| visual.glyph);
         assert_eq!(skel_glyph, Some('S'), "Skeleton should map to glyph 'S'");
         // Unknown enemy should be 'E'
-        let unknown_glyph = vm
-            .enemy_glyphs
+        let unknown_glyph = enemies
             .iter()
-            .find(|(p, _)| p.x == 7 && p.y == 7)
-            .map(|(_, g)| *g);
+            .find(|visual| visual.position == Position { x: 7, y: 7 })
+            .and_then(|visual| visual.glyph);
         assert_eq!(
             unknown_glyph,
             Some('E'),
