@@ -200,3 +200,27 @@ The full automated gate and isolated 80x24/60x20 play audit pass. Foundation
 acceptance is current; no execution plan is active. Product P2 still requires
 a new owner-approved plan and an explicit decision about which preserved
 systems enter scope.
+
+## Foundation basic colony-loop migration record — 2026-07-27
+
+The owner-approved D-20 pass extended existing owners rather than replacing
+the kernel:
+
+- `ColonyResources` still owns finished pools and now also owns canceled raw
+  cargo deposits.
+- Existing survivor movement/pathfinding and occupancy reservations are reused
+  by a separate durable logistics transition.
+- Existing station content gained one data-defined Basic Processing entry and
+  one guaranteed starter instance; all five prior entries remain preserved.
+- Existing fixed shelter/dungeon topology remains unchanged. Only
+  deterministic resource-fixture placement on the fixed shelter was added.
+- Existing save snapshots gained defaulted job, cargo, raw-resource, source,
+  and node identity fields so older compatible snapshots retain defaults.
+- Existing Ratatui semantic projection gained recipe/stage/target/cargo
+  details and responsive six-entry controls without introducing a second UI
+  state owner.
+
+No procgen topology, raids, events, sanity, overworld generation, faction
+reputation, Product P2 automation, queues, upgrades, or depletion balance was
+activated. C0–C7 implementation and C8 PTY behavior are green. Formal visual
+acceptance remains pending owner review under D-19.

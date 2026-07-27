@@ -359,3 +359,95 @@ plan.
 Visual rows without complete semantic/canvas/style/geometry/transition/PTY
 evidence remain `Green unreviewed` or `Open` in the visual matrix. They were
 not bulk-accepted.
+
+## Foundation basic colony-loop evidence — 2026-07-27
+
+### Automated evidence
+
+- Data/content validation now covers all source, raw-resource, recipe,
+  station, output, amount, and source/input compatibility references with
+  offending IDs in diagnostics.
+- Node generation passes complete-or-error atomicity, a named 128-seed
+  profile, persistence, spacing/reachability, and source-file permutation.
+- Logistics passes every stage transition, exact conservation, all configured
+  recipes, a fixture fourth recipe, different-chain concurrency, sole-work-
+  tile contention, cancellation/reassignment deposit, every-stage
+  persistence, render/Tactical time isolation, and deterministic replay.
+- Input/presentation passes the full production-key workflow, a deterministic
+  256-step production-key fuzz profile, six-entry numeric Build selection,
+  runtime Foundation Help at 60x20, and wrapped compact staffing choices.
+- Five repeated node/route runs passed without an intermittent failure.
+- Canonical gate before the final C8 visual fixes: 599 listed, 597 passed,
+  0 failed, 2 allowlisted ignored; all 44 required contracts were
+  `GreenUnreviewed`.
+- Final canonical gate after C8 remediation: 10/10 steps passed; 601 listed,
+  599 passed, 0 failed, 2 allowlisted ignored; all 44 required contracts
+  remained green with zero duplicate primary owners.
+
+### Real-terminal evidence
+
+Runtime seed `0` was exercised through the actual managed-launcher target with
+isolated XDG roots.
+
+- 80x24: title, clean colony, complete Help, six-entry Build selection,
+  cumulative preview, typed invalid reason, exact placement, paused
+  survivor→processor→recipe selection, source travel, gathering, raw cargo,
+  station travel, refining, resource credit, carrying save/load continuation,
+  Rest, fixed-dungeon combat, extraction, and colony return all passed.
+- 60x20: the same compact-critical colony stages, complete wrapped recipes,
+  save/load, Rest, fixed-dungeon combat, extraction, and colony return passed.
+- The terminal audit found three missing automated cases: stale `1-5` Build
+  controls, a 60x20 Help panic caused by the sixth station legend, and compact
+  staffing-row clipping. Each was reproduced by a focused failing test and
+  fixed before the successful rerun.
+- One deliberate rapid five-key burst produced the existing bounded-input
+  warning and discarded one excess key. Normal paced input remained stable;
+  the warning is expected by the bounded-input contract.
+
+### Drift and acceptance
+
+- GDD Sections 3, 6, 8, and 10 still describe the implemented
+  survival-first physical colony and fixed dungeon Foundation.
+- D-20 conservation, timing, data ownership, generation, build, persistence,
+  and projection clauses remain satisfied.
+- Kernel resolver, schedule, UI/view-model, semantic ASCII, content-ID, and
+  save/load boundaries remain intact.
+- Deferred procgen topology, raids, events, sanity, overworld generation,
+  faction reputation, and Product P2 systems remain inactive.
+
+No C8 behavior failure remains. Applicable visual records remain
+`GreenUnreviewed` until owner review; they were not silently promoted to
+`Accepted`.
+
+## Turn-based work and idle construction evidence
+
+- `COLONY-WORK-DURATION-001` proves three gather work turns and two refine
+  work turns gate their configured yields with no partial or duplicate credit.
+- `COLONY-CONSTRUCTION-001` proves paid site creation, automatic idle-worker
+  travel, assigned-worker exclusion, immediate release when the player assigns
+  gathering work, exact completion, persistence, and render-frame isolation.
+- Invalid zero recipe work durations and zero buildable-station construction
+  work are rejected by content validation with the offending record and file.
+- Construction uses `%` while unfinished and exposes `completed/required`
+  progress; unfinished sites are excluded from staffing, forecast, daily
+  station effects, and recipe target selection.
+- Legacy direct daily gathering is explicitly disjoint from durable logistics
+  jobs, preventing one survivor from receiving both transaction paths.
+
+Final canonical gate: 10/10 steps passed; 609 listed, 607 passed, 0 failed,
+and 2 allowlisted ignored. All 46 required contracts are
+`GreenUnreviewed`; none were silently promoted to `Accepted`.
+
+A clean isolated 80x24 real-terminal run confirmed:
+
+- Build selection and placement remained paused and readable;
+- accepted placement showed `%` rather than an operational station glyph;
+- the station panel showed `Stove construction — 0/4 work`;
+- three idle survivors visibly changed to EnRoute and moved toward the site;
+- one adjacent worker advanced visible progress 1/4, 2/4, 3/4, then 4/4;
+- completion changed `%` to the operational Stove glyph exactly once, replaced
+  construction progress with the Stove effect/staffing row, and logged one
+  concise completion result;
+- ordinary paced input produced no bounded-input warning or malformed frame.
+
+The new construction visual remains `GreenUnreviewed` pending owner review.

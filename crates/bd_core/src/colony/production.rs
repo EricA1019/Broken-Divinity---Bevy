@@ -23,6 +23,8 @@ pub const INITIAL_FAITH: i32 = 0;
 #[derive(Resource, Debug, Clone, Serialize, Deserialize)]
 pub struct ColonyResources {
     pub pools: Pools,
+    #[serde(default)]
+    pub raw: BTreeMap<String, u32>,
 }
 
 /// Colony-owned item storage. Dungeon loot is transferred here by the
@@ -255,6 +257,7 @@ impl Default for ColonyResources {
                 Pool::new(PoolKind::Materials, 0, 0, 50),
                 Pool::new(PoolKind::WildPlants, 0, 0, 50),
             ]),
+            raw: BTreeMap::new(),
         }
     }
 }
@@ -298,12 +301,16 @@ mod physical_work_contract_tests {
 }
 
 /// Processes production at day change: stations produce (only if staffed), survivors eat.
+#[allow(clippy::type_complexity)]
 pub(crate) fn process_production(
     mut colony_res: ResMut<ColonyResources>,
     survivors_query: Query<(&Position, &SurvivorTask), With<Survivor>>,
     stations_query: Query<
         (Entity, &Position, &crate::colony::stations::StationType),
-        With<crate::colony::stations::Station>,
+        (
+            With<crate::colony::stations::Station>,
+            Without<crate::colony::stations::ConstructionSite>,
+        ),
     >,
     mut days: bevy_ecs::message::MessageReader<crate::time::DayAdvanced>,
     mut draft: ResMut<DailyCycleDraft>,

@@ -1,0 +1,7 @@
+[
+    (
+        id: "placement.foundation_sources",
+        minimum_manhattan_spacing: 6,
+        seed_salt: 11400714819323198485,
+    ),
+]

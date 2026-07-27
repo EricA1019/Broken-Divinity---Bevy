@@ -59,12 +59,14 @@ Status meanings:
 | Selection shows complete cost/effect/availability | `bd_tui::lib::tests::compact_build_selection_shows_complete_selected_effect`; existing selection layout tests | Green unreviewed | Complete visual evidence and PTY review |
 | Placement retains selected name, cost, and effect | `bd_tui::lib::tests::build_placement_exposes_selected_station_name_cost_and_effect` | Green unreviewed | Automated profile proof passes; final PTY observation remains required |
 | Initial placement preview and confirmation target agree | `phase6_input::entering_build_placement_starts_on_a_visible_adjacent_candidate` | Green | One `BuildInteraction` owns the selected station, visible cursor, validation, and submitted target |
-| Placement does not move the player | no narrow primary contract | Open | Player position diff across valid preview navigation and confirmation |
+| Placement cursor moves cumulatively without moving the player | `phase6_input::build_placement_cursor_moves_cumulatively_without_moving_the_player` | Green | None |
+| Distant confirmation places at the absolute preview coordinate | `phase6_input::distant_build_confirmation_places_at_the_absolute_preview_coordinate` | Green | None |
 | Valid and invalid previews differ semantically | `bd_tui::lib::tests::invalid_build_preview_explains_egress_rejection` | Partial | Semantic token, style, ASCII fallback, and transition evidence |
 | Invalid preview exposes a typed reason | `invalid_build_preview_explains_egress_rejection` | Green unreviewed | Compact profile and PTY review |
 | Invalid confirmation is atomic and remains correctable | `phase6_input::invalid_build_confirmation_keeps_preview_active_and_is_atomic`; `denied_build_resolution_returns_to_correctable_placement` | Green | Preview rejection and later core denial both preserve a correctable `Placing` transaction without payment/time/entity mutation |
 | Accepted build pays and advances exactly once | `foundation_stabilization::construction_deducts_authoritative_colony_supplies_once` | Green | None at the domain/action layer |
 | Accepted placement preserves gate reachability | `colony_spatial_contract::every_accepted_station_placement_preserves_gate_reachability` | Green unreviewed | Existing-station blocker property matrix remains supporting unit evidence |
+| Accepted placement retains one reachable adjacent work tile | `bd_core::colony::stations::tests::placement_rejects_station_without_a_reachable_adjacent_work_tile` | Green | None |
 
 ## 4. Task management and station staffing
 
@@ -86,6 +88,7 @@ Status meanings:
 | Requirement piece | Primary evidence | Status | Missing proof |
 |---|---|---|---|
 | Player remains visible at supported profiles | far-edge viewport tests | Partial | Every shelter position and all four clamp edges |
+| Build cursor remains visible at supported profiles | `bd_tui::lib::tests::distant_build_preview_drives_the_viewport_at_both_supported_profiles` | Green unreviewed | Final PTY observation remains required |
 | Every layer uses one viewport transform | far-edge tests plus `map_projection_uses_one_semantic_visual_list` | Green unreviewed | One semantic visual list and one viewport projection path are implemented; full layer-by-layer snapshot review remains |
 | Assigned off-screen targets remain discoverable | `bd_tui::lib::tests::assigned_offscreen_target_has_a_directional_edge_indicator` | Green unreviewed | Direction is proven at both profiles; target-name/distance aggregation remains a later polish gap |
 | Active categories have a symbol/style/legend | semantic Help, symbol-registry, station-catalog, and resolved-style tests | Green unreviewed | Invalid-placement resolved-style snapshot remains open |
@@ -120,6 +123,19 @@ Status meanings:
 | Blocked station worker produces zero | `blocked_station_worker_produces_nothing` | Green | None |
 | Rest equals equivalent individual turns | position and daily-resource equivalence tests | Green | Rest replays the same logical worker steps before each crossed day boundary |
 | Save/load preserves deterministic next step | next-step, no-immediate-work, and fingerprint tests | Green unreviewed | Durable and derived state equality pass; complete visual snapshot review remains |
+| Foundation source/recipe chains are data-defined and cross-referenced | `bd_data::loader::tests::foundation_colony_chains_are_complete_and_cross_referenced` | Green | Invalid references and non-positive amounts have narrow rejection tests |
+| New-colony source counts come from content | `colony_node_generation_contract::configured_source_counts_own_new_colony_node_coverage` | Green | None |
+| Node layouts are deterministic, separated, legal, and reachable | node spatial and seed contracts | Green | 128-seed and content-order profiles pass; both C8 PTY runs showed the generated colony fixtures |
+| Save/load preserves generated source identity and coordinates | `colony_node_generation_contract::persisted_node_layout_is_restored_without_regeneration` | Green | None |
+| A worker completes the timber source-to-processing route | `colony_production_route_contract::one_survivor_completes_the_pilot_source_to_station_route` | Green | Player-facing assignment and projection remain C6 work |
+| Gather/refine transitions conserve raw input and finished output | transition-matrix and conservation contracts | Green | Same matrix must cover every D-20 recipe in C5 |
+| Carrying save/load preserves recipe, stage, and cargo | `colony_production_route_contract::carrying_checkpoint_preserves_recipe_stage_and_raw_cargo` | Green | Every stage and next-tick continuation pass; carrying continuity passed the 80x24 PTY run |
+| All configured recipes share one transition implementation | `colony_production_route_contract::every_configured_recipe_obeys_the_same_gather_and_refine_transition` | Green | A fixture-only fourth chain also passes without a gameplay branch |
+| Concurrent different-chain workers do not stack or duplicate output | `colony_production_route_contract::two_survivors_complete_different_chains_without_stacking_or_duplicate_credit` | Green | Sole-work-tile contention also passes in C7 |
+| Cancellation/reassignment preserves carried raw input | `colony_production_route_contract::reassigning_a_carrying_worker_deposits_raw_cargo_and_cancels_logistics` | Green | Raw cargo deposits atomically into the persisted `ColonyResources` owner |
+| `e` assigns a named survivor to a named processor recipe while paused | `phase6_input::processing_assignment_selects_named_survivor_station_and_recipe_while_paused` | Green unreviewed | Passed at 80x24 and 60x20 PTY; owner acceptance remains |
+| Worker recipe, stage, target/activity, and cargo remain visible | `bd_tui::lib::tests::colony_worker_recipe_stage_target_and_cargo_are_visible_at_supported_profiles` | Green unreviewed | Travel, gather, cargo, refine, completion, and load continuation passed both PTY profiles; owner acceptance remains |
+| Production keys complete one source-to-station cycle | `phase6_input::production_key_workflow_assigns_travels_gathers_refines_and_reports` | Green unreviewed | Complete real-terminal workflow passed both profiles; owner acceptance remains |
 
 ## 7. Economy and day transaction
 
@@ -227,3 +243,16 @@ confidence they currently permit:
 Do not replace these with a single broad “MVP scenario passes” test. Each item
 must retain discrete atomic owners, with the broad scenario serving only as
 workflow evidence.
+
+## 13. Turn-based work and construction
+
+| Requirement piece | Primary evidence | Status | Missing proof |
+|---|---|---|---|
+| Recipe data owns positive gather/refine work turns | `colony_recipe_rejects_non_positive_work_turns` | Green | Owner balance review |
+| No resource appears before configured work completes | `configured_work_turns_gate_gather_and_refine_yields_exactly_once` | Green | None |
+| Placement creates a paid non-operational site | `accepted_build_is_a_paid_non_operational_construction_site` | Green | None |
+| Idle survivors travel and contribute construction work | `idle_survivors_travel_to_and_complete_construction_without_stealing_assigned_workers` | Green | Multi-site priority policy remains deferred |
+| Assigned workers are never stolen | same construction workflow primary | Green | None |
+| Explicit gathering immediately releases an automatic builder | `explicit_gather_assignment_overrides_pending_automatic_construction` | Green | None |
+| Render/save/load grant no construction work | `render_frames_and_save_load_do_not_grant_construction_work` | Green | None |
+| Site and progress are player-visible | `placed_construction_site_has_distinct_map_and_progress_feedback` | Green | Real-terminal owner review |

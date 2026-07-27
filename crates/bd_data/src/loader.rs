@@ -52,6 +52,16 @@ pub fn load_foundation_content(
     let actions = load_items!("actions", bd_core::content::ActionReference);
     let stations = load_items!("stations", bd_core::colony::stations::StationBlueprint);
     let blueprints = load_items!("blueprints", bd_core::factory::EntityBlueprint);
+    let colony_resources = load_items!(
+        "colony_resources",
+        bd_core::content::ColonyResourceDefinition
+    );
+    let colony_sources = load_items!("colony_sources", bd_core::content::ColonySourceDefinition);
+    let colony_recipes = load_items!("colony_recipes", bd_core::content::ColonyRecipeDefinition);
+    let colony_placement_profiles = load_items!(
+        "colony_placement_profiles",
+        bd_core::content::ColonyPlacementProfile
+    );
 
     let bundle = FoundationContent {
         dungeons,
@@ -61,6 +71,10 @@ pub fn load_foundation_content(
         actions,
         stations,
         blueprints,
+        colony_resources,
+        colony_sources,
+        colony_recipes,
+        colony_placement_profiles,
     };
     validate_foundation_content(&bundle)?;
     Ok(bundle)
@@ -108,6 +122,117 @@ pub fn validate_foundation_content(
     for entry in &content.blueprints {
         add_id(&entry.id, "blueprints/foundation.ron")?;
     }
+    for entry in &content.colony_resources {
+        add_id(&entry.id, "colony_resources/foundation.ron")?;
+    }
+    for entry in &content.colony_sources {
+        add_id(&entry.id, "colony_sources/foundation.ron")?;
+    }
+    for entry in &content.colony_recipes {
+        add_id(&entry.id, "colony_recipes/foundation.ron")?;
+    }
+    for entry in &content.colony_placement_profiles {
+        add_id(&entry.id, "colony_placement_profiles/foundation.ron")?;
+    }
+
+    let resource_ids: HashSet<_> = content
+        .colony_resources
+        .iter()
+        .map(|resource| resource.id.as_str())
+        .collect();
+    let source_ids: HashSet<_> = content
+        .colony_sources
+        .iter()
+        .map(|source| source.id.as_str())
+        .collect();
+    let station_ids: HashSet<_> = content
+        .stations
+        .iter()
+        .map(|station| station.id.as_str())
+        .collect();
+    for resource in &content.colony_resources {
+        if resource.label.trim().is_empty() {
+            return Err(LoadError::Validation {
+                file: "colony_resources/foundation.ron".into(),
+                message: format!("resource '{}' requires a label", resource.id),
+            });
+        }
+    }
+    for source in &content.colony_sources {
+        if source.label.trim().is_empty()
+            || source.spawn_count == 0
+            || !resource_ids.contains(source.raw_resource_id.as_str())
+        {
+            return Err(LoadError::Validation {
+                file: "colony_sources/foundation.ron".into(),
+                message: format!(
+                    "source '{}' requires a label, positive count, and valid raw resource '{}'",
+                    source.id, source.raw_resource_id
+                ),
+            });
+        }
+    }
+    for recipe in &content.colony_recipes {
+        if recipe.label.trim().is_empty()
+            || recipe.input_amount == 0
+            || recipe.output_amount == 0
+            || recipe.gather_work_turns == 0
+            || recipe.refine_work_turns == 0
+            || !source_ids.contains(recipe.source_id.as_str())
+            || !resource_ids.contains(recipe.input_resource_id.as_str())
+            || !resource_ids.contains(recipe.output_resource_id.as_str())
+            || !station_ids.contains(recipe.station_id.as_str())
+        {
+            return Err(LoadError::Validation {
+                file: "colony_recipes/foundation.ron".into(),
+                message: format!(
+                    "recipe '{}' has an invalid label, amount, work duration, or content reference \
+                     (source='{}', input='{}', output='{}', station='{}')",
+                    recipe.id,
+                    recipe.source_id,
+                    recipe.input_resource_id,
+                    recipe.output_resource_id,
+                    recipe.station_id
+                ),
+            });
+        }
+        let source = content
+            .colony_sources
+            .iter()
+            .find(|source| source.id == recipe.source_id)
+            .expect("source membership checked above");
+        if source.raw_resource_id != recipe.input_resource_id {
+            return Err(LoadError::Validation {
+                file: "colony_recipes/foundation.ron".into(),
+                message: format!(
+                    "recipe '{}' input '{}' does not match source '{}' raw resource",
+                    recipe.id, recipe.input_resource_id, recipe.source_id
+                ),
+            });
+        }
+        let output = content
+            .colony_resources
+            .iter()
+            .find(|resource| resource.id == recipe.output_resource_id)
+            .expect("resource membership checked above");
+        if output.pool_kind.is_none() {
+            return Err(LoadError::Validation {
+                file: "colony_recipes/foundation.ron".into(),
+                message: format!(
+                    "recipe '{}' output '{}' must map to a finished colony pool",
+                    recipe.id, recipe.output_resource_id
+                ),
+            });
+        }
+    }
+    if content.colony_placement_profiles.len() != 1
+        || content.colony_placement_profiles[0].minimum_manhattan_spacing == 0
+    {
+        return Err(LoadError::Validation {
+            file: "colony_placement_profiles/foundation.ron".into(),
+            message: "Foundation requires one placement profile with positive spacing".into(),
+        });
+    }
 
     let mut station_types = HashSet::new();
     for station in &content.stations {
@@ -127,6 +252,15 @@ pub fn validate_foundation_content(
             return Err(LoadError::Validation {
                 file: "stations/foundation.ron".into(),
                 message: format!("station '{}' has a negative build cost", station.id),
+            });
+        }
+        if station.buildable && station.construction_work_turns == 0 {
+            return Err(LoadError::Validation {
+                file: "stations/foundation.ron".into(),
+                message: format!(
+                    "buildable station '{}' requires positive construction work",
+                    station.id
+                ),
             });
         }
         match station.effect {
@@ -162,11 +296,19 @@ pub fn validate_foundation_content(
         ('x', "Survivor Blocked".into()),
         ('r', "Survivor Resting".into()),
         ('d', "Survivor Defending".into()),
-        ('T', "Trees".into()),
-        ('~', "Water Source".into()),
-        ('P', "Wild Plants".into()),
         ('>', "Shelter gate".into()),
     ]);
+    for source in &content.colony_sources {
+        if let Some(existing) = active_glyphs.insert(source.glyph, source.id.clone()) {
+            return Err(LoadError::Validation {
+                file: "colony_sources/foundation.ron".into(),
+                message: format!(
+                    "ambiguous Foundation glyph '{}' is shared by {existing} and {}",
+                    source.glyph, source.id
+                ),
+            });
+        }
+    }
     for station in &content.stations {
         for (state, glyph) in [
             ("unstaffed", station.glyph),
@@ -198,6 +340,20 @@ pub fn validate_foundation_content(
         "station.workshop",
         "station.bed",
         "station.storage",
+        "station.basic_processor",
+        "resource.raw_timber",
+        "resource.refined_materials",
+        "resource.raw_water",
+        "resource.refined_supplies",
+        "resource.raw_plants",
+        "resource.refined_plants",
+        "source.trees",
+        "source.water",
+        "source.wild_plants",
+        "recipe.refine_timber",
+        "recipe.refine_water",
+        "recipe.refine_plants",
+        "placement.foundation_sources",
         "blueprint.player",
         "blueprint.rat",
         "blueprint.healing_potion",
@@ -540,6 +696,159 @@ mod tests {
     }
 
     #[test]
+    fn foundation_colony_chains_are_complete_and_cross_referenced() {
+        let content = load_foundation_content(&content_root()).unwrap();
+        assert_eq!(
+            content.colony_sources.len(),
+            3,
+            "D-20 requires three sources"
+        );
+        assert_eq!(
+            content.colony_recipes.len(),
+            3,
+            "D-20 requires three recipes"
+        );
+        assert_eq!(
+            content.colony_resources.len(),
+            6,
+            "each D-20 chain requires one raw and one finished resource"
+        );
+        for recipe in &content.colony_recipes {
+            assert!(
+                content
+                    .colony_sources
+                    .iter()
+                    .any(|source| source.id == recipe.source_id),
+                "recipe {} references missing source {}",
+                recipe.id,
+                recipe.source_id
+            );
+            assert!(
+                content
+                    .colony_resources
+                    .iter()
+                    .any(|resource| resource.id == recipe.input_resource_id),
+                "recipe {} references missing input {}",
+                recipe.id,
+                recipe.input_resource_id
+            );
+            assert!(
+                content
+                    .colony_resources
+                    .iter()
+                    .any(|resource| resource.id == recipe.output_resource_id),
+                "recipe {} references missing output {}",
+                recipe.id,
+                recipe.output_resource_id
+            );
+            assert!(
+                content
+                    .stations
+                    .iter()
+                    .any(|station| station.id == recipe.station_id),
+                "recipe {} references missing station {}",
+                recipe.id,
+                recipe.station_id
+            );
+            assert!(recipe.input_amount > 0 && recipe.output_amount > 0);
+            assert!(recipe.gather_work_turns > 0 && recipe.refine_work_turns > 0);
+        }
+    }
+
+    #[test]
+    fn colony_source_rejects_a_missing_raw_resource_reference() {
+        let mut content = load_foundation_content(&content_root()).unwrap();
+        content.colony_sources[0].raw_resource_id = "resource.missing".into();
+        let error = validate_foundation_content(&content).unwrap_err();
+        assert!(error.to_string().contains("colony_sources/foundation.ron"));
+        assert!(error.to_string().contains("source.trees"));
+        assert!(error.to_string().contains("resource.missing"));
+    }
+
+    #[test]
+    fn colony_recipe_rejects_non_positive_amounts() {
+        let mut content = load_foundation_content(&content_root()).unwrap();
+        content.colony_recipes[0].output_amount = 0;
+        let error = validate_foundation_content(&content).unwrap_err();
+        assert!(error.to_string().contains("colony_recipes/foundation.ron"));
+        assert!(error.to_string().contains("recipe.refine_timber"));
+    }
+
+    #[test]
+    fn colony_recipe_rejects_non_positive_work_turns() {
+        for field in ["gather", "refine"] {
+            let mut content = load_foundation_content(&content_root()).unwrap();
+            if field == "gather" {
+                content.colony_recipes[0].gather_work_turns = 0;
+            } else {
+                content.colony_recipes[0].refine_work_turns = 0;
+            }
+            let error = validate_foundation_content(&content)
+                .unwrap_err()
+                .to_string();
+            assert!(error.contains("colony_recipes/foundation.ron"), "{error}");
+            assert!(error.contains("recipe.refine_timber"), "{error}");
+            assert!(error.contains("work duration"), "{error}");
+        }
+    }
+
+    #[test]
+    fn colony_recipe_invalid_reference_matrix_names_the_recipe_and_file() {
+        for (case_id, mutate, expected_fragment) in [
+            ("missing-source", 0_u8, "source.missing"),
+            ("missing-input", 1_u8, "resource.input_missing"),
+            ("missing-output", 2_u8, "resource.output_missing"),
+            ("missing-station", 3_u8, "station.missing"),
+        ] {
+            let mut content = load_foundation_content(&content_root()).unwrap();
+            match mutate {
+                0 => content.colony_recipes[0].source_id = expected_fragment.into(),
+                1 => content.colony_recipes[0].input_resource_id = expected_fragment.into(),
+                2 => content.colony_recipes[0].output_resource_id = expected_fragment.into(),
+                3 => content.colony_recipes[0].station_id = expected_fragment.into(),
+                _ => unreachable!(),
+            }
+            let error = validate_foundation_content(&content)
+                .unwrap_err()
+                .to_string();
+            assert!(
+                error.contains("colony_recipes/foundation.ron"),
+                "case={case_id}: {error}"
+            );
+            assert!(
+                error.contains("recipe.refine_timber"),
+                "case={case_id}: {error}"
+            );
+            assert!(
+                error.contains(expected_fragment),
+                "case={case_id}: missing offending reference; {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn colony_recipe_rejects_source_input_mismatch() {
+        let mut content = load_foundation_content(&content_root()).unwrap();
+        content.colony_recipes[0].input_resource_id = "resource.raw_water".into();
+        let error = validate_foundation_content(&content)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("recipe.refine_timber"), "{error}");
+        assert!(error.contains("does not match"), "{error}");
+    }
+
+    #[test]
+    fn colony_recipe_rejects_output_without_finished_pool_mapping() {
+        let mut content = load_foundation_content(&content_root()).unwrap();
+        content.colony_recipes[0].output_resource_id = "resource.raw_water".into();
+        let error = validate_foundation_content(&content)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("recipe.refine_timber"), "{error}");
+        assert!(error.contains("finished colony pool"), "{error}");
+    }
+
+    #[test]
     fn faction_display_name_is_content_driven() {
         let mut content = load_foundation_content(&content_root()).unwrap();
         content.factions[0].label = "Renamed Placeholder".into();
@@ -569,9 +878,10 @@ mod tests {
                 station_type: bd_core::colony::stations::StationType::Custom(900),
                 label: "Test Extension".into(),
                 build_cost_supplies: 1,
+                construction_work_turns: 4,
                 description: "Validation-only extension record.".into(),
-                glyph: 'q',
-                staffed_glyph: 'Q',
+                glyph: 'z',
+                staffed_glyph: 'Z',
                 effect: bd_core::colony::stations::StationEffect::Produce {
                     kind: PoolKind::Materials,
                     amount: 1,
@@ -582,6 +892,23 @@ mod tests {
             });
 
         validate_foundation_content(&content).unwrap();
+    }
+
+    #[test]
+    fn buildable_station_rejects_zero_construction_work() {
+        let mut content = load_foundation_content(&content_root()).unwrap();
+        let station = content
+            .stations
+            .iter_mut()
+            .find(|station| station.id == "station.stove")
+            .unwrap();
+        station.construction_work_turns = 0;
+        let error = validate_foundation_content(&content)
+            .unwrap_err()
+            .to_string();
+        assert!(error.contains("stations/foundation.ron"), "{error}");
+        assert!(error.contains("station.stove"), "{error}");
+        assert!(error.contains("construction work"), "{error}");
     }
 
     #[test]
@@ -612,7 +939,7 @@ mod tests {
             .to_string();
 
         assert!(error.contains("station.workshop"), "{error}");
-        assert!(error.contains("Water Source"), "{error}");
+        assert!(error.contains("source.water"), "{error}");
     }
 
     #[test]

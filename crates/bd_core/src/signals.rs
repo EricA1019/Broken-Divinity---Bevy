@@ -176,3 +176,9 @@ pub struct AssignToStation {
     pub survivor: Entity,
     pub station: Entity,
 }
+
+#[derive(Message, Debug, Clone)]
+pub struct AssignRecipe {
+    pub survivor: Entity,
+    pub recipe_id: String,
+}

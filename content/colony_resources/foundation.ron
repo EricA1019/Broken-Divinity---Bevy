@@ -1,0 +1,8 @@
+[
+    (id: "resource.raw_timber", label: "Raw Timber", pool_kind: None),
+    (id: "resource.refined_materials", label: "Refined Materials", pool_kind: Some(Materials)),
+    (id: "resource.raw_water", label: "Raw Water", pool_kind: None),
+    (id: "resource.refined_supplies", label: "Refined Supplies", pool_kind: Some(Supplies)),
+    (id: "resource.raw_plants", label: "Raw Plants", pool_kind: None),
+    (id: "resource.refined_plants", label: "Refined Plants", pool_kind: Some(WildPlants)),
+]

@@ -12,7 +12,7 @@ use bd_core::{
 };
 use bd_test_support::foundation_content;
 use bevy_app::App;
-use bevy_ecs::{entity::Entity, message::Messages};
+use bevy_ecs::{entity::Entity, message::Messages, query::With};
 use bevy_ratatui::{
     crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     event::KeyMessage,
@@ -145,10 +145,14 @@ fn build_station(app: &mut App, station_type: StationType, direction: Direction)
     let mut stations = app
         .world_mut()
         .query_filtered::<(Entity, &StationType), bevy_ecs::query::With<Station>>();
-    stations
+    let station = stations
         .iter(app.world())
         .find_map(|(entity, actual)| (*actual == station_type).then_some(entity))
-        .unwrap_or_else(|| panic!("{station_type:?} must be built through the production action"))
+        .unwrap_or_else(|| panic!("{station_type:?} must be built through the production action"));
+    app.world_mut()
+        .entity_mut(station)
+        .remove::<bd_core::colony::stations::ConstructionSite>();
+    station
 }
 
 fn colony_supplies(app: &App) -> i32 {
@@ -421,6 +425,7 @@ fn fixed_dungeon_loot_is_projected_as_a_visible_item() {
 #[test]
 fn build_controls_remain_immediate_inside_one_input_batch() {
     let mut app = outpost_runtime();
+    let stations_before = station_count(&mut app);
     send_keys(
         &mut app,
         &[
@@ -440,7 +445,7 @@ fn build_controls_remain_immediate_inside_one_input_batch() {
         .query_filtered::<Entity, bevy_ecs::query::With<Station>>();
     assert_eq!(
         stations.iter(app.world()).count(),
-        1,
+        stations_before + 1,
         "the complete build batch must place one selected station; log={:?}",
         app.world()
             .resource::<bd_core::gamelog::GameLog>()
@@ -505,6 +510,22 @@ fn build_interaction_is_a_paused_press_only_state_machine() {
     ));
     assert_eq!(app.world().resource::<RunSession>().turn, turn_before);
     assert_eq!(action_ids(&app).len(), replay_before);
+}
+
+#[test]
+fn build_menu_sixth_number_key_selects_the_sixth_data_driven_station() {
+    let mut app = outpost_runtime();
+    send_physical_key(&mut app, KeyCode::Char('b'));
+    app.update();
+    send_physical_key(&mut app, KeyCode::Char('6'));
+    app.update();
+
+    assert_eq!(
+        *app.world().resource::<BuildInteraction>(),
+        BuildInteraction::Selecting {
+            selected_station: StationType::Custom(1),
+        }
+    );
 }
 
 #[test]
@@ -668,6 +689,86 @@ fn task_management_lists_survivor_tasks_not_station_staffing_choices() {
 }
 
 #[test]
+fn explicit_gather_assignment_overrides_pending_automatic_construction() {
+    let mut app = outpost_runtime();
+
+    send_physical_key(&mut app, KeyCode::Char('b'));
+    app.update();
+    send_physical_key(&mut app, KeyCode::Enter);
+    app.update();
+    send_physical_key(&mut app, KeyCode::Enter);
+    app.update();
+    app.update();
+    send_physical_key(&mut app, KeyCode::Char('.'));
+    app.update();
+    app.update();
+
+    let (survivor, survivor_name) = {
+        let mut workers = app
+            .world_mut()
+            .query_filtered::<(Entity, &Name), With<bd_core::colony::stations::AutoConstructing>>();
+        workers
+            .iter(app.world())
+            .next()
+            .map(|(entity, name)| (entity, name.0.clone()))
+            .expect("queued construction must route at least one idle survivor")
+    };
+
+    send_physical_key(&mut app, KeyCode::Char('c'));
+    app.update();
+    let survivor_key = named_survivor_menu_key(&app, &survivor_name);
+    send_physical_key(&mut app, survivor_key);
+    app.update();
+
+    let choices = &app
+        .world()
+        .resource::<bd_tui::view_models::StatsViewModel>()
+        .management
+        .as_ref()
+        .expect("task management must remain visible over queued construction")
+        .tasks;
+    assert!(
+        choices
+            .iter()
+            .any(|choice| choice.contains("Gather Supplies")),
+        "queued construction replaced the survivor task choices; choices={choices:?}"
+    );
+
+    let gather_key = management_choice_key(&app, "Gather Supplies");
+    send_physical_key(&mut app, gather_key);
+    app.update();
+    send_physical_key(&mut app, KeyCode::Enter);
+    app.update();
+    app.update();
+
+    assert_eq!(
+        app.world().get::<SurvivorTask>(survivor),
+        Some(&SurvivorTask::Gathering(PoolKind::Supplies)),
+        "an explicit survivor assignment must override automatic construction"
+    );
+    assert!(
+        !app.world()
+            .entity(survivor)
+            .contains::<bd_core::colony::stations::AutoConstructing>(),
+        "the gatherer retained automatic-construction ownership"
+    );
+    let activity = app
+        .world()
+        .get::<bd_core::colony::survivors::WorkerActivity>(survivor)
+        .expect("the reassigned survivor must project current gathering activity");
+    assert!(
+        !matches!(
+            activity,
+            bd_core::colony::survivors::WorkerActivity::EnRoute { target, .. }
+                | bd_core::colony::survivors::WorkerActivity::Working { target, .. }
+                | bd_core::colony::survivors::WorkerActivity::Blocked { target, .. }
+                if target.contains("construction")
+        ),
+        "the gatherer still shows stale construction activity: {activity:?}"
+    );
+}
+
+#[test]
 fn management_cancel_is_atomic_and_discards_modal_gameplay_input() {
     for open_key in [KeyCode::Char('c'), KeyCode::Char('e')] {
         let mut app = outpost_runtime();
@@ -728,6 +829,173 @@ fn station_staffing_confirmation_changes_only_the_named_survivor_relationship() 
 }
 
 #[test]
+fn processing_assignment_selects_named_survivor_station_and_recipe_while_paused() {
+    let mut app = outpost_runtime();
+    let selected_name = "Survivor 2";
+    let turn_before = app.world().resource::<RunSession>().turn;
+
+    send_physical_key(&mut app, KeyCode::Char('e'));
+    app.update();
+    let survivor_key = named_survivor_menu_key(&app, selected_name);
+    send_physical_key(&mut app, survivor_key);
+    app.update();
+    let station_key = management_choice_key(&app, "Basic Processing");
+    send_physical_key(&mut app, station_key);
+    app.update();
+    let recipe_key = management_choice_key(&app, "Refine Timber");
+    send_physical_key(&mut app, recipe_key);
+    app.update();
+    send_physical_key(&mut app, KeyCode::Enter);
+    app.update();
+    app.update();
+
+    let survivor = named_survivor(&mut app, selected_name);
+    let job = app
+        .world()
+        .get::<bd_core::colony::logistics::LogisticsJob>(survivor)
+        .expect("confirmed processing assignment must create a durable job");
+    assert_eq!(job.recipe_id, "recipe.refine_timber");
+    assert_eq!(
+        app.world()
+            .get::<bd_core::colony::logistics::Cargo>(survivor)
+            .expect("confirmed processing assignment must create cargo")
+            .amount,
+        0
+    );
+    assert_eq!(app.world().resource::<RunSession>().turn, turn_before);
+}
+
+#[test]
+fn production_key_workflow_assigns_travels_gathers_refines_and_reports() {
+    let mut app = outpost_runtime();
+    let materials_before = app
+        .world()
+        .resource::<ColonyResources>()
+        .pools
+        .get(PoolKind::Materials)
+        .unwrap()
+        .current;
+
+    send_physical_key(&mut app, KeyCode::Char('e'));
+    app.update();
+    let survivor_key = named_survivor_menu_key(&app, "Survivor 1");
+    send_physical_key(&mut app, survivor_key);
+    app.update();
+    let station_key = management_choice_key(&app, "Basic Processing");
+    send_physical_key(&mut app, station_key);
+    app.update();
+    let recipe_key = management_choice_key(&app, "Refine Timber");
+    send_physical_key(&mut app, recipe_key);
+    app.update();
+    send_physical_key(&mut app, KeyCode::Enter);
+    app.update();
+    app.update();
+
+    for _ in 0..160 {
+        send_physical_key(&mut app, KeyCode::Char('.'));
+        app.update();
+        app.update();
+        let materials = app
+            .world()
+            .resource::<ColonyResources>()
+            .pools
+            .get(PoolKind::Materials)
+            .unwrap()
+            .current;
+        if materials > materials_before {
+            break;
+        }
+    }
+
+    assert_eq!(
+        app.world()
+            .resource::<ColonyResources>()
+            .pools
+            .get(PoolKind::Materials)
+            .unwrap()
+            .current,
+        materials_before + 1
+    );
+    let party = &app
+        .world()
+        .resource::<bd_tui::view_models::StatsViewModel>()
+        .party_names;
+    assert!(
+        party.iter().any(|entry| {
+            entry.contains("Survivor 1")
+                && entry.contains("recipe.refine_timber")
+                && entry.contains("cargo")
+        }),
+        "worker projection must retain recipe, stage/activity, and cargo; party={party:?}"
+    );
+}
+
+#[test]
+fn deterministic_production_key_fuzz_preserves_colony_invariants() {
+    const FUZZ_SEED: u64 = 0x0BDC_0107;
+    const STEPS: usize = 256;
+    let keys = [
+        KeyCode::Char('e'),
+        KeyCode::Esc,
+        KeyCode::Char('1'),
+        KeyCode::Char('2'),
+        KeyCode::Char('3'),
+        KeyCode::Enter,
+        KeyCode::Up,
+        KeyCode::Down,
+        KeyCode::Char('.'),
+    ];
+    let mut state = FUZZ_SEED;
+    let mut app = outpost_runtime();
+
+    for step in 0..STEPS {
+        state = state
+            .wrapping_mul(6_364_136_223_846_793_005)
+            .wrapping_add(1);
+        let key = keys[(state as usize) % keys.len()];
+        send_physical_key(&mut app, key);
+        app.update();
+        app.update();
+
+        let mut positions = app
+            .world_mut()
+            .query_filtered::<&Position, With<Survivor>>()
+            .iter(app.world())
+            .copied()
+            .collect::<Vec<_>>();
+        let survivor_count = positions.len();
+        positions.sort_by_key(|position| (position.y, position.x));
+        positions.dedup();
+        assert_eq!(
+            positions.len(),
+            survivor_count,
+            "seed={FUZZ_SEED} step={step} key={key:?}: survivors stacked"
+        );
+        for pool in app.world().resource::<ColonyResources>().pools.iter() {
+            assert!(
+                (pool.min..=pool.max).contains(&pool.current),
+                "seed={FUZZ_SEED} step={step} key={key:?}: pool={:?} value={} bounds={}..={}",
+                pool.kind,
+                pool.current,
+                pool.min,
+                pool.max
+            );
+        }
+        let mut workers = app.world_mut().query_filtered::<(
+            Option<&bd_core::colony::logistics::LogisticsJob>,
+            Option<&bd_core::colony::logistics::Cargo>,
+        ), With<Survivor>>();
+        for (job, cargo) in workers.iter(app.world()) {
+            assert_eq!(
+                job.is_some(),
+                cargo.is_some(),
+                "seed={FUZZ_SEED} step={step} key={key:?}: job/cargo ownership diverged"
+            );
+        }
+    }
+}
+
+#[test]
 fn entering_build_placement_starts_on_a_visible_adjacent_candidate() {
     let mut app = outpost_runtime();
     let player_entity = player(&mut app);
@@ -754,6 +1022,175 @@ fn entering_build_placement_starts_on_a_visible_adjacent_candidate() {
 }
 
 #[test]
+fn build_placement_cursor_moves_cumulatively_without_moving_the_player() {
+    let mut app = outpost_runtime();
+    let player_entity = player(&mut app);
+    let player_before = *app
+        .world()
+        .get::<Position>(player_entity)
+        .expect("player position must exist");
+    let turn_before = app.world().resource::<RunSession>().turn;
+    let replay_before = action_ids(&app);
+    let supplies_before = colony_supplies(&app);
+    let stations_before = station_count(&mut app);
+
+    send_physical_key(&mut app, KeyCode::Char('b'));
+    app.update();
+    send_physical_key(&mut app, KeyCode::Enter);
+    app.update();
+    let BuildInteraction::Placing {
+        cursor: cursor_before,
+        ..
+    } = *app.world().resource::<BuildInteraction>()
+    else {
+        panic!("contract=INPUT-BUILD-003 step=enter-placement expected=Placing");
+    };
+
+    send_physical_key(&mut app, KeyCode::Char('d'));
+    app.update();
+    send_physical_key(&mut app, KeyCode::Char('d'));
+    app.update();
+
+    let BuildInteraction::Placing {
+        cursor: cursor_after,
+        ..
+    } = *app.world().resource::<BuildInteraction>()
+    else {
+        panic!("contract=INPUT-BUILD-003 step=move-twice expected=Placing");
+    };
+    assert_eq!(
+        cursor_after,
+        Position {
+            x: cursor_before.x + 2,
+            y: cursor_before.y,
+        },
+        "contract=INPUT-BUILD-003 case=cumulative-east fixture=outpost_clean \
+         input=[d,d] expected cursor to move from itself; \
+         cursor_before={cursor_before:?} cursor_after={cursor_after:?} player={player_before:?}"
+    );
+    assert_eq!(
+        app.world().get::<Position>(player_entity),
+        Some(&player_before)
+    );
+    assert_eq!(app.world().resource::<RunSession>().turn, turn_before);
+    assert_eq!(action_ids(&app), replay_before);
+    assert_eq!(colony_supplies(&app), supplies_before);
+    assert_eq!(station_count(&mut app), stations_before);
+}
+
+#[test]
+fn distant_build_confirmation_places_at_the_absolute_preview_coordinate() {
+    let mut app = outpost_runtime();
+    let stations_before = station_count(&mut app);
+    let player_entity = player(&mut app);
+    let player_before = *app
+        .world()
+        .get::<Position>(player_entity)
+        .expect("player position must exist");
+    let supplies_before = colony_supplies(&app);
+
+    send_physical_key(&mut app, KeyCode::Char('b'));
+    app.update();
+    send_physical_key(&mut app, KeyCode::Enter);
+    app.update();
+    send_physical_key(&mut app, KeyCode::Char('d'));
+    app.update();
+    send_physical_key(&mut app, KeyCode::Char('d'));
+    app.update();
+
+    let BuildInteraction::Placing {
+        cursor: expected_position,
+        validation: Ok(()),
+        ..
+    } = *app.world().resource::<BuildInteraction>()
+    else {
+        panic!("contract=INPUT-BUILD-004 step=preview expected=valid distant Placing state");
+    };
+    let distance = (expected_position.x - player_before.x).abs()
+        + (expected_position.y - player_before.y).abs();
+    assert!(
+        distance > 1,
+        "contract=INPUT-BUILD-004 fixture requires a non-adjacent preview; \
+         player={player_before:?} preview={expected_position:?}"
+    );
+
+    send_physical_key(&mut app, KeyCode::Enter);
+    app.update();
+    app.update();
+
+    let mut built_positions = app
+        .world_mut()
+        .query_filtered::<&Position, With<Station>>()
+        .iter(app.world())
+        .copied()
+        .collect::<Vec<_>>();
+    built_positions.sort_by_key(|position| (position.y, position.x));
+    assert!(
+        built_positions.contains(&expected_position)
+            && built_positions.len() == stations_before + 1,
+        "contract=INPUT-BUILD-004 case=distant-confirm fixture=outpost_clean \
+         expected one station at absolute preview; player={player_before:?} \
+         preview={expected_position:?} actual={built_positions:?}"
+    );
+    assert_eq!(
+        app.world().get::<Position>(player_entity),
+        Some(&player_before)
+    );
+    assert_eq!(
+        colony_supplies(&app),
+        supplies_before - bd_core::colony::stations::STATION_BUILD_COST_SUPPLIES
+    );
+}
+
+#[test]
+fn placed_construction_site_has_distinct_map_and_progress_feedback() {
+    let mut app = outpost_runtime();
+    send_physical_key(&mut app, KeyCode::Char('b'));
+    app.update();
+    send_physical_key(&mut app, KeyCode::Enter);
+    app.update();
+    send_physical_key(&mut app, KeyCode::Char('d'));
+    app.update();
+    send_physical_key(&mut app, KeyCode::Enter);
+    app.update();
+    app.update();
+
+    let mut sites = app.world_mut().query_filtered::<(
+        Entity,
+        &Position,
+        &bd_core::colony::stations::ConstructionSite,
+    ), With<Station>>();
+    let (_, site_position, site) = sites
+        .iter(app.world())
+        .next()
+        .expect("accepted placement must create a construction site");
+    assert_eq!((site.work_completed, site.work_required), (0, 4));
+    let site_position = *site_position;
+
+    let map = app.world().resource::<bd_tui::view_models::MapViewModel>();
+    assert!(
+        map.visuals.iter().any(|visual| {
+            visual.position == site_position
+                && visual.token == bd_tui::visual::VisualToken::Station
+                && visual.glyph == Some('%')
+        }),
+        "construction must not look like an operational station: {:?}",
+        map.visuals
+    );
+    let stats = app
+        .world()
+        .resource::<bd_tui::view_models::StatsViewModel>();
+    assert!(
+        stats
+            .station_status
+            .iter()
+            .any(|status| status.contains("Stove construction — 0/4 work")),
+        "construction progress must be visible: {:?}",
+        stats.station_status
+    );
+}
+
+#[test]
 fn invalid_build_confirmation_keeps_preview_active_and_is_atomic() {
     let mut app = outpost_runtime();
     let turn_before = app.world().resource::<RunSession>().turn;
@@ -764,6 +1201,8 @@ fn invalid_build_confirmation_keeps_preview_active_and_is_atomic() {
     send_physical_key(&mut app, KeyCode::Char('b'));
     app.update();
     send_physical_key(&mut app, KeyCode::Enter);
+    app.update();
+    send_physical_key(&mut app, KeyCode::Char('a'));
     app.update();
     send_physical_key(&mut app, KeyCode::Char('a'));
     app.update();
@@ -795,6 +1234,7 @@ fn invalid_build_confirmation_keeps_preview_active_and_is_atomic() {
 #[test]
 fn denied_build_resolution_returns_to_correctable_placement() {
     let mut app = outpost_runtime();
+    let stations_before = station_count(&mut app);
     app.world_mut()
         .resource_mut::<ColonyResources>()
         .pools
@@ -824,7 +1264,7 @@ fn denied_build_resolution_returns_to_correctable_placement() {
         "a core denial must return AwaitingResolution to the same correctable placement"
     );
     assert_eq!(app.world().resource::<RunSession>().turn, turn_before);
-    assert_eq!(station_count(&mut app), 0);
+    assert_eq!(station_count(&mut app), stations_before);
 }
 
 #[test]

@@ -239,7 +239,13 @@ The initial foundation should deliver:
 - reusable content loading and validation
 - tests and a buildable foundation that can expand without replacing the core
 
-Deferred from this foundation: procgen, raids, colony events, sanity, theology-driven mechanics, the full overworld loop, faction reputation, final faction canon, and deeper narrative integration.
+Deferred from this foundation: procedural dungeon generation, procedural
+shelter-map topology, overworld generation, raids, colony events, sanity,
+theology-driven mechanics, the full overworld loop, faction reputation, final
+faction canon, and deeper narrative integration. Deterministic placement of
+data-defined resource fixtures on the existing fixed shelter map is part of
+the basic colony foundation; it does not activate broader procedural
+generation.
 
 ### Product P2
 
@@ -277,6 +283,31 @@ The hybrid progression direction is locked, but the exact virtue effects, skill 
 ### Minimum colony foundation
 
 The foundation retains the current basic shelter, survivor, station, resource, assignment, and production structures where their behavior is sound. Raids and events are explicitly deferred.
+
+The basic colony loop must be physical and readable rather than a set of
+unrelated daily counters. The player can move a paused build preview
+independently of the player character, place a station at the selected legal
+coordinate, and assign a named survivor to a named station-backed recipe.
+Resource fixtures are placed deterministically from the run seed on the fixed
+shelter map. A worker travels to a matching fixture, gathers one raw unit,
+carries it to a compatible station, and refines it into a visible
+data-defined placeholder result. This first loop proves the reusable
+foundation; deeper logistics, queues, upgrades, depletion balance, and colony
+automation remain later work.
+
+Gathering and refining are visible turn-based work rather than instant
+adjacency rewards. Recipe data defines the positive number of worker turns
+required and the amount produced when that work completes; partial work never
+creates partial resources. For the Foundation balance profile, gathering takes
+three work turns and refining takes two work turns.
+
+Placing a buildable station creates a paid construction site rather than an
+immediately usable station. Station data defines its positive construction
+work requirement; the Foundation profile uses four work turns. Genuinely idle
+survivors automatically travel to reachable construction sites and contribute
+one work unit per accepted Outpost worker tick. Construction never takes over
+an assigned, resting, defending, or production worker. A completed site
+becomes the selected station exactly once.
 
 ### Minimum dungeon foundation
 

@@ -127,8 +127,9 @@ fn canonical_colony_setup_uses_actions() {
         )
         .unwrap();
     let station = driver
-        .first_station()
-        .expect("colony setup step: build action must create a station");
+        .station_by_type(bd_core::colony::stations::StationType::Stove)
+        .expect("colony setup step: build action must create a Stove");
+    driver.fixture_complete_construction(station);
     let survivor = driver
         .first_survivor()
         .expect("colony setup step: starter survivor must exist");

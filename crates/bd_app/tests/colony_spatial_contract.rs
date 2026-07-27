@@ -92,6 +92,10 @@ fn every_accepted_station_placement_preserves_gate_reachability() {
                     Err(StationPlacementDenial::Occupied) => panic!(
                         "empty-blocker matrix cannot report Occupied: player={player:?}, direction={direction}, candidate={candidate:?}"
                     ),
+                    Err(StationPlacementDenial::NoReachableWorkTile) => assert!(
+                        route.is_some(),
+                        "work-tile denial must not conceal an egress failure: player={player:?}, direction={direction}, candidate={candidate:?}"
+                    ),
                 }
             }
         }

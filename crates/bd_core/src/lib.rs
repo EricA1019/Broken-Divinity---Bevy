@@ -171,6 +171,8 @@ fn register_foundation(app: &mut App, foundation: bool) {
 
     // Register colony assignment message
     app.add_message::<crate::signals::AssignToStation>();
+    app.add_message::<crate::signals::AssignRecipe>();
+    app.init_resource::<crate::colony::logistics::PendingRecipeAssignment>();
 
     // Register time system (observes existing messages)
     time::register_time(app);
@@ -240,6 +242,9 @@ fn register_foundation(app: &mut App, foundation: bool) {
     app.world_mut()
         .resource_mut::<crate::actions::ActionRegistry>()
         .register(crate::colony::survivors::register_assign_idle_action());
+    app.world_mut()
+        .resource_mut::<crate::actions::ActionRegistry>()
+        .register(crate::colony::logistics::register_assign_recipe_action());
 
     // Register consume_shelter_resources system
     app.add_systems(
@@ -247,6 +252,12 @@ fn register_foundation(app: &mut App, foundation: bool) {
         crate::colony::survivors::consume_shelter_resources
             .after(crate::colony::production::process_production)
             .before(crate::pools::resolve_pool_deltas)
+            .in_set(BdSet::Mutation),
+    );
+    app.add_systems(
+        bevy_app::Update,
+        crate::colony::logistics::process_recipe_assignments
+            .after(crate::actions::resolve_action_effects)
             .in_set(BdSet::Mutation),
     );
 
@@ -299,9 +310,26 @@ fn register_foundation(app: &mut App, foundation: bool) {
     // P3: Register survivor movement system
     app.add_systems(
         bevy_app::Update,
+        crate::colony::logistics::process_logistics_workers
+            .after(crate::actions::resolve_action_effects)
+            .after(crate::colony::survivors::process_station_assignments)
+            .before(crate::colony::survivors::process_survivor_movement)
+            .in_set(BdSet::Mutation),
+    );
+    app.add_systems(
+        bevy_app::Update,
+        crate::colony::stations::process_idle_construction
+            .after(crate::actions::resolve_action_effects)
+            .after(crate::colony::logistics::process_logistics_workers)
+            .before(crate::colony::survivors::process_survivor_movement)
+            .in_set(BdSet::Mutation),
+    );
+    app.add_systems(
+        bevy_app::Update,
         crate::colony::survivors::process_survivor_movement
             .after(crate::actions::resolve_action_effects)
             .after(crate::colony::survivors::process_station_assignments)
+            .after(crate::colony::stations::process_idle_construction)
             .in_set(BdSet::Mutation),
     );
 }

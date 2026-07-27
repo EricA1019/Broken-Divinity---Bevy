@@ -550,16 +550,22 @@ fn spawn_dungeon_location(
 
 /// Register spatial/transition resources and systems.
 /// Initialize the outpost with starter entities on first entry.
+#[derive(SystemParam)]
+pub struct OutpostInitializationContent<'w> {
+    mode: Res<'w, GameMode>,
+    session: Res<'w, crate::session::RunSession>,
+    foundation: Option<Res<'w, crate::content::FoundationContent>>,
+}
+
 pub fn initialize_outpost(
     mut commands: Commands,
     mut outpost: ResMut<OutpostState>,
     mut game_log: ResMut<GameLog>,
     mut map: ResMut<SmokeMap>,
-    mode: Res<GameMode>,
-    foundation_content: Option<Res<crate::content::FoundationContent>>,
+    content: OutpostInitializationContent,
     player_query: Query<Entity, With<Player>>,
 ) {
-    if *mode != GameMode::Outpost {
+    if *content.mode != GameMode::Outpost {
         return;
     }
 
@@ -567,7 +573,7 @@ pub fn initialize_outpost(
     // have been cleaned up on defeat. Recreate exactly one player before the
     // one-time colony initialization guard.
     if player_query.iter().next().is_none() {
-        if let Some(blueprint) = foundation_content.as_deref().and_then(|content| {
+        if let Some(blueprint) = content.foundation.as_deref().and_then(|content| {
             content
                 .blueprints
                 .iter()
@@ -622,18 +628,71 @@ pub fn initialize_outpost(
         crate::gamelog::LogLevel::Info,
     );
 
-    // P22: Spawn resource nodes on the shelter map
-    let node_count = crate::colony::resources::spawn_resource_nodes(&mut commands, &outpost.map);
-    if node_count > 0 {
-        game_log.push(
-            format!("{} resource nodes found near the shelter.", node_count),
-            crate::gamelog::LogLevel::Info,
-        );
+    if let Some(processor) = content.foundation.as_deref().and_then(|foundation| {
+        foundation
+            .stations
+            .iter()
+            .find(|station| station.id == "station.basic_processor")
+    }) {
+        commands.spawn((
+            crate::colony::stations::Station,
+            processor.station_type,
+            crate::colony::shelter::STARTER_PROCESSOR_POSITION,
+            crate::components::Name(processor.label.clone()),
+            crate::components::ContentIdentity(processor.id.clone()),
+            crate::components::BlocksMovement,
+            EntityScope::ColonyPersistent,
+            PersistentEntity,
+        ));
+    }
+
+    let exit_x = crate::colony::shelter::SHELTER_WIDTH / 2;
+    let exit_y = 1;
+    if let Some(foundation) = content.foundation.as_deref() {
+        let forbidden = [
+            crate::colony::shelter::SHELTER_RETURN_SPAWN,
+            Position { x: 5, y: 5 },
+            Position { x: 10, y: 5 },
+            Position { x: 15, y: 5 },
+            crate::colony::shelter::STARTER_PROCESSOR_POSITION,
+            Position {
+                x: exit_x,
+                y: exit_y,
+            },
+        ]
+        .into_iter()
+        .collect();
+        let placement = foundation.colony_placement_profiles.first().ok_or_else(|| {
+            crate::colony::resources::ResourcePlacementError::InvalidProfile(
+                "missing Foundation placement profile".into(),
+            )
+        });
+        match placement.and_then(|profile| {
+            crate::colony::resources::plan_resource_nodes(
+                &outpost.map,
+                crate::colony::shelter::SHELTER_RETURN_SPAWN,
+                &forbidden,
+                &foundation.colony_sources,
+                profile,
+                content.session.seed,
+            )
+        }) {
+            Ok(plan) => {
+                let node_count =
+                    crate::colony::resources::spawn_resource_nodes(&mut commands, &plan);
+                game_log.push(
+                    format!("{} resource nodes found near the shelter.", node_count),
+                    crate::gamelog::LogLevel::Info,
+                );
+            }
+            Err(error) => game_log.push(
+                format!("Resource placement failed: {error:?}"),
+                crate::gamelog::LogLevel::Warn,
+            ),
+        }
     }
 
     // P3-A: Spawn shelter exit tile (gate) at the top-center of the map
-    let exit_x = crate::colony::shelter::SHELTER_WIDTH / 2;
-    let exit_y = 1; // top wall row — the gate breach
     commands.spawn((
         ExitTile,
         Position {

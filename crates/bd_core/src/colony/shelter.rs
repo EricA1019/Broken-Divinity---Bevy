@@ -9,6 +9,8 @@ use crate::map::SmokeMap;
 
 pub const SHELTER_RETURN_SPAWN: crate::components::Position =
     crate::components::Position { x: 1, y: 1 };
+pub const STARTER_PROCESSOR_POSITION: crate::components::Position =
+    crate::components::Position { x: 3, y: 3 };
 
 // ── Constants ──
 

@@ -337,8 +337,11 @@ fn seeded_registry_maps_current_foundation_contract_batches() {
         "bd_tui::lib::tests::compact_viewport_projects_resource_next_to_far_edge_player",
         "bd_tui::lib::tests::station_and_resource_cells_have_distinct_resolved_styles",
         "bd_tui::lib::tests::compact_build_selection_shows_complete_selected_effect",
+        "bd_tui::lib::tests::build_selection_and_placement_fit_both_supported_profiles",
         "bd_tui::lib::tests::invalid_build_preview_explains_egress_rejection",
+        "bd_tui::lib::tests::distant_build_preview_drives_the_viewport_at_both_supported_profiles",
         "bd_tui::lib::tests::station_staffing_uses_a_distinct_modal_title",
+        "bd_tui::lib::tests::compact_station_staffing_keeps_each_wrapped_station_status_inside_the_modal",
         "bd_tui::lib::tests::outpost_help_explains_visible_resource_glyphs",
         "bd_app::survivor_work_contract::rest_and_individual_waits_produce_the_same_worker_position",
         "bd_app::survivor_work_contract::new_assignment_does_not_move_during_paused_confirmation",
@@ -370,6 +373,9 @@ fn seeded_registry_maps_current_foundation_contract_batches() {
         "bd_app::phase6_input::management_cancel_is_atomic_and_discards_modal_gameplay_input",
         "bd_app::phase6_input::station_staffing_confirmation_changes_only_the_named_survivor_relationship",
         "bd_app::phase6_input::entering_build_placement_starts_on_a_visible_adjacent_candidate",
+        "bd_app::phase6_input::build_menu_sixth_number_key_selects_the_sixth_data_driven_station",
+        "bd_app::phase6_input::build_placement_cursor_moves_cumulatively_without_moving_the_player",
+        "bd_app::phase6_input::distant_build_confirmation_places_at_the_absolute_preview_coordinate",
         "bd_app::phase6_input::invalid_build_confirmation_keeps_preview_active_and_is_atomic",
         "bd_app::phase6_input::altar_and_idle_survivor_remain_distinct_without_color",
         "bd_app::phase6_input::workshop_and_water_source_remain_distinct_without_color",
@@ -378,6 +384,49 @@ fn seeded_registry_maps_current_foundation_contract_batches() {
         "bd_tui::lib::tests::rendered_outpost_help_contains_every_foundation_legend_at_supported_profiles",
         "bd_app::colony_spatial_contract::every_accepted_station_placement_preserves_gate_reachability",
         "bd_app::colony_spatial_contract::second_corner_station_is_rejected_before_it_traps_the_player",
+        "bd_core::colony::stations::tests::placement_rejects_station_without_a_reachable_adjacent_work_tile",
+        "bd_data::loader::tests::foundation_colony_chains_are_complete_and_cross_referenced",
+        "bd_data::loader::tests::colony_source_rejects_a_missing_raw_resource_reference",
+        "bd_data::loader::tests::colony_recipe_rejects_non_positive_amounts",
+        "bd_data::loader::tests::colony_recipe_rejects_non_positive_work_turns",
+        "bd_data::loader::tests::buildable_station_rejects_zero_construction_work",
+        "bd_data::loader::tests::colony_recipe_invalid_reference_matrix_names_the_recipe_and_file",
+        "bd_data::loader::tests::colony_recipe_rejects_source_input_mismatch",
+        "bd_data::loader::tests::colony_recipe_rejects_output_without_finished_pool_mapping",
+        "bd_app::colony_node_generation_contract::configured_source_counts_own_new_colony_node_coverage",
+        "bd_app::colony_node_generation_contract::node_planner_satisfies_spatial_invariants_across_map_fixtures",
+        "bd_app::colony_node_generation_contract::impossible_node_layout_is_typed_and_atomic",
+        "bd_app::colony_node_generation_contract::named_128_seed_profile_preserves_complete_reachable_spaced_layouts",
+        "bd_app::colony_node_generation_contract::same_seed_repeats_layout_and_seed_matrix_preserves_invariants",
+        "bd_app::colony_node_generation_contract::source_file_order_does_not_change_seeded_node_ownership_or_positions",
+        "bd_app::colony_node_generation_contract::persisted_node_layout_is_restored_without_regeneration",
+        "bd_app::colony_production_route_contract::one_survivor_completes_the_pilot_source_to_station_route",
+        "bd_app::colony_production_route_contract::pilot_recipe_transition_matrix_performs_one_operation_per_worker_tick",
+        "bd_app::colony_production_route_contract::missing_or_unreachable_targets_block_without_losing_cargo_or_output",
+        "bd_app::colony_production_route_contract::absent_worker_tick_is_a_no_op",
+        "bd_app::colony_production_route_contract::scheduler_frames_without_accepted_time_do_not_advance_logistics",
+        "bd_app::colony_production_route_contract::tactical_turns_do_not_advance_colony_logistics",
+        "bd_app::colony_production_route_contract::pilot_recipe_conserves_raw_input_and_only_refining_creates_finished_output",
+        "bd_app::colony_production_route_contract::reassigning_a_carrying_worker_deposits_raw_cargo_and_cancels_logistics",
+        "bd_app::colony_production_route_contract::carrying_checkpoint_preserves_recipe_stage_and_raw_cargo",
+        "bd_app::colony_production_route_contract::checkpoint_round_trip_preserves_every_logistics_stage",
+        "bd_app::colony_production_route_contract::every_configured_recipe_obeys_the_same_gather_and_refine_transition",
+        "bd_app::colony_production_route_contract::fixture_fourth_chain_needs_no_new_transition_branch",
+        "bd_app::colony_production_route_contract::two_survivors_complete_different_chains_without_stacking_or_duplicate_credit",
+        "bd_app::colony_production_route_contract::two_workers_share_one_station_work_tile_without_stacking_or_duplicate_credit",
+        "bd_app::colony_production_route_contract::carrying_checkpoint_preserves_the_next_deterministic_worker_tick",
+        "bd_app::colony_production_route_contract::complete_colony_workflow_replays_deterministically_from_player_actions",
+        "bd_app::colony_production_route_contract::configured_work_turns_gate_gather_and_refine_yields_exactly_once",
+        "bd_app::colony_production_route_contract::partial_work_progress_survives_checkpoint_without_free_yield",
+        "bd_app::colony_construction_contract::accepted_build_is_a_paid_non_operational_construction_site",
+        "bd_app::colony_construction_contract::idle_survivors_travel_to_and_complete_construction_without_stealing_assigned_workers",
+        "bd_app::colony_construction_contract::render_frames_and_save_load_do_not_grant_construction_work",
+        "bd_app::phase6_input::explicit_gather_assignment_overrides_pending_automatic_construction",
+        "bd_app::phase6_input::placed_construction_site_has_distinct_map_and_progress_feedback",
+        "bd_app::phase6_input::processing_assignment_selects_named_survivor_station_and_recipe_while_paused",
+        "bd_app::phase6_input::production_key_workflow_assigns_travels_gathers_refines_and_reports",
+        "bd_app::phase6_input::deterministic_production_key_fuzz_preserves_colony_invariants",
+        "bd_tui::lib::tests::colony_worker_recipe_stage_target_and_cargo_are_visible_at_supported_profiles",
         "bd_app::foundation_actions::valid_fixed_dungeon_movement_changes_one_cardinal_tile",
         "bd_app::foundation_actions::fixed_dungeon_wall_movement_is_typed_and_atomic",
         "bd_app::foundation_actions::extraction_away_from_fixed_exit_is_typed_and_atomic",
@@ -399,7 +448,7 @@ fn seeded_registry_maps_current_foundation_contract_batches() {
     );
     assert_eq!(
         registry.contracts.len(),
-        27,
+        46,
         "the registry must own every contract in the current visual, worker, management, build, spatial, and dungeon batches"
     );
     assert_eq!(
@@ -410,8 +459,8 @@ fn seeded_registry_maps_current_foundation_contract_batches() {
                 contract.id.starts_with("VISUAL-") && contract.status == "GreenUnreviewed"
             })
             .count(),
-        11,
-        "all eleven registered visual contracts are green but still require review evidence"
+        13,
+        "all thirteen registered visual contracts are green but still require review evidence"
     );
     assert_eq!(
         registry
@@ -438,8 +487,8 @@ fn seeded_registry_maps_current_foundation_contract_batches() {
             .filter(|contract| contract.id.starts_with("COLONY-")
                 && contract.status == "GreenUnreviewed")
             .count(),
-        8,
-        "all eight colony contracts are green but unreviewed"
+        19,
+        "all nineteen colony contracts are green but unreviewed"
     );
     assert_eq!(
         registry

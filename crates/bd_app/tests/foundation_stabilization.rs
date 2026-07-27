@@ -46,6 +46,7 @@ fn construction_deducts_authoritative_colony_supplies_once() {
     let before = driver
         .resource_current(PoolKind::Supplies)
         .expect("colony supplies must exist");
+    let stations_before = driver.summary().stations;
 
     driver
         .expect_action(
@@ -62,7 +63,7 @@ fn construction_deducts_authoritative_colony_supplies_once() {
         Some(before - BUILD_COST),
         "the authoritative colony pool must pay exactly one build cost"
     );
-    assert_eq!(driver.summary().stations, 1);
+    assert_eq!(driver.summary().stations, stations_before + 1);
 }
 
 #[test]
@@ -220,6 +221,7 @@ fn paid_dungeon_entry_survives_save_load() {
 #[test]
 fn two_builds_charge_twice_and_third_unaffordable_build_is_atomic() {
     let mut driver = colony_driver();
+    let stations_before = driver.summary().stations;
     driver.fixture_set_colony_resource(PoolKind::Supplies, BUILD_COST * 2);
     let player = driver.player().expect("shelter player must exist");
     driver
@@ -250,7 +252,7 @@ fn two_builds_charge_twice_and_third_unaffordable_build_is_atomic() {
         )
         .expect("second build must resolve");
     assert_eq!(driver.resource_current(PoolKind::Supplies), Some(0));
-    assert_eq!(driver.summary().stations, 2);
+    assert_eq!(driver.summary().stations, stations_before + 2);
     let before = driver.summary();
 
     driver

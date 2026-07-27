@@ -37,6 +37,7 @@ pub struct Gabriel;
 /// Resource node on the shelter map that survivors can gather from.
 #[derive(Component, Debug, Clone, Serialize, Deserialize)]
 pub struct ResourceNode {
+    pub source_id: String,
     pub kind: ResourceNodeType,
     pub depleted: bool,
 }

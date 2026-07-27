@@ -26,12 +26,15 @@ pub const MAX_STATIONS: u32 = 20;
 
 /// Supplies needed to build a station.
 pub const STATION_BUILD_COST_SUPPLIES: i32 = 2;
+/// Foundation fallback when validated station content is unavailable.
+pub const STATION_CONSTRUCTION_WORK_TURNS: u32 = 4;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum StationPlacementDenial {
     NotWalkable,
     Occupied,
     WouldBlockShelterEgress,
+    NoReachableWorkTile,
 }
 
 impl fmt::Display for StationPlacementDenial {
@@ -40,6 +43,7 @@ impl fmt::Display for StationPlacementDenial {
             Self::NotWalkable => "Tile is not walkable",
             Self::Occupied => "Tile is occupied",
             Self::WouldBlockShelterEgress => "Would block shelter egress",
+            Self::NoReachableWorkTile => "No reachable adjacent work tile",
         })
     }
 }
@@ -70,6 +74,34 @@ pub fn validate_station_placement(
         .is_none()
     {
         return Err(StationPlacementDenial::WouldBlockShelterEgress);
+    }
+    let has_reachable_work_tile = [
+        Position {
+            x: candidate.x + 1,
+            y: candidate.y,
+        },
+        Position {
+            x: candidate.x - 1,
+            y: candidate.y,
+        },
+        Position {
+            x: candidate.x,
+            y: candidate.y + 1,
+        },
+        Position {
+            x: candidate.x,
+            y: candidate.y - 1,
+        },
+    ]
+    .into_iter()
+    .filter(|work_tile| map.is_walkable(work_tile.x, work_tile.y) && !blockers.contains(work_tile))
+    .any(|work_tile| {
+        AStarPathfinder
+            .find_path(map, player, work_tile, &blockers)
+            .is_some()
+    });
+    if !has_reachable_work_tile {
+        return Err(StationPlacementDenial::NoReachableWorkTile);
     }
     Ok(())
 }
@@ -138,6 +170,30 @@ impl BuildInteraction {
 #[derive(Component, Debug, Clone, Serialize, Deserialize)]
 pub struct Station;
 
+/// Paid station footprint that is not operational until idle workers finish it.
+#[derive(Component, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConstructionSite {
+    pub work_completed: u32,
+    pub work_required: u32,
+}
+
+impl ConstructionSite {
+    pub fn new(work_required: u32) -> Self {
+        Self {
+            work_completed: 0,
+            work_required,
+        }
+    }
+
+    pub fn is_complete(&self) -> bool {
+        self.work_completed >= self.work_required
+    }
+}
+
+/// Marks an idle survivor currently controlled by automatic construction.
+#[derive(Component, Debug, Clone, Copy)]
+pub struct AutoConstructing;
+
 /// Type of station, determining its function and production.
 #[derive(Component, Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum StationType {
@@ -159,6 +215,7 @@ pub struct StationBlueprint {
     pub station_type: StationType,
     pub label: String,
     pub build_cost_supplies: i32,
+    pub construction_work_turns: u32,
     pub description: String,
     /// Monochrome glyph while no survivor is assigned.
     pub glyph: char,
@@ -174,6 +231,7 @@ pub struct StationBlueprint {
 pub enum StationEffect {
     Produce { kind: PoolKind, amount: i32 },
     RestoreWorkerMood { amount: i32 },
+    ProcessRecipes,
     Disabled,
 }
 
@@ -186,6 +244,7 @@ impl StationBlueprint {
             StationEffect::RestoreWorkerMood { amount } => {
                 format!("+{amount} Mood/day to assigned worker")
             }
+            StationEffect::ProcessRecipes => "Refines assigned colony recipes".into(),
             StationEffect::Disabled => format!(
                 "Disabled — {}",
                 self.unavailable_reason
@@ -238,6 +297,7 @@ pub fn default_station_blueprints() -> Vec<StationBlueprint> {
             station_type: StationType::Stove,
             label: "Stove".into(),
             build_cost_supplies: STATION_BUILD_COST_SUPPLIES,
+            construction_work_turns: STATION_CONSTRUCTION_WORK_TURNS,
             description: "Prepares daily shelter Supplies.".into(),
             glyph: 'f',
             staffed_glyph: 'F',
@@ -254,6 +314,7 @@ pub fn default_station_blueprints() -> Vec<StationBlueprint> {
             station_type: StationType::Altar,
             label: "Altar".into(),
             build_cost_supplies: STATION_BUILD_COST_SUPPLIES,
+            construction_work_turns: STATION_CONSTRUCTION_WORK_TURNS,
             description: "Builds daily Faith through observance.".into(),
             glyph: 'a',
             staffed_glyph: 'A',
@@ -270,6 +331,7 @@ pub fn default_station_blueprints() -> Vec<StationBlueprint> {
             station_type: StationType::Workshop,
             label: "Workshop".into(),
             build_cost_supplies: STATION_BUILD_COST_SUPPLIES,
+            construction_work_turns: STATION_CONSTRUCTION_WORK_TURNS,
             description: "Produces repair and construction Materials.".into(),
             glyph: 'w',
             staffed_glyph: 'W',
@@ -286,6 +348,7 @@ pub fn default_station_blueprints() -> Vec<StationBlueprint> {
             station_type: StationType::Bed,
             label: "Bed".into(),
             build_cost_supplies: STATION_BUILD_COST_SUPPLIES,
+            construction_work_turns: STATION_CONSTRUCTION_WORK_TURNS,
             description: "Restores the assigned survivor's Mood.".into(),
             glyph: 'b',
             staffed_glyph: 'B',
@@ -301,6 +364,7 @@ pub fn default_station_blueprints() -> Vec<StationBlueprint> {
             station_type: StationType::Storage,
             label: "Storage".into(),
             build_cost_supplies: STATION_BUILD_COST_SUPPLIES,
+            construction_work_turns: STATION_CONSTRUCTION_WORK_TURNS,
             description: "Reserved for later storage-capacity rules.".into(),
             glyph: 's',
             staffed_glyph: 'S',
@@ -326,6 +390,204 @@ pub fn register_station_actions() -> ActionDefinition {
         requirements: vec![Requirement::TileVacant],
         cost_effects: vec![],
         effects: vec![Effect::SpawnEntity("blueprint.station".into())],
+    }
+}
+
+/// Route genuinely idle survivors to paid construction sites and apply one
+/// construction work unit per worker tick while cardinally adjacent.
+#[allow(clippy::type_complexity, clippy::too_many_arguments)]
+pub(crate) fn process_idle_construction(
+    mut commands: Commands,
+    mut workers: Query<
+        (
+            Entity,
+            Option<&crate::components::Name>,
+            &mut Position,
+            &crate::colony::survivors::SurvivorTask,
+        ),
+        (
+            With<crate::colony::survivors::Survivor>,
+            Without<crate::colony::logistics::LogisticsJob>,
+        ),
+    >,
+    mut sites: Query<
+        (
+            Entity,
+            &Position,
+            Option<&crate::components::Name>,
+            &mut ConstructionSite,
+        ),
+        (With<Station>, Without<crate::colony::survivors::Survivor>),
+    >,
+    stations: Query<&Position, (With<Station>, Without<crate::colony::survivors::Survivor>)>,
+    nodes: Query<
+        &Position,
+        (
+            With<crate::components::ResourceNode>,
+            Without<crate::colony::survivors::Survivor>,
+        ),
+    >,
+    player: Query<
+        &Position,
+        (
+            With<crate::components::Player>,
+            Without<crate::colony::survivors::Survivor>,
+        ),
+    >,
+    map: Res<SmokeMap>,
+    mode: Res<crate::spatial::GameMode>,
+    time_plan: Res<crate::time::TimeAdvancePlan>,
+    mut game_log: ResMut<crate::gamelog::GameLog>,
+) {
+    if *mode != crate::spatial::GameMode::Outpost {
+        return;
+    }
+
+    let mut order = workers
+        .iter()
+        .map(|(entity, name, _, _)| {
+            (
+                name.map_or_else(
+                    || format!("Survivor {}", entity.to_bits()),
+                    |name| name.0.clone(),
+                ),
+                entity,
+            )
+        })
+        .collect::<Vec<_>>();
+    order.sort_by(|left, right| left.0.cmp(&right.0).then_with(|| left.1.cmp(&right.1)));
+
+    if time_plan.outpost_worker_steps == 0 {
+        return;
+    }
+
+    for _ in 0..time_plan.outpost_worker_steps {
+        let mut site_targets = sites
+            .iter()
+            .filter(|(_, _, _, site)| !site.is_complete())
+            .map(|(entity, position, name, _)| {
+                (
+                    entity,
+                    crate::colony::survivors::WorkTarget {
+                        label: name.map_or_else(
+                            || "Construction site".into(),
+                            |name| format!("{} construction", name.0),
+                        ),
+                        position: *position,
+                    },
+                )
+            })
+            .collect::<Vec<_>>();
+        site_targets.sort_by(|left, right| {
+            (
+                left.1.position.y,
+                left.1.position.x,
+                left.1.label.as_str(),
+                left.0.to_bits(),
+            )
+                .cmp(&(
+                    right.1.position.y,
+                    right.1.position.x,
+                    right.1.label.as_str(),
+                    right.0.to_bits(),
+                ))
+        });
+
+        if site_targets.is_empty() {
+            for (_, entity) in &order {
+                commands.entity(*entity).remove::<AutoConstructing>();
+            }
+            break;
+        }
+
+        let permanent = stations
+            .iter()
+            .copied()
+            .chain(nodes.iter().copied())
+            .chain(player.iter().copied())
+            .collect::<HashSet<_>>();
+        let mut occupied = workers
+            .iter()
+            .map(|(_, _, position, _)| *position)
+            .collect::<HashSet<_>>();
+        let targets = site_targets
+            .iter()
+            .map(|(_, target)| target.clone())
+            .collect::<Vec<_>>();
+
+        for (_, entity) in &order {
+            let Ok((_, _, mut position, task)) = workers.get_mut(*entity) else {
+                continue;
+            };
+            if *task != crate::colony::survivors::SurvivorTask::Idle {
+                commands.entity(*entity).remove::<AutoConstructing>();
+                continue;
+            }
+
+            let mut blocked = permanent.clone();
+            blocked.extend(occupied.iter().copied());
+            blocked.remove(&*position);
+            match crate::colony::survivors::choose_worker_path(&map, *position, &targets, &blocked)
+            {
+                Ok((target, path)) if path.len() <= 1 => {
+                    let Some((site_entity, _)) = site_targets
+                        .iter()
+                        .find(|(_, candidate)| candidate.position == target.position)
+                    else {
+                        continue;
+                    };
+                    if let Ok((_, _, _, mut site)) = sites.get_mut(*site_entity)
+                        && !site.is_complete()
+                    {
+                        site.work_completed = site.work_completed.saturating_add(1);
+                        if site.is_complete() {
+                            site.work_completed = site.work_required;
+                            commands.entity(*site_entity).remove::<ConstructionSite>();
+                            game_log.push(
+                                format!("{} is complete.", target.label),
+                                crate::gamelog::LogLevel::Info,
+                            );
+                        }
+                    }
+                    commands.entity(*entity).insert((
+                        AutoConstructing,
+                        crate::colony::survivors::WorkerActivity::Working {
+                            target: target.label,
+                            target_position: target.position,
+                        },
+                    ));
+                }
+                Ok((target, path)) => {
+                    let before = *position;
+                    *position = path[1];
+                    occupied.remove(&before);
+                    occupied.insert(*position);
+                    commands.entity(*entity).insert((
+                        AutoConstructing,
+                        crate::colony::survivors::WorkerActivity::EnRoute {
+                            target: target.label,
+                            target_position: target.position,
+                            distance: i32::try_from(path.len().saturating_sub(2))
+                                .unwrap_or(i32::MAX),
+                        },
+                    ));
+                }
+                Err(reason) => {
+                    let target = targets.first();
+                    commands.entity(*entity).insert((
+                        AutoConstructing,
+                        crate::colony::survivors::WorkerActivity::Blocked {
+                            target: target.map_or_else(
+                                || "Construction site".into(),
+                                |target| target.label.clone(),
+                            ),
+                            target_position: target.map(|target| target.position),
+                            reason,
+                        },
+                    ));
+                }
+            }
+        }
     }
 }
 
@@ -422,6 +684,30 @@ mod tests {
                 Position { x: 0, y: 1 },
             ),
             Err(StationPlacementDenial::NotWalkable)
+        );
+    }
+
+    #[test]
+    fn placement_rejects_station_without_a_reachable_adjacent_work_tile() {
+        let mut map = SmokeMap::new(7, 5, Tile::Wall);
+        for position in [
+            Position { x: 1, y: 1 },
+            Position { x: 2, y: 1 },
+            Position { x: 3, y: 1 },
+            Position { x: 5, y: 3 },
+        ] {
+            map.set(position.x, position.y, Tile::Floor);
+        }
+        let player = Position { x: 1, y: 1 };
+        let gate = Position { x: 3, y: 1 };
+        let candidate = Position { x: 5, y: 3 };
+
+        assert_eq!(
+            validate_station_placement(&map, player, gate, &HashSet::new(), candidate),
+            Err(StationPlacementDenial::NoReachableWorkTile),
+            "contract=COLONY-SPATIAL-002 case=isolated-candidate \
+             fixture=colony_build_distant_invalid expected typed rejection \
+             without changing the still-open player-to-gate route"
         );
     }
 

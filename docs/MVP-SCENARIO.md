@@ -12,7 +12,9 @@ before Foundation MVP acceptance is restored without qualification.
 
 This is the canonical player and test scenario for the first Broken Divinity MVP. It is the contract used by implementation, integration tests, manual terminal smoke tests, save/load validation, and final GDD alignment review.
 
-The scenario proves the foundation loop without requiring procedural generation, overworld travel, raids, events, sanity, theology-driven mechanics, reputation, or final faction content.
+The scenario proves the foundation loop without requiring procedural dungeon
+or shelter-topology generation, overworld travel, raids, events, sanity,
+theology-driven mechanics, reputation, or final faction content.
 
 ## Canonical scenario
 
@@ -20,8 +22,14 @@ The scenario proves the foundation loop without requiring procedural generation,
 Clean launch
   → arrive at colony/shelter
   → inspect three survivors, tasks, resources, station effects, and forecast
-  → explicitly assign survivor tasks
-  → build and staff one implemented station
+  → inspect one deterministic node for each Foundation source category
+  → move a paused build preview independently of the player
+  → build one implemented station at the exact selected legal coordinate
+  → assign one named survivor to the starter processing station and one named recipe
+  → advance Outpost turns while the survivor travels to the matching source
+  → gather one raw unit without creating finished output
+  → carry the raw unit to the station
+  → refine it once and observe the exact finished-resource result
   → advance one day and verify one forecast-matching colony summary
   → save and reload the managed colony
   → enter the fixed dungeon
@@ -53,10 +61,13 @@ Clean launch
 
 - one fixed shelter map;
 - three starter survivors;
-- the existing five station types;
+- the existing five station types plus one data-defined basic processing
+  station with one guaranteed starter instance;
+- three data-defined placeholder source/raw/recipe/result chains;
+- one deterministic generated node per configured Foundation source;
 - station placement;
 - survivor assignment;
-- one basic production/resource cycle;
+- one physical gather, carry, and refine cycle;
 - storage for extracted results.
 
 Raids and colony events must not run during this scenario.
@@ -195,12 +206,13 @@ This scenario implements the following locked decisions:
 | D-13 | Melee, ranged, repair, and medicine are the foundation skills |
 | D-14 | Representative virtue hooks exist before full virtue expansion |
 | D-15 | Deterministic run state, fixed dungeon, factions, loot, colony return, and persistence define the foundation |
+| D-20 | Deterministic shelter fixtures and one physical gather-carry-refine cycle deepen the basic colony foundation |
 
 ## Out of scope
 
 The following must not become hidden dependencies of this scenario:
 
-- procedural generation;
+- procedural dungeon, shelter-topology, or overworld generation;
 - overworld travel;
 - raids;
 - colony events;

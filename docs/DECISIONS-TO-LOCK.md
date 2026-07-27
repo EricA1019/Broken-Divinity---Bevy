@@ -223,3 +223,120 @@ evidence sufficiency, metrics, and suite migration.
 `docs/FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md` continues to own behavior and
 implementation order. Neither document authorizes Product P2 or any deferred
 feature.
+
+## D-20 — Foundation basic colony loop — LOCKED
+
+**Current evidence:** The D-18 hardening pass repaired worker movement,
+occupancy, paused management, viewport behavior, and physical work range, but
+the colony still does not present one coherent source-to-station production
+loop. Build placement remains effectively locked to the player's cardinal
+neighbors. Existing shelter resource nodes are placed by a map-dimension
+formula without run-seed variation, configured spacing, complete type
+coverage, or a complete-or-error placement contract. Gathering and station
+production remain separate daily-boundary abstractions with no raw cargo or
+recipe-backed refining.
+
+**Decision:**
+
+- deterministic colony resource-fixture placement is active Foundation work;
+  it places fixtures only on the existing fixed shelter map and does not
+  activate procedural shelter topology, procedural dungeons, overworld
+  generation, raids, or events;
+- Foundation content defines three initial placeholder chains:
+  - Trees → Raw Timber → Refined Materials → Materials;
+  - Water Source → Raw Water → Refined Supplies → Supplies;
+  - Wild Plants → Raw Plants → Refined Plants → Wild Plants;
+- stable content IDs own source, raw-resource, recipe, station, and result
+  identity; temporary labels may change without changing simulation identity;
+- one data-defined basic processing station supports the three placeholder
+  recipes and one guaranteed starter instance exists so zero-Supplies
+  recovery cannot depend on first paying a construction cost;
+- additional processing-station instances may use the existing data-driven
+  build catalog; the existing five station types remain preserved and Storage
+  remains disabled until it receives a separately approved effect;
+- station-backed production assignment uses paused `e` management:
+  named survivor → named compatible station → named recipe when required →
+  review → confirm; `c` continues to own non-station survivor tasks;
+- one accepted Outpost worker tick performs at most one cardinal movement
+  step, one gathering operation, or one refining operation;
+- reaching a work tile changes the worker to a ready/working stage; gathering
+  or refining consumes a later worker tick rather than occurring on the
+  arrival tick;
+- rendering, paused UI, Tactical turns, saving, and loading produce zero
+  Outpost worker ticks; Rest replays the same ordered ticks as equivalent
+  individual Outpost turns;
+- Foundation content declares one initial node for each active source through
+  configured counts; generation logic must not hardcode the number or source
+  roster;
+- placement uses a named validated spacing profile, produces unique
+  unoccupied fixtures with reachable cardinal work tiles, and either returns
+  a complete plan or a typed error without partial spawning;
+- node placement is deterministic from run seed, fixed map, placement salt,
+  and stable content identity; it runs once for a new colony, persists, and
+  never regenerates on load or day advancement;
+- Foundation nodes are renewable and non-depleting for this slice;
+- a durable production job records stable recipe and target identity, exact
+  production stage, and carried raw cargo;
+- blocked workers retain cargo; a missing source creates no cargo; a missing
+  station or route creates no output;
+- cancellation or reassignment deposits carried raw cargo atomically into the
+  sole `ColonyResources` owner; no raw input is silently destroyed;
+- gathering changes raw cargo/input only; finished output appears only after
+  one successful refine transition that consumes the configured input;
+- per-turn physical work and the existing day-boundary transaction must not
+  duplicate output; converted recipe stations do not also receive legacy free
+  production;
+- forecast and Rest consume the same transition semantics as ordinary turns,
+  or present separately named next-worker and next-day results without
+  claiming equivalence they do not calculate;
+- build placement starts adjacent to the player but cursor movement is
+  cumulative across the fixed shelter, remains paused, may preview invalid
+  cells, and submits the absolute selected coordinate;
+- placement confirmation revalidates the exact coordinate, preserves gate
+  egress and a reachable station work tile, and remains atomic on rejection;
+- while placing, the viewport follows the build cursor; cancellation or
+  resolution restores player-following behavior;
+- the player-facing colony projection exposes survivor, recipe, stage, target,
+  cargo, blocked reason, and completed resource result at both supported
+  terminal profiles.
+
+The owner-approved implementation and evidence sequence is
+`docs/FOUNDATION-BASIC-COLONY-LOOP-PLAN.md`. D-19 remains the testing authority.
+This decision deepens the Foundation's basic colony loop only. It does not
+authorize Product P2 colony automation, production queues, station upgrades,
+resource depletion balance, procedural map topology, or any other deferred
+system.
+
+## D-21 — Turn-based work and idle construction — LOCKED
+
+**Decision:**
+
+- recipe content owns positive `gather_work_turns` and `refine_work_turns`
+  values in addition to input and output amounts;
+- the Foundation defaults are three gather work turns for one configured raw
+  batch and two refine work turns for one configured finished batch;
+- a work tick advances progress by exactly one only while the survivor is at a
+  valid work tile; movement, arrival, blocked time, paused UI, rendering,
+  Tactical turns, save, and load do not advance work progress;
+- no raw or finished resource is credited before the corresponding work
+  requirement is complete; completion credits the configured amount exactly
+  once and resets operation progress before the next stage;
+- buildable station content owns a positive `construction_work_turns` value;
+  the Foundation default is four work turns;
+- accepting placement pays once and creates a blocking construction site at
+  the selected coordinate; it does not create an operational station;
+- survivors whose durable task is `Idle` and who have no production job
+  automatically select reachable construction work in stable order, travel
+  with the existing worker movement rules, and contribute at most one work
+  unit per accepted Outpost worker tick;
+- automatic construction never reassigns survivors who are gathering,
+  stationed, resting, defending, or carrying production cargo;
+- a construction site becomes its selected operational station exactly once
+  when its remaining work reaches zero; unfinished sites and work progress
+  persist across save/load;
+- legacy day-boundary gathering and free station production may remain only
+  for explicitly retained non-recipe tasks/effects. They must not credit the
+  same recipe or construction transaction.
+
+This is Foundation worker scheduling, not a general priority, hauling,
+blueprint, stockpile, or construction-queue system.

@@ -1,6 +1,6 @@
 //! Phase 6 acceptance tests for the exact-once colony day transaction.
 
-use bd_core::{direction::Direction, signals::PoolKind};
+use bd_core::{colony::stations::StationType, direction::Direction, signals::PoolKind};
 use bd_test_support::FoundationDriver;
 
 fn colony_driver() -> FoundationDriver {
@@ -43,9 +43,10 @@ fn build_station(driver: &mut FoundationDriver, staffed: bool) {
             None,
         )
         .unwrap();
+    let station = driver.station_by_type(StationType::Stove).unwrap();
+    driver.fixture_complete_construction(station);
     if staffed {
         let survivor = driver.first_survivor().unwrap();
-        let station = driver.first_station().unwrap();
         driver
             .expect_station_assignment_action(
                 "daily cycle: staff station",
@@ -124,6 +125,22 @@ fn gathering_applies_once_per_day() {
     let mut driver = colony_driver();
     let player = driver.player().unwrap();
     let survivor = driver.first_survivor().unwrap();
+    let tree_position = driver
+        .resource_nodes_with_state()
+        .into_iter()
+        .find_map(|(_, kind, position, _)| {
+            (kind == bd_core::components::ResourceNodeType::Trees).then_some(position)
+        })
+        .expect("configured Trees source");
+    driver
+        .fixture_set_position(
+            survivor,
+            bd_core::components::Position {
+                x: tree_position.x - 1,
+                y: tree_position.y,
+            },
+        )
+        .unwrap();
     driver
         .expect_action(
             "daily cycle: assign gathering",

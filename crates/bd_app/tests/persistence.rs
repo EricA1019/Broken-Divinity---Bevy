@@ -32,7 +32,10 @@ fn build_and_assign(driver: &mut FoundationDriver) {
             None,
         )
         .unwrap();
-    let station = driver.first_station().unwrap();
+    let station = driver
+        .station_by_type(bd_core::colony::stations::StationType::Stove)
+        .unwrap();
+    driver.fixture_complete_construction(station);
     let survivor = driver.first_survivor().unwrap();
     driver.fixture_assign_station(survivor, station).unwrap();
 }
@@ -70,12 +73,14 @@ fn station_catalog_identity_survives_save_load() {
             None,
         )
         .unwrap();
-    assert_eq!(driver.station_types(), vec![StationType::Workshop]);
+    let before_types = driver.station_types();
+    assert!(before_types.contains(&StationType::Workshop));
+    assert!(before_types.contains(&StationType::Custom(1)));
 
     let checkpoint = driver.checkpoint().unwrap();
     driver.restore_checkpoint(&checkpoint).unwrap();
 
-    assert_eq!(driver.station_types(), vec![StationType::Workshop]);
+    assert_eq!(driver.station_types(), before_types);
 }
 
 #[test]

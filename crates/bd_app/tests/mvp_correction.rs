@@ -3,7 +3,7 @@ use bd_core::{
         stations::{StationEffect, StationType},
         survivors::SurvivorTask,
     },
-    components::ResourceNodeType,
+    components::{Position, ResourceNodeType},
     direction::Direction,
     session::RunOutcome,
     signals::PoolKind,
@@ -34,6 +34,54 @@ fn cross_tactical_day_boundary(driver: &mut FoundationDriver) {
     advance_to_turn_23(driver);
     driver.enter_dungeon(FOUNDATION_DUNGEON_ID).unwrap();
     wait_once(driver, "cross Tactical day boundary");
+}
+
+fn place_gatherers_at_source(
+    driver: &mut FoundationDriver,
+    kind: ResourceNodeType,
+    gatherers: usize,
+) {
+    let target = driver
+        .resource_nodes_with_state()
+        .into_iter()
+        .find_map(|(_, node_kind, position, _)| (node_kind == kind).then_some(position))
+        .unwrap_or_else(|| panic!("missing {kind:?} source"));
+    let map = driver.outpost_map();
+    let work_tiles = [
+        Position {
+            x: target.x - 1,
+            y: target.y,
+        },
+        Position {
+            x: target.x + 1,
+            y: target.y,
+        },
+        Position {
+            x: target.x,
+            y: target.y - 1,
+        },
+        Position {
+            x: target.x,
+            y: target.y + 1,
+        },
+    ]
+    .into_iter()
+    .filter(|position| map.is_walkable(position.x, position.y))
+    .take(gatherers)
+    .collect::<Vec<_>>();
+    assert_eq!(
+        work_tiles.len(),
+        gatherers,
+        "insufficient source work tiles"
+    );
+    for (survivor, position) in driver
+        .survivors()
+        .into_iter()
+        .take(gatherers)
+        .zip(work_tiles)
+    {
+        driver.fixture_set_position(survivor, position).unwrap();
+    }
 }
 
 #[test]
@@ -150,6 +198,7 @@ fn fixed_shelter_has_every_reachable_gathering_target() {
 fn zero_supply_recovery_survives_save_load() {
     let mut original = colony_driver(215);
     original.fixture_set_colony_resource(PoolKind::Supplies, 0);
+    place_gatherers_at_source(&mut original, ResourceNodeType::WaterSource, 3);
     let player = original.player().unwrap();
     for survivor in original.survivors() {
         original
@@ -190,6 +239,13 @@ fn forecast_matches_adverse_gathering_matrix() {
                 seed += 1;
                 let mut driver = colony_driver(seed);
                 driver.fixture_set_colony_resource(PoolKind::Supplies, supplies);
+                let node_kind = match target {
+                    PoolKind::Supplies => ResourceNodeType::WaterSource,
+                    PoolKind::Materials => ResourceNodeType::Trees,
+                    PoolKind::WildPlants => ResourceNodeType::WildPlants,
+                    _ => unreachable!("matrix contains only gathering pools"),
+                };
+                place_gatherers_at_source(&mut driver, node_kind, gatherers);
                 let player = driver.player().unwrap();
                 for survivor in driver.survivors().into_iter().take(gatherers) {
                     driver
@@ -318,6 +374,7 @@ fn staffing_targets_a_named_survivor_and_station() {
     let survivor = driver.survivors()[1];
     let stations = driver.stations();
     let selected_station = stations[1];
+    driver.fixture_complete_construction(selected_station);
     driver.fixture_select_station_assignment(selected_station);
 
     driver
@@ -355,7 +412,8 @@ fn bed_restores_only_its_assigned_worker_by_the_catalog_amount() {
         .unwrap();
     let survivor = driver.survivors()[1];
     let untouched = driver.survivors()[0];
-    let bed = driver.stations()[0];
+    let bed = driver.station_by_type(StationType::Bed).unwrap();
+    driver.fixture_complete_construction(bed);
     driver.fixture_select_station_assignment(bed);
     driver
         .expect_action(
@@ -407,7 +465,8 @@ fn each_catalog_station_effect_applies_once_when_staffed() {
             )
             .unwrap();
         let survivor = driver.survivors()[0];
-        let station = driver.stations()[0];
+        let station = driver.station_by_type(station_type).unwrap();
+        driver.fixture_complete_construction(station);
         driver.fixture_select_station_assignment(station);
         driver
             .expect_action(

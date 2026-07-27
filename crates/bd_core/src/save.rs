@@ -7,7 +7,7 @@
 //! type is not serializable. On save, each entity is assigned a SaveId.
 //! On load, entities are spawned in order and a mapping is built.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -99,7 +99,13 @@ pub struct EntityData {
     pub scope: Option<EntityScope>,
     pub survivor_task: Option<SurvivorTaskSnapshot>,
     pub station_type: Option<StationType>,
+    #[serde(default)]
+    pub construction_site: Option<crate::colony::stations::ConstructionSite>,
     pub resource_node: Option<ResourceNode>,
+    #[serde(default)]
+    pub logistics_job: Option<crate::colony::logistics::LogisticsJob>,
+    #[serde(default)]
+    pub cargo: Option<crate::colony::logistics::Cargo>,
     pub exit_tile: bool,
 }
 
@@ -153,6 +159,8 @@ pub struct RunSnapshot {
     pub colony_storage: crate::colony::production::ColonyStorage,
     #[serde(default)]
     pub colony_resources: Vec<PoolSnapshot>,
+    #[serde(default)]
+    pub colony_raw_resources: BTreeMap<String, u32>,
     pub outpost_party: Vec<SaveId>,
     pub combat_rng: CombatRng,
     pub latest_daily_summary: crate::colony::production::LatestDailySummary,
@@ -473,7 +481,19 @@ fn build_snapshot(world: &mut World, seed: u64, turn: u64) -> RunSnapshot {
                     SurvivorTask::Resting => SurvivorTaskSnapshot::Resting,
                 }),
             station_type: world.entity(entity).get::<StationType>().copied(),
+            construction_site: world
+                .entity(entity)
+                .get::<crate::colony::stations::ConstructionSite>()
+                .cloned(),
             resource_node: world.entity(entity).get::<ResourceNode>().cloned(),
+            logistics_job: world
+                .entity(entity)
+                .get::<crate::colony::logistics::LogisticsJob>()
+                .cloned(),
+            cargo: world
+                .entity(entity)
+                .get::<crate::colony::logistics::Cargo>()
+                .cloned(),
             exit_tile: world.entity(entity).contains::<ExitTile>(),
         };
 
@@ -552,6 +572,10 @@ fn build_snapshot(world: &mut World, seed: u64, turn: u64) -> RunSnapshot {
                 .collect()
         })
         .unwrap_or_default();
+    let colony_raw_resources = world
+        .get_resource::<crate::colony::production::ColonyResources>()
+        .map(|resources| resources.raw.clone())
+        .unwrap_or_default();
 
     let mut session = world
         .get_resource::<crate::session::RunSession>()
@@ -598,6 +622,7 @@ fn build_snapshot(world: &mut World, seed: u64, turn: u64) -> RunSnapshot {
         log_entries,
         colony_storage,
         colony_resources,
+        colony_raw_resources,
         outpost_party,
         combat_rng,
         latest_daily_summary,
@@ -655,6 +680,7 @@ pub fn restore_snapshot_into(
     };
     world.insert_resource(crate::colony::production::ColonyResources {
         pools: colony_pools,
+        raw: snapshot.colony_raw_resources.clone(),
     });
     world.insert_resource(snapshot.colony_storage.clone());
     world.insert_resource(snapshot.combat_rng.clone());
@@ -726,8 +752,17 @@ pub fn restore_snapshot_into(
         if let Some(station_type) = ed.station_type {
             world.entity_mut(entity).insert((Station, station_type));
         }
+        if let Some(construction_site) = ed.construction_site.clone() {
+            world.entity_mut(entity).insert(construction_site);
+        }
         if let Some(resource_node) = ed.resource_node.clone() {
             world.entity_mut(entity).insert(resource_node);
+        }
+        if let Some(logistics_job) = ed.logistics_job.clone() {
+            world.entity_mut(entity).insert(logistics_job);
+        }
+        if let Some(cargo) = ed.cargo.clone() {
+            world.entity_mut(entity).insert(cargo);
         }
         if ed.exit_tile {
             world.entity_mut(entity).insert(ExitTile);
@@ -865,7 +900,13 @@ pub fn restore_snapshot_into(
     // emitting a second Blocked transition log.
     world.insert_resource(crate::colony::survivors::RecomputingWorkerActivity);
     let mut activity_schedule = Schedule::default();
-    activity_schedule.add_systems(crate::colony::survivors::process_survivor_movement);
+    activity_schedule.add_systems(
+        (
+            crate::colony::logistics::process_logistics_workers,
+            crate::colony::survivors::process_survivor_movement,
+        )
+            .chain(),
+    );
     activity_schedule.run(world);
     world.remove_resource::<crate::colony::survivors::RecomputingWorkerActivity>();
     world.insert_resource(WorldJustRestored);
@@ -922,6 +963,7 @@ mod tests {
             log_entries: vec![],
             colony_storage: crate::colony::production::ColonyStorage::default(),
             colony_resources: Vec::new(),
+            colony_raw_resources: BTreeMap::new(),
             outpost_party: Vec::new(),
             combat_rng: CombatRng::from_seed(42),
             latest_daily_summary: crate::colony::production::LatestDailySummary::default(),
@@ -998,7 +1040,10 @@ mod tests {
             scope: None,
             survivor_task: None,
             station_type: None,
+            construction_site: None,
             resource_node: None,
+            logistics_job: None,
+            cargo: None,
             exit_tile: false,
         });
 
@@ -1237,6 +1282,7 @@ mod tests {
         world.insert_resource(storage);
         world.insert_resource(crate::colony::production::ColonyResources {
             pools: Pools::new(vec![Pool::new(PoolKind::Supplies, 7, 0, 100)]),
+            raw: BTreeMap::from([("resource.raw_timber".into(), 2)]),
         });
         let mut session = crate::session::RunSession::new(99);
         session.begin_dungeon("dungeon.foundation");
@@ -1276,6 +1322,7 @@ mod tests {
         assert_eq!(player_data.skill_progression.as_ref().unwrap().melee, 3);
         assert_eq!(restored.colony_storage.count("item.healing_potion"), 1);
         assert_eq!(restored.colony_resources[0].current, 7);
+        assert_eq!(restored.colony_raw_resources["resource.raw_timber"], 2);
         assert!(restored.session.extraction_applied);
     }
 

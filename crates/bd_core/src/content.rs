@@ -7,8 +7,9 @@ use bevy_ecs::prelude::Resource;
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    components::{Position, Tile},
+    components::{Position, ResourceNodeType, Tile},
     factory::EntityBlueprint,
+    signals::PoolKind,
 };
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -77,6 +78,46 @@ pub struct ActionReference {
     pub virtue_gain: i32,
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ColonyResourceDefinition {
+    pub id: String,
+    pub label: String,
+    /// Finished resources map to an authoritative colony pool. Raw resources
+    /// remain cargo until a recipe consumes them.
+    pub pool_kind: Option<PoolKind>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ColonySourceDefinition {
+    pub id: String,
+    pub label: String,
+    pub node_type: ResourceNodeType,
+    pub raw_resource_id: String,
+    pub spawn_count: u32,
+    pub glyph: char,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ColonyRecipeDefinition {
+    pub id: String,
+    pub label: String,
+    pub source_id: String,
+    pub input_resource_id: String,
+    pub output_resource_id: String,
+    pub station_id: String,
+    pub input_amount: u32,
+    pub output_amount: u32,
+    pub gather_work_turns: u32,
+    pub refine_work_turns: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ColonyPlacementProfile {
+    pub id: String,
+    pub minimum_manhattan_spacing: u32,
+    pub seed_salt: u64,
+}
+
 /// Complete content bundle required by the foundation runtime.
 #[derive(Resource, Debug, Clone, Default, Serialize, Deserialize)]
 pub struct FoundationContent {
@@ -87,6 +128,10 @@ pub struct FoundationContent {
     pub actions: Vec<ActionReference>,
     pub stations: Vec<crate::colony::stations::StationBlueprint>,
     pub blueprints: Vec<EntityBlueprint>,
+    pub colony_resources: Vec<ColonyResourceDefinition>,
+    pub colony_sources: Vec<ColonySourceDefinition>,
+    pub colony_recipes: Vec<ColonyRecipeDefinition>,
+    pub colony_placement_profiles: Vec<ColonyPlacementProfile>,
 }
 
 impl FoundationContent {

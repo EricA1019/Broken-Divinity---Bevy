@@ -25,12 +25,17 @@ fn build_station(driver: &mut FoundationDriver) -> bevy_ecs::entity::Entity {
             None,
         )
         .unwrap();
-    driver.first_station().expect("build must create station")
+    let station = driver
+        .station_by_type(bd_core::colony::stations::StationType::Stove)
+        .expect("build must create Stove");
+    driver.fixture_complete_construction(station);
+    station
 }
 
 #[test]
 fn built_station_survives_dungeon_round_trip() {
     let mut driver = colony_driver();
+    let stations_before = driver.summary().stations;
     let station = build_station(&mut driver);
     assert_eq!(
         driver.entity_scope(station),
@@ -43,7 +48,7 @@ fn built_station_survives_dungeon_round_trip() {
         .unwrap();
 
     assert!(driver.entity_exists(station));
-    assert_eq!(driver.summary().stations, 1);
+    assert_eq!(driver.summary().stations, stations_before + 1);
 }
 
 #[test]

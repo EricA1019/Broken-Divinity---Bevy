@@ -68,7 +68,10 @@ fn station_assignment_resolves_through_action_pipeline() {
         )
         .unwrap();
     let survivor = driver.first_survivor().unwrap();
-    let station = driver.first_station().unwrap();
+    let station = driver
+        .station_by_type(bd_core::colony::stations::StationType::Stove)
+        .unwrap();
+    driver.fixture_complete_construction(station);
     driver
         .expect_station_assignment_action("station pipeline: assign", player, survivor, station)
         .unwrap();

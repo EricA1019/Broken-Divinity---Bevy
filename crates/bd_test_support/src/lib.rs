@@ -142,6 +142,8 @@ pub struct SurvivorFingerprint {
     pub position: Position,
     pub task: String,
     pub activity: String,
+    pub logistics: Option<String>,
+    pub cargo: Option<(Option<String>, u32)>,
     pub pools: Vec<PoolFingerprint>,
 }
 
@@ -152,10 +154,12 @@ pub struct StationFingerprint {
     pub position: Position,
     pub staffed_by: Vec<String>,
     pub effect: String,
+    pub construction: Option<(u32, u32)>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ResourceNodeFingerprint {
+    pub source_id: String,
     pub kind: ResourceNodeType,
     pub position: Position,
     pub depleted: bool,
@@ -436,6 +440,17 @@ impl FoundationDriver {
                     position,
                     task,
                     activity: activity_fingerprint(entity_ref.get::<WorkerActivity>()),
+                    logistics: entity_ref
+                        .get::<bd_core::colony::logistics::LogisticsJob>()
+                        .map(|job| {
+                            format!(
+                                "{}:{:?}:{}:{:?}",
+                                job.recipe_id, job.stage, job.work_completed, job.blocked
+                            )
+                        }),
+                    cargo: entity_ref
+                        .get::<bd_core::colony::logistics::Cargo>()
+                        .map(|cargo| (cargo.resource_id.clone(), cargo.amount)),
                     pools: entity_ref
                         .get::<Pools>()
                         .map_or_else(Vec::new, pool_fingerprint),
@@ -475,6 +490,9 @@ impl FoundationDriver {
                         || "MissingCatalogEntry".into(),
                         |entry| entry.effect_label(),
                     ),
+                    construction: entity_ref
+                        .get::<bd_core::colony::stations::ConstructionSite>()
+                        .map(|site| (site.work_completed, site.work_required)),
                 })
             })
             .collect::<Vec<_>>();
@@ -492,14 +510,20 @@ impl FoundationDriver {
                 let entity_ref = world.entity(*entity);
                 let node = entity_ref.get::<ResourceNode>()?;
                 Some(ResourceNodeFingerprint {
+                    source_id: node.source_id.clone(),
                     kind: node.kind,
                     position: *entity_ref.get::<Position>()?,
                     depleted: node.depleted,
                 })
             })
             .collect::<Vec<_>>();
-        resource_nodes
-            .sort_by_key(|node| (format!("{:?}", node.kind), node.position.y, node.position.x));
+        resource_nodes.sort_by(|left, right| {
+            (&left.source_id, left.position.y, left.position.x).cmp(&(
+                &right.source_id,
+                right.position.y,
+                right.position.x,
+            ))
+        });
 
         let colony_pools = world
             .resource::<bd_core::colony::production::ColonyResources>()
@@ -1062,6 +1086,99 @@ impl FoundationDriver {
         }
     }
 
+    pub fn fixture_spawn_processing_station(&mut self, position: Position) -> Entity {
+        self.app
+            .world_mut()
+            .spawn((
+                bd_core::colony::stations::Station,
+                StationType::Custom(1),
+                position,
+                Name("Basic Processing".into()),
+                bd_core::components::ContentIdentity("station.basic_processor".into()),
+                bd_core::components::BlocksMovement,
+                EntityScope::ColonyPersistent,
+                bd_core::spatial::PersistentEntity,
+            ))
+            .id()
+    }
+
+    pub fn fixture_assign_recipe(&mut self, survivor: Entity, recipe_id: &str) {
+        self.app.world_mut().entity_mut(survivor).insert((
+            bd_core::colony::logistics::LogisticsJob {
+                recipe_id: recipe_id.into(),
+                stage: bd_core::colony::logistics::JobStage::ToSource,
+                work_completed: 0,
+                blocked: None,
+            },
+            bd_core::colony::logistics::Cargo::default(),
+        ));
+    }
+
+    pub fn fixture_set_logistics_progress(
+        &mut self,
+        survivor: Entity,
+        stage: bd_core::colony::logistics::JobStage,
+        work_completed: u32,
+    ) {
+        let mut job = self
+            .app
+            .world_mut()
+            .get_mut::<bd_core::colony::logistics::LogisticsJob>(survivor)
+            .expect("fixture survivor must have a logistics job");
+        job.stage = stage;
+        job.work_completed = work_completed;
+    }
+
+    pub fn assign_recipe(
+        &mut self,
+        step: &str,
+        survivor: Entity,
+        recipe_id: &str,
+    ) -> Result<(), ScenarioError> {
+        self.app
+            .world_mut()
+            .resource_mut::<bd_core::colony::logistics::PendingRecipeAssignment>()
+            .0 = Some(recipe_id.into());
+        let player = self
+            .player()
+            .ok_or_else(|| ScenarioError::new(step, "player is unavailable"))?;
+        self.expect_action(step, player, "ability.assign_recipe", None, Some(survivor))?;
+        match self.logistics_job(survivor) {
+            Some(job) if job.recipe_id == recipe_id => Ok(()),
+            job => Err(ScenarioError::new(
+                step,
+                format!("recipe assignment did not resolve; job={job:?}"),
+            )),
+        }
+    }
+
+    pub fn logistics_job(
+        &self,
+        survivor: Entity,
+    ) -> Option<bd_core::colony::logistics::LogisticsJob> {
+        self.app
+            .world()
+            .get::<bd_core::colony::logistics::LogisticsJob>(survivor)
+            .cloned()
+    }
+
+    pub fn worker_cargo(&self, survivor: Entity) -> Option<bd_core::colony::logistics::Cargo> {
+        self.app
+            .world()
+            .get::<bd_core::colony::logistics::Cargo>(survivor)
+            .cloned()
+    }
+
+    pub fn raw_resource_count(&self, resource_id: &str) -> u32 {
+        self.app
+            .world()
+            .resource::<bd_core::colony::production::ColonyResources>()
+            .raw
+            .get(resource_id)
+            .copied()
+            .unwrap_or(0)
+    }
+
     /// Phase 2 fixture adapter for the pre-Phase-4 pickup message.
     pub fn fixture_pick_up(&mut self, item: Entity) -> Result<(), ScenarioError> {
         let position = self
@@ -1121,6 +1238,22 @@ impl FoundationDriver {
                     .map(|node| node.kind)
             })
             .collect()
+    }
+
+    pub fn resource_node_layout(&mut self) -> Vec<(String, Position)> {
+        let mut layout = self
+            .resource_nodes()
+            .into_iter()
+            .filter_map(|entity| {
+                let node = self.app.world().get::<ResourceNode>(entity)?;
+                let position = self.app.world().get::<Position>(entity)?;
+                Some((node.source_id.clone(), *position))
+            })
+            .collect::<Vec<_>>();
+        layout.sort_by(|left, right| {
+            (&left.0, left.1.y, left.1.x).cmp(&(&right.0, right.1.y, right.1.x))
+        });
+        layout
     }
 
     pub fn resource_nodes_with_state(&mut self) -> Vec<(Entity, ResourceNodeType, Position, bool)> {
@@ -1193,6 +1326,13 @@ impl FoundationDriver {
             .collect()
     }
 
+    pub fn survivor_positions(&mut self) -> Vec<Position> {
+        self.survivors()
+            .into_iter()
+            .filter_map(|entity| self.app.world().get::<Position>(entity).copied())
+            .collect()
+    }
+
     pub fn survivor_by_name(&mut self, expected_name: &str) -> Option<Entity> {
         let entities = self.entity_ids();
         entities.into_iter().find(|entity| {
@@ -1215,6 +1355,12 @@ impl FoundationDriver {
             .find(|entity| self.app.world().entity(*entity).contains::<Station>())
     }
 
+    pub fn station_by_type(&mut self, expected: StationType) -> Option<Entity> {
+        self.stations()
+            .into_iter()
+            .find(|entity| self.app.world().get::<StationType>(*entity).copied() == Some(expected))
+    }
+
     pub fn stations(&mut self) -> Vec<Entity> {
         let entities = self.entity_ids();
         entities
@@ -1228,6 +1374,37 @@ impl FoundationDriver {
             .world()
             .get::<bd_core::colony::stations::StationType>(station)
             .copied()
+    }
+
+    pub fn construction_progress(&self, station: Entity) -> Option<(u32, u32)> {
+        self.app
+            .world()
+            .get::<bd_core::colony::stations::ConstructionSite>(station)
+            .map(|site| (site.work_completed, site.work_required))
+    }
+
+    pub fn station_is_operational(&self, station: Entity) -> bool {
+        self.app.world().entity(station).contains::<Station>()
+            && !self
+                .app
+                .world()
+                .entity(station)
+                .contains::<bd_core::colony::stations::ConstructionSite>()
+    }
+
+    /// Fixture setup for contracts whose subject is downstream station
+    /// behavior rather than construction scheduling.
+    pub fn fixture_complete_construction(&mut self, station: Entity) {
+        self.app
+            .world_mut()
+            .entity_mut(station)
+            .remove::<bd_core::colony::stations::ConstructionSite>();
+    }
+
+    pub fn update_frames(&mut self, frames: usize) {
+        for _ in 0..frames {
+            self.app.update();
+        }
     }
 
     pub fn station_types(&mut self) -> Vec<bd_core::colony::stations::StationType> {
@@ -1513,9 +1690,11 @@ impl FoundationDriver {
                 }
             }
             bd_core::colony::stations::BuildInteraction::Inactive => {
-                bd_core::colony::stations::BuildInteraction::AwaitingResolution {
+                // Scenario fixtures submit a direction through the domain action
+                // rather than simulating the paused placement UI. Keep the
+                // station selection without inventing an absolute cursor.
+                bd_core::colony::stations::BuildInteraction::Selecting {
                     selected_station: station_type,
-                    cursor: Position { x: 0, y: 0 },
                 }
             }
         };

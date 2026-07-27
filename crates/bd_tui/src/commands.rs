@@ -520,13 +520,15 @@ pub fn help_entries_with_legend(
         .map(|token| glyph(symbols, token))
         .join("/");
         add(worker_glyphs, "Workers", "Worker states");
-        let station_glyphs = stations
-            .entries()
-            .iter()
-            .map(|station| format!("{}/{}", station.glyph, station.staffed_glyph))
-            .collect::<Vec<_>>()
-            .join(" ");
-        add(station_glyphs, "Stations", "Stations");
+        const STATIONS_PER_HELP_ENTRY: usize = 3;
+        for station_group in stations.entries().chunks(STATIONS_PER_HELP_ENTRY) {
+            let station_glyphs = station_group
+                .iter()
+                .map(|station| format!("{}/{}", station.glyph, station.staffed_glyph))
+                .collect::<Vec<_>>()
+                .join(" ");
+            add(station_glyphs, "Stations", "Stations");
+        }
         add(
             glyph(symbols, VisualToken::Exit),
             "Shelter gate",

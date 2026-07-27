@@ -64,10 +64,16 @@ fn continuous_integration_runs_the_canonical_gate() {
 fn managed_launcher_builds_the_current_workspace_instead_of_running_a_stale_binary() {
     let launcher = read("scripts/bd");
     let installer = read("scripts/install-bd-launcher.sh");
+    let update_notice = launcher
+        .find("Updating Broken Divinity from the current workspace before launch")
+        .expect("the bd launcher must visibly report that it is updating before launch");
+    let cargo_run = launcher
+        .find("cargo run --quiet -p bd_app")
+        .expect("the bd launcher must resolve and build the current workspace application");
 
     assert!(
-        launcher.contains("cargo run --quiet -p bd_app"),
-        "the bd launcher must resolve and build the current workspace application"
+        update_notice < cargo_run,
+        "the bd launcher must report the workspace update before it builds and launches"
     );
     assert!(
         !launcher.contains("target/debug/bd") && !launcher.contains("target/release/bd"),

@@ -1,5 +1,6 @@
 //! Colony management — shelter map, stations, survivors, production, raids.
 
+pub mod logistics;
 pub mod production;
 pub mod raids;
 pub mod resources;

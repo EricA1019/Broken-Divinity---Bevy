@@ -2,7 +2,7 @@
 
 **Status:** Active navigation authority
 
-**Updated:** 2026-07-26
+**Updated:** 2026-07-27
 
 Read this file before using any other Broken Divinity document.
 
@@ -16,10 +16,11 @@ Read this file before using any other Broken Divinity document.
 6. [MVP-SCENARIO.md](MVP-SCENARIO.md) — canonical Foundation acceptance scenario.
 7. [AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md](AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md) — active testing policy, evidence, metrics, and suite-migration authority.
 8. [FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md](FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md) — active Foundation behavior and colony UX implementation authority.
-9. [FOUNDATION-MVP-CORRECTION-PLAN.md](FOUNDATION-MVP-CORRECTION-PLAN.md) — completed Foundation correction and acceptance record.
-10. [FOUNDATION-STABILIZATION-PLAN.md](FOUNDATION-STABILIZATION-PLAN.md) — completed stabilization execution record.
-11. [FOUNDATION-RECOVERY-PLAN.md](FOUNDATION-RECOVERY-PLAN.md) — completed Foundation execution record and prior evidence.
-12. [DOCUMENT-INVENTORY.md](DOCUMENT-INVENTORY.md) — classification and ownership of all project documentation.
+9. [FOUNDATION-BASIC-COLONY-LOOP-PLAN.md](FOUNDATION-BASIC-COLONY-LOOP-PLAN.md) — owner-approved D-20 basic colony-loop implementation and evidence plan.
+10. [FOUNDATION-MVP-CORRECTION-PLAN.md](FOUNDATION-MVP-CORRECTION-PLAN.md) — completed Foundation correction and acceptance record.
+11. [FOUNDATION-STABILIZATION-PLAN.md](FOUNDATION-STABILIZATION-PLAN.md) — completed stabilization execution record.
+12. [FOUNDATION-RECOVERY-PLAN.md](FOUNDATION-RECOVERY-PLAN.md) — completed Foundation execution record and prior evidence.
+13. [DOCUMENT-INVENTORY.md](DOCUMENT-INVENTORY.md) — classification and ownership of all project documentation.
 
 Code, tests, content, reference documents, and archived plans are evidence.
 They do not override the authority order.
@@ -39,6 +40,9 @@ violation.
 evidence sufficiency, metrics, and suite migration.
 `FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md` owns behavior and implementation
 order. These are coordinated authorities with non-overlapping roles.
+`FOUNDATION-BASIC-COLONY-LOOP-PLAN.md` defines the active test-first D-20
+colony vertical slice. Its Phase C0 defaults were owner approved and recorded
+on 2026-07-27.
 `FOUNDATION-MVP-CORRECTION-PLAN.md` remains the completed correction record;
 its unaffected simulation, persistence, economy, and dungeon evidence is
 preserved. The stabilization and recovery plans remain earlier chronological
@@ -85,6 +89,8 @@ Deferred:
   authority.
 - Foundation Test and Colony UX Hardening Plan as active behavior execution
   authority.
+- Foundation Basic Colony Loop Plan as the owner-approved D-20 colony-loop
+  execution plan.
 - Foundation MVP Correction Plan as completed acceptance evidence.
 - Foundation Stabilization Plan as completed evidence.
 - Foundation Recovery Plan as completed evidence.
@@ -114,11 +120,13 @@ Foundation Recovery Phase 0.
 5. `MVP-SCENARIO.md`.
 6. `AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md`.
 7. `FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md`.
-8. `FOUNDATION-MVP-CORRECTION-PLAN.md` for completed correction and acceptance evidence.
-9. `FOUNDATION-STABILIZATION-PLAN.md` for completed stabilization evidence.
-10. `FOUNDATION-RECOVERY-PLAN.md` for completed Foundation evidence.
-11. `DOCUMENT-INVENTORY.md` when consulting any other document.
-12. Current code and tests.
+8. `FOUNDATION-BASIC-COLONY-LOOP-PLAN.md` when working on the active D-20
+   colony vertical slice.
+9. `FOUNDATION-MVP-CORRECTION-PLAN.md` for completed correction and acceptance evidence.
+10. `FOUNDATION-STABILIZATION-PLAN.md` for completed stabilization evidence.
+11. `FOUNDATION-RECOVERY-PLAN.md` for completed Foundation evidence.
+12. `DOCUMENT-INVENTORY.md` when consulting any other document.
+13. Current code and tests.
 
 ## Stop rule
 

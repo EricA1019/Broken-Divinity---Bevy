@@ -1,0 +1,26 @@
+[
+    (
+        id: "source.trees",
+        label: "Trees",
+        node_type: Trees,
+        raw_resource_id: "resource.raw_timber",
+        spawn_count: 1,
+        glyph: 'T',
+    ),
+    (
+        id: "source.water",
+        label: "Water",
+        node_type: WaterSource,
+        raw_resource_id: "resource.raw_water",
+        spawn_count: 1,
+        glyph: '~',
+    ),
+    (
+        id: "source.wild_plants",
+        label: "Wild Plants",
+        node_type: WildPlants,
+        raw_resource_id: "resource.raw_plants",
+        spawn_count: 1,
+        glyph: 'P',
+    ),
+]

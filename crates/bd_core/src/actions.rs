@@ -118,6 +118,8 @@ pub enum Effect {
     RequestPickup,
     /// Assign the pending survivor target to the nearest active station.
     AssignTargetToStation,
+    /// Assign the pending content-backed production recipe.
+    AssignTargetRecipe,
     /// Advance authoritative colony time to the next day boundary.
     RequestRestUntilNextDay,
 }
@@ -353,6 +355,7 @@ struct PendingAction {
     action_id: ActionId,
     direction: Option<Direction>,
     target: Option<Entity>,
+    build_position: Option<Position>,
 }
 
 #[derive(SystemParam)]
@@ -508,6 +511,7 @@ fn validate_action_intents(
             continue;
         };
 
+        let mut build_position = None;
         if intent.action_id == "ability.build" {
             let selected = interaction
                 .build
@@ -552,19 +556,28 @@ fn validate_action_intents(
                 continue;
             }
             if *mode == crate::spatial::GameMode::Outpost {
-                let Some(direction) = intent.direction else {
-                    denied_writer.write(ActionDenied {
-                        actor: intent.actor,
-                        action_id: intent.action_id.clone(),
-                        reason: DenialReason::Other("Choose a placement tile.".into()),
-                    });
-                    continue;
+                let candidate = match *interaction.build {
+                    crate::colony::stations::BuildInteraction::AwaitingResolution {
+                        cursor,
+                        ..
+                    } => cursor,
+                    _ => {
+                        let Some(direction) = intent.direction else {
+                            denied_writer.write(ActionDenied {
+                                actor: intent.actor,
+                                action_id: intent.action_id.clone(),
+                                reason: DenialReason::Other("Choose a placement tile.".into()),
+                            });
+                            continue;
+                        };
+                        let (dx, dy) = direction.delta();
+                        Position {
+                            x: actor_pos.x + dx,
+                            y: actor_pos.y + dy,
+                        }
+                    }
                 };
-                let (dx, dy) = direction.delta();
-                let candidate = Position {
-                    x: actor_pos.x + dx,
-                    y: actor_pos.y + dy,
-                };
+                build_position = Some(candidate);
                 let gate = queries
                     .exit_positions
                     .iter()
@@ -814,7 +827,8 @@ fn validate_action_intents(
                     }
                 }
                 Requirement::TileVacant => {
-                    // Compute target tile position from actor position + direction
+                    // Build placement retains its absolute validated preview;
+                    // legacy actions continue to derive a cardinal target.
                     let actor_pos = queries
                         .actors
                         .iter()
@@ -827,12 +841,16 @@ fn validate_action_intents(
                                 )
                         })
                         .map(|(_, p, _, _, _, _)| *p);
-                    if let (Some(pos), Some(dir)) = (actor_pos, intent.direction) {
+                    let target_pos = build_position.or_else(|| {
+                        let pos = actor_pos?;
+                        let dir = intent.direction?;
                         let (dx, dy) = dir.delta();
-                        let target_pos = crate::components::Position {
+                        Some(crate::components::Position {
                             x: pos.x + dx,
                             y: pos.y + dy,
-                        };
+                        })
+                    });
+                    if let Some(target_pos) = target_pos {
                         // Check if any blocking entity occupies that tile
                         let occupied = queries.blocked_positions.iter().any(|(position, scope)| {
                             crate::spatial::entity_is_active(scope, *mode, foundation_runtime)
@@ -920,6 +938,7 @@ fn validate_action_intents(
                 action_id: intent.action_id.clone(),
                 direction: intent.direction,
                 target: intent.target,
+                build_position,
             });
         }
     }
@@ -1056,17 +1075,24 @@ pub(crate) struct ActionResolutionLocation<'w, 's> {
             &'static Position,
             Option<&'static crate::spatial::EntityScope>,
         ),
-        With<crate::colony::stations::Station>,
+        (
+            With<crate::colony::stations::Station>,
+            Without<crate::colony::stations::ConstructionSite>,
+        ),
     >,
+    cargo: Query<'w, 's, &'static crate::colony::logistics::Cargo>,
 }
 
 #[derive(SystemParam)]
 pub(crate) struct FoundationEffectWriters<'w> {
     pickup: bevy_ecs::message::MessageWriter<'w, crate::inventory::PickupIntent>,
     station: bevy_ecs::message::MessageWriter<'w, crate::signals::AssignToStation>,
+    recipe: bevy_ecs::message::MessageWriter<'w, crate::signals::AssignRecipe>,
     rest: bevy_ecs::message::MessageWriter<'w, crate::time::RestUntilNextDayRequested>,
     build: ResMut<'w, crate::colony::stations::BuildInteraction>,
     pending_assignment: ResMut<'w, crate::colony::stations::PendingStationAssignment>,
+    pending_recipe: ResMut<'w, crate::colony::logistics::PendingRecipeAssignment>,
+    colony_resources: ResMut<'w, ColonyResources>,
     time_plan: ResMut<'w, crate::time::TimeAdvancePlan>,
     game_time: Res<'w, crate::time::GameTime>,
 }
@@ -1225,24 +1251,34 @@ pub(crate) fn resolve_action_effects(
                     let station_label = station_catalog
                         .get(station_type)
                         .map_or_else(|| "Unknown station".to_owned(), |entry| entry.label.clone());
+                    let station_blueprint = station_catalog
+                        .get(station_type)
+                        .expect("validated build selection must exist in the station catalog");
                     // Build at tile in direction offset, not on player
-                    let build_pos = pending
-                        .direction
-                        .map(|dir| {
-                            let (dx, dy) = dir.delta();
-                            crate::components::Position {
-                                x: pos.x + dx,
-                                y: pos.y + dy,
-                            }
-                        })
-                        .unwrap_or(*pos);
+                    let build_pos = pending.build_position.unwrap_or_else(|| {
+                        pending
+                            .direction
+                            .map(|dir| {
+                                let (dx, dy) = dir.delta();
+                                crate::components::Position {
+                                    x: pos.x + dx,
+                                    y: pos.y + dy,
+                                }
+                            })
+                            .unwrap_or(*pos)
+                    });
                     commands.spawn((
                         Station,
                         station_type,
                         build_pos,
                         crate::components::BlocksMovement,
                         crate::components::Name(station_label.clone()),
+                        crate::components::ContentIdentity(station_blueprint.id.clone()),
+                        crate::colony::stations::ConstructionSite::new(
+                            station_blueprint.construction_work_turns,
+                        ),
                         crate::spatial::EntityScope::ColonyPersistent,
+                        crate::spatial::PersistentEntity,
                     ));
                     *foundation_effects.build = crate::colony::stations::BuildInteraction::Inactive;
                     if player_flag.is_some() {
@@ -1256,7 +1292,10 @@ pub(crate) fn resolve_action_effects(
                         } else {
                             "a"
                         };
-                        game_log.push(format!("You build {article} {label}."), LogLevel::Info);
+                        game_log.push(
+                            format!("You place {article} {label} construction site."),
+                            LogLevel::Info,
+                        );
                     }
                 }
                 Effect::SetSurvivorTask(task) => {
@@ -1274,7 +1313,17 @@ pub(crate) fn resolve_action_effects(
                             "Defending" => SurvivorTask::Defending,
                             _ => SurvivorTask::Idle,
                         };
-                        commands.entity(target).insert(new_task);
+                        if let Ok(cargo) = location.cargo.get(target) {
+                            crate::colony::logistics::deposit_cargo(
+                                &mut foundation_effects.colony_resources,
+                                cargo,
+                            );
+                        }
+                        commands.entity(target).insert(new_task).remove::<(
+                            crate::colony::logistics::LogisticsJob,
+                            crate::colony::logistics::Cargo,
+                            crate::colony::stations::AutoConstructing,
+                        )>();
                         if player_flag.is_some() {
                             game_log.push(
                                 format!("Task set to {} for survivor.", task),
@@ -1360,6 +1409,18 @@ pub(crate) fn resolve_action_effects(
                                 .station
                                 .write(crate::signals::AssignToStation { survivor, station });
                         }
+                    }
+                }
+                Effect::AssignTargetRecipe => {
+                    if let Some(survivor) = pending.target
+                        && let Some(recipe_id) = foundation_effects.pending_recipe.0.take()
+                    {
+                        foundation_effects
+                            .recipe
+                            .write(crate::signals::AssignRecipe {
+                                survivor,
+                                recipe_id,
+                            });
                     }
                 }
                 Effect::RequestRestUntilNextDay => {

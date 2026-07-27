@@ -26,6 +26,7 @@ fn build_and_assign(driver: &mut FoundationDriver) {
         .into_iter()
         .find(|entity| driver.station_type(*entity) == Some(StationType::Stove))
         .expect("built Stove must exist");
+    driver.fixture_complete_construction(station);
     let survivor = driver
         .survivor_by_name("Survivor 1")
         .expect("stable survivor must exist");

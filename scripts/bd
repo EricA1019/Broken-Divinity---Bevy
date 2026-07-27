@@ -6,4 +6,5 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "${script_dir}/.." && pwd)"
 
 cd "${repo_root}"
+printf '%s\n' 'Updating Broken Divinity from the current workspace before launch...'
 exec cargo run --quiet -p bd_app -- "$@"

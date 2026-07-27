@@ -3,6 +3,7 @@
 use std::{collections::HashSet, fmt};
 
 use bevy_ecs::prelude::*;
+use bevy_ecs::system::SystemParam;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -214,24 +215,39 @@ pub fn register_unassign_task_action() -> ActionDefinition {
 
 /// Process AssignToStation messages: set a survivor's SurvivorTask to
 /// AssignedTo referencing the station entity by its raw index.
+#[derive(SystemParam)]
+pub struct StationAssignmentTargets<'w, 's> {
+    names: Query<'w, 's, &'static crate::components::Name>,
+    cargo: Query<'w, 's, &'static crate::colony::logistics::Cargo>,
+    stations: Query<
+        'w,
+        's,
+        Entity,
+        (
+            With<crate::colony::stations::Station>,
+            Without<crate::colony::stations::ConstructionSite>,
+        ),
+    >,
+    survivors: Query<'w, 's, Entity, With<Survivor>>,
+}
+
 pub fn process_station_assignments(
     mut commands: Commands,
     mut messages: bevy_ecs::message::MessageReader<crate::signals::AssignToStation>,
     mut game_log: ResMut<crate::gamelog::GameLog>,
-    names: Query<&crate::components::Name>,
-    stations: Query<Entity, With<crate::colony::stations::Station>>,
-    survivors: Query<Entity, With<Survivor>>,
+    mut colony_resources: ResMut<crate::colony::production::ColonyResources>,
+    targets: StationAssignmentTargets,
 ) {
     for msg in messages.read() {
         // Validate both entities still exist
-        if stations.get(msg.station).is_err() {
+        if targets.stations.get(msg.station).is_err() {
             game_log.push(
                 "Cannot assign: station no longer exists.".to_string(),
                 crate::gamelog::LogLevel::Warn,
             );
             continue;
         }
-        if survivors.get(msg.survivor).is_err() {
+        if targets.survivors.get(msg.survivor).is_err() {
             game_log.push(
                 "Cannot assign: survivor no longer exists.".to_string(),
                 crate::gamelog::LogLevel::Warn,
@@ -239,10 +255,18 @@ pub fn process_station_assignments(
             continue;
         }
         let station_index = msg.station.to_bits();
+        if let Ok(cargo) = targets.cargo.get(msg.survivor) {
+            crate::colony::logistics::deposit_cargo(&mut colony_resources, cargo);
+        }
         commands
             .entity(msg.survivor)
-            .insert(SurvivorTask::AssignedTo(station_index));
-        let survivor_name = names
+            .insert(SurvivorTask::AssignedTo(station_index))
+            .remove::<(
+                crate::colony::logistics::LogisticsJob,
+                crate::colony::logistics::Cargo,
+            )>();
+        let survivor_name = targets
+            .names
             .get(msg.survivor)
             .map(|n| n.0.as_str())
             .unwrap_or("Survivor");
@@ -256,11 +280,15 @@ pub fn process_station_assignments(
 /// Consumes shelter resources each day change: food per survivor, mood penalties.
 /// P0-A fix: checks colony-level ColonyResources instead of entity-level Supplies
 /// (survivors don't have entity-level Supplies — they only have Mood + AP).
+#[allow(clippy::type_complexity)]
 pub(crate) fn consume_shelter_resources(
     query: Query<(Entity, &mut Pools, Option<&SurvivorTask>, Option<&Position>)>,
     stations: Query<
         (Entity, &Position, &crate::colony::stations::StationType),
-        With<crate::colony::stations::Station>,
+        (
+            With<crate::colony::stations::Station>,
+            Without<crate::colony::stations::ConstructionSite>,
+        ),
     >,
     mut days: bevy_ecs::message::MessageReader<crate::time::DayAdvanced>,
     mut pool_delta_writer: bevy_ecs::message::MessageWriter<crate::signals::PoolDeltaRequested>,
@@ -355,9 +383,9 @@ struct WorkerStepState {
 }
 
 #[derive(Debug, Clone)]
-struct WorkTarget {
-    label: String,
-    position: Position,
+pub(crate) struct WorkTarget {
+    pub(crate) label: String,
+    pub(crate) position: Position,
 }
 
 #[derive(Resource, Debug, Default)]
@@ -387,7 +415,7 @@ fn adjacent_work_tiles(map: &crate::map::SmokeMap, target: Position) -> Vec<Posi
     .collect()
 }
 
-fn choose_worker_path(
+pub(crate) fn choose_worker_path(
     map: &crate::map::SmokeMap,
     start: Position,
     targets: &[WorkTarget],
@@ -667,7 +695,11 @@ pub(crate) fn process_survivor_movement(
             &SurvivorTask,
             Option<&WorkerActivity>,
         ),
-        With<Survivor>,
+        (
+            With<Survivor>,
+            Without<crate::colony::logistics::LogisticsJob>,
+            Without<crate::colony::stations::AutoConstructing>,
+        ),
     >,
     nodes: Query<(&Position, &ResourceNode, Option<&Name>), Without<Survivor>>,
     stations: Query<

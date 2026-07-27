@@ -2,16 +2,19 @@
 
 **Status:** Active documentation authority map
 
-**Inventoried:** 2026-07-26
+**Inventoried:** 2026-07-27
 
 **Active testing-governance plan:** [AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md](AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md).
 
 **Active behavior implementation plan:** [FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md](FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md).
 
+**Active colony implementation plan:** [FOUNDATION-BASIC-COLONY-LOOP-PLAN.md](FOUNDATION-BASIC-COLONY-LOOP-PLAN.md).
+
 The plans have non-overlapping authority: the testing plan owns evidence,
 metrics, and suite migration; the hardening plan owns behavior and
-implementation order. Product P2 still requires a separate owner-approved
-plan.
+implementation order. The basic colony-loop plan owns the active D-20
+vertical-slice sequence after the owner approved its Phase C0 defaults on
+2026-07-27. Product P2 still requires a separate owner-approved plan.
 
 **Completed Foundation correction record:** [FOUNDATION-MVP-CORRECTION-PLAN.md](FOUNDATION-MVP-CORRECTION-PLAN.md)
 
@@ -43,6 +46,7 @@ has an implemented Foundation effect.
 | `docs/MVP-SCENARIO.md` | Active | Canonical Foundation acceptance scenario |
 | `docs/AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md` | Active plan | Foundation testing policy, evidence sufficiency, metrics, and suite-migration authority |
 | `docs/FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md` | Active plan | Foundation behavior and colony UX implementation-order authority |
+| `docs/FOUNDATION-BASIC-COLONY-LOOP-PLAN.md` | Active plan | Owner-approved D-20 test-first colony vertical-slice implementation and evidence sequence |
 | `docs/FOUNDATION-MVP-CORRECTION-PLAN.md` | Active record | Completed owner-authorized Foundation correction evidence; affected UX/test gates were later reopened |
 | `docs/FOUNDATION-STABILIZATION-PLAN.md` | Active record | Completed stabilization evidence; its acceptance was reopened and superseded by the accepted correction record |
 | `docs/FOUNDATION-RECOVERY-PLAN.md` | Active record | Completed earlier recovery evidence; final result is linked to stabilization |

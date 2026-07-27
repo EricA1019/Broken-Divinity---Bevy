@@ -710,15 +710,19 @@ struct MapViewport {
 }
 
 impl MapViewport {
-    fn follow_player(map: &MapViewModel, width: u16, height: u16) -> Self {
+    fn follow_active_focus(map: &MapViewModel, width: u16, height: u16) -> Self {
         let width = width.min(map.width.max(0) as u16);
         let height = height.min(map.height.max(0) as u16);
         let max_x = map.width.saturating_sub(width as i32).max(0);
         let max_y = map.height.saturating_sub(height as i32).max(0);
-        let (origin_x, origin_y) = map.player_pos.map_or((0, 0), |player| {
+        let focus = map
+            .build_ghost
+            .map(|(position, _)| position)
+            .or(map.player_pos);
+        let (origin_x, origin_y) = focus.map_or((0, 0), |position| {
             (
-                (player.x - i32::from(width) / 2).clamp(0, max_x),
-                (player.y - i32::from(height) / 2).clamp(0, max_y),
+                (position.x - i32::from(width) / 2).clamp(0, max_x),
+                (position.y - i32::from(height) / 2).clamp(0, max_y),
             )
         });
         Self {
@@ -789,7 +793,7 @@ fn render_map_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let viewport = MapViewport::follow_player(ctx.map, inner.width, inner.height);
+    let viewport = MapViewport::follow_active_focus(ctx.map, inner.width, inner.height);
     let w = viewport.width;
     let h = viewport.height;
     let mut grid = RenderCellGrid::new(w, h, VisualToken::Floor, ctx.symbols, ctx.theme);
@@ -913,7 +917,14 @@ pub fn render_build_overlay(frame: &mut Frame, area: Rect, ctx: &WidgetRenderCon
         ));
 
         let width = area.width.saturating_sub(2).min(76);
-        let height = (lines.len() as u16 + 2).min(area.height);
+        let inner_width = usize::from(width.saturating_sub(2)).max(1);
+        let wrapped_rows = lines
+            .iter()
+            .map(|line| line.width().max(1).div_ceil(inner_width))
+            .sum::<usize>();
+        let height = u16::try_from(wrapped_rows.saturating_add(2))
+            .unwrap_or(area.height)
+            .min(area.height);
         let modal = Rect {
             x: area.x + area.width.saturating_sub(width) / 2,
             y: area.y + area.height.saturating_sub(height) / 2,
@@ -997,8 +1008,9 @@ pub fn render_build_overlay(frame: &mut Frame, area: Rect, ctx: &WidgetRenderCon
                 ratatui::style::Style::default().fg(ACCENT_COLOR),
             ));
         }
+        let numeric_choices = menu.options.len().min(9);
         lines.push(ratatui::text::Line::styled(
-            "↑↓/1-5:highlight Enter:placement b/Esc:cancel",
+            format!("↑↓/1-{numeric_choices}:highlight Enter:placement b/Esc:cancel"),
             ratatui::style::Style::default().fg(MUTED_COLOR),
         ));
         frame.render_widget(

@@ -71,6 +71,7 @@ pub(crate) struct ManagementMenuState {
     pub(crate) kind: ManagementMenuKind,
     pub(crate) selected_survivor: Option<usize>,
     pub(crate) selected_choice: Option<ManagementChoice>,
+    pub(crate) selected_recipe: Option<usize>,
 }
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
@@ -242,9 +243,13 @@ struct InputQueries<'w, 's> {
             Entity,
             &'static bd_core::components::Name,
             &'static Position,
+            Option<&'static bd_core::components::ContentIdentity>,
             Option<&'static bd_core::spatial::EntityScope>,
         ),
-        With<bd_core::colony::stations::Station>,
+        (
+            With<bd_core::colony::stations::Station>,
+            Without<bd_core::colony::stations::ConstructionSite>,
+        ),
     >,
     exits: Query<
         'w,
@@ -268,7 +273,9 @@ struct ColonyInteractionState<'w> {
     pending_station_assignment: ResMut<'w, bd_core::colony::stations::PendingStationAssignment>,
     build: ResMut<'w, bd_core::colony::stations::BuildInteraction>,
     management: ResMut<'w, ManagementMenuState>,
+    pending_recipe: ResMut<'w, bd_core::colony::logistics::PendingRecipeAssignment>,
     outpost: Res<'w, bd_core::spatial::OutpostState>,
+    foundation_content: Option<Res<'w, bd_core::content::FoundationContent>>,
 }
 
 #[derive(SystemParam)]
@@ -313,8 +320,11 @@ fn route_management_key(
     management: &mut ManagementMenuState,
     survivors: &[Entity],
     stations: &[Entity],
+    processor_station: Option<Entity>,
+    recipe_ids: &[String],
     player: Entity,
     pending_station_assignment: &mut bd_core::colony::stations::PendingStationAssignment,
+    pending_recipe: &mut bd_core::colony::logistics::PendingRecipeAssignment,
     action_writer: &mut MessageWriter<ActionIntent>,
     game_log: &mut GameLog,
 ) {
@@ -329,6 +339,7 @@ fn route_management_key(
             management.active = false;
             management.selected_survivor = None;
             management.selected_choice = None;
+            management.selected_recipe = None;
             game_log.push("Management cancelled.", LogLevel::Info);
         }
         KeyCode::Enter => {
@@ -343,8 +354,19 @@ fn route_management_key(
             let action_id = match choice {
                 ManagementChoice::Action(action_id) => action_id,
                 ManagementChoice::Station(station) => {
-                    pending_station_assignment.0 = Some(station);
-                    "ability.assign_station"
+                    if Some(station) == processor_station {
+                        let Some(recipe_index) = management.selected_recipe else {
+                            return;
+                        };
+                        let Some(recipe_id) = recipe_ids.get(recipe_index) else {
+                            return;
+                        };
+                        pending_recipe.0 = Some(recipe_id.clone());
+                        "ability.assign_recipe"
+                    } else {
+                        pending_station_assignment.0 = Some(station);
+                        "ability.assign_station"
+                    }
                 }
             };
             action_writer.write(ActionIntent {
@@ -356,6 +378,7 @@ fn route_management_key(
             management.active = false;
             management.selected_survivor = None;
             management.selected_choice = None;
+            management.selected_recipe = None;
         }
         KeyCode::Char(choice @ '1'..='9') => {
             let index = (choice as u8 - b'1') as usize;
@@ -365,8 +388,17 @@ fn route_management_key(
                 }
                 return;
             }
-            management.selected_choice =
-                management_choice_for_index(management.kind, index, stations);
+            if matches!(
+                management.selected_choice,
+                Some(ManagementChoice::Station(station)) if Some(station) == processor_station
+            ) {
+                if index < recipe_ids.len() {
+                    management.selected_recipe = Some(index);
+                }
+            } else {
+                management.selected_choice =
+                    management_choice_for_index(management.kind, index, stations);
+            }
         }
         _ => {}
     }
@@ -443,7 +475,9 @@ fn map_input_to_intents(
         mut pending_station_assignment,
         mut build,
         mut management,
+        mut pending_recipe,
         outpost,
+        foundation_content,
     } = colony_interaction;
 
     // Game over preserves the terminal outcome until the player explicitly
@@ -552,8 +586,8 @@ fn map_input_to_intents(
         let mut stations: Vec<_> = input
             .stations
             .iter()
-            .filter(|(_, _, _, scope)| scope_is_active(*scope, *mode))
-            .map(|(entity, name, position, _)| (name.0.clone(), position.y, position.x, entity))
+            .filter(|(_, _, _, _, scope)| scope_is_active(*scope, *mode))
+            .map(|(entity, name, position, _, _)| (name.0.clone(), position.y, position.x, entity))
             .collect();
         stations
             .sort_by(|left, right| (&left.0, left.1, left.2).cmp(&(&right.0, right.1, right.2)));
@@ -561,6 +595,24 @@ fn map_input_to_intents(
             .into_iter()
             .map(|(_, _, _, entity)| entity)
             .collect::<Vec<_>>();
+        let processor_station = input
+            .stations
+            .iter()
+            .find(|(_, _, _, identity, scope)| {
+                scope_is_active(*scope, *mode)
+                    && identity.is_some_and(|identity| identity.0 == "station.basic_processor")
+            })
+            .map(|(entity, _, _, _, _)| entity);
+        let recipe_ids = foundation_content
+            .as_deref()
+            .map(|content| {
+                content
+                    .colony_recipes
+                    .iter()
+                    .map(|recipe| recipe.id.clone())
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
 
         for key in messages
             .read()
@@ -571,8 +623,11 @@ fn map_input_to_intents(
                 &mut management,
                 &survivors,
                 &stations,
+                processor_station,
+                &recipe_ids,
                 player_entity,
                 &mut pending_station_assignment,
+                &mut pending_recipe,
                 &mut action_writer,
                 &mut game_log,
             );
@@ -662,8 +717,8 @@ fn map_input_to_intents(
     let mut stable_stations = input
         .stations
         .iter()
-        .filter(|(_, _, _, scope)| scope_is_active(*scope, *mode))
-        .map(|(entity, name, position, _)| (name.0.clone(), position.y, position.x, entity))
+        .filter(|(_, _, _, _, scope)| scope_is_active(*scope, *mode))
+        .map(|(entity, name, position, _, _)| (name.0.clone(), position.y, position.x, entity))
         .collect::<Vec<_>>();
     stable_stations
         .sort_by(|left, right| (&left.0, left.1, left.2).cmp(&(&right.0, right.1, right.2)));
@@ -671,6 +726,24 @@ fn map_input_to_intents(
         .into_iter()
         .map(|(_, _, _, entity)| entity)
         .collect::<Vec<_>>();
+    let processor_station = input
+        .stations
+        .iter()
+        .find(|(_, _, _, identity, scope)| {
+            scope_is_active(*scope, *mode)
+                && identity.is_some_and(|identity| identity.0 == "station.basic_processor")
+        })
+        .map(|(entity, _, _, _, _)| entity);
+    let recipe_ids = foundation_content
+        .as_deref()
+        .map(|content| {
+            content
+                .colony_recipes
+                .iter()
+                .map(|recipe| recipe.id.clone())
+                .collect::<Vec<_>>()
+        })
+        .unwrap_or_default();
     let validate_build_candidate = |candidate: Position| {
         let gate = input
             .exits
@@ -686,8 +759,8 @@ fn map_input_to_intents(
         let permanent_blockers = input
             .stations
             .iter()
-            .filter(|(_, _, _, scope)| scope_is_active(*scope, *mode))
-            .map(|(_, _, position, _)| *position)
+            .filter(|(_, _, _, _, scope)| scope_is_active(*scope, *mode))
+            .map(|(_, _, position, _, _)| *position)
             .collect();
         bd_core::colony::stations::validate_station_placement(
             &outpost.map,
@@ -706,8 +779,11 @@ fn map_input_to_intents(
                 &mut management,
                 &stable_survivors,
                 &stable_stations,
+                processor_station,
+                &recipe_ids,
                 player_entity,
                 &mut pending_station_assignment,
+                &mut pending_recipe,
                 &mut action_writer,
                 &mut game_log,
             );
@@ -735,8 +811,8 @@ fn map_input_to_intents(
                         ..
                     } => {
                         *cursor = Position {
-                            x: player_pos.x,
-                            y: player_pos.y - 1,
+                            x: cursor.x,
+                            y: (cursor.y - 1).max(0),
                         };
                         *validation = validate_build_candidate(*cursor);
                         continue;
@@ -774,8 +850,8 @@ fn map_input_to_intents(
                         ..
                     } => {
                         *cursor = Position {
-                            x: player_pos.x,
-                            y: player_pos.y + 1,
+                            x: cursor.x,
+                            y: (cursor.y + 1).min(outpost.map.height - 1),
                         };
                         *validation = validate_build_candidate(*cursor);
                         continue;
@@ -806,8 +882,8 @@ fn map_input_to_intents(
                         ..
                     } => {
                         *cursor = Position {
-                            x: player_pos.x + 1,
-                            y: player_pos.y,
+                            x: (cursor.x + 1).min(outpost.map.width - 1),
+                            y: cursor.y,
                         };
                         *validation = validate_build_candidate(*cursor);
                         continue;
@@ -830,6 +906,7 @@ fn map_input_to_intents(
                     management.kind = ManagementMenuKind::TaskAssignment;
                     management.selected_survivor = None;
                     management.selected_choice = None;
+                    management.selected_recipe = None;
                 }
             }
             (Some(commands::UiCommand::MoveWest), _) => {
@@ -844,8 +921,8 @@ fn map_input_to_intents(
                         ..
                     } => {
                         *cursor = Position {
-                            x: player_pos.x - 1,
-                            y: player_pos.y,
+                            x: (cursor.x - 1).max(0),
+                            y: cursor.y,
                         };
                         *validation = validate_build_candidate(*cursor);
                         continue;
@@ -1006,6 +1083,7 @@ fn map_input_to_intents(
                     management.kind = ManagementMenuKind::StationStaffing;
                     management.selected_survivor = None;
                     management.selected_choice = None;
+                    management.selected_recipe = None;
                 }
             }
             // Build mode toggle (outpost mode only)
@@ -1025,16 +1103,18 @@ fn map_input_to_intents(
                         });
                     *build =
                         bd_core::colony::stations::BuildInteraction::Selecting { selected_station };
+                    let numeric_choices = station_catalog.entries().len().min(9);
                     game_log.push(
-                        "Select station to build (↑↓ or 1-5, Enter to confirm, b to cancel)"
-                            .to_string(),
+                        format!(
+                            "Select station to build (↑↓ or 1-{numeric_choices}, Enter to confirm, b to cancel)"
+                        ),
                         LogLevel::Info,
                     );
                 }
             }
             // Build menu navigation: up/down arrows when menu is open
-            // Number keys 1-5: select in menu, or select type in ghost mode
-            (_, KeyCode::Char(c @ '1'..='5')) => {
+            // Number keys 1-9 select the corresponding data-driven entry.
+            (_, KeyCode::Char(c @ '1'..='9')) => {
                 let idx = (c as u8 - b'1') as usize;
                 let bps = station_catalog.entries();
                 if let bd_core::colony::stations::BuildInteraction::Selecting { selected_station } =
@@ -1919,6 +1999,45 @@ mod tests {
     }
 
     #[test]
+    fn colony_worker_recipe_stage_target_and_cargo_are_visible_at_supported_profiles() {
+        for (width, height) in [(80, 24), (60, 20)] {
+            let output = render_screen_with_state(
+                "outpost",
+                width,
+                height,
+                GameMode::Outpost,
+                &shelter_map(),
+                &ContainerViewModel::default(),
+                StatsViewModel {
+                    hp_current: 10,
+                    hp_max: 10,
+                    ap_current: 3,
+                    ap_max: 3,
+                    party_names: vec![
+                        "Survivor 1 — recipe.refine_timber ToStation | EnRoute Basic Processing | cargo 1 resource.raw_timber".into(),
+                    ],
+                    ..Default::default()
+                },
+                LogViewModel::default(),
+            );
+            let normalized = output.split_whitespace().collect::<Vec<_>>().join(" ");
+            for required in [
+                "recipe.refine_timber",
+                "ToStation",
+                "Basic",
+                "Processing",
+                "cargo 1",
+                "resource.raw_timber",
+            ] {
+                assert!(
+                    normalized.contains(required),
+                    "{width}x{height} hides worker detail `{required}`:\n{output}"
+                );
+            }
+        }
+    }
+
+    #[test]
     fn build_menu_80x24_contains_required_tokens() {
         let mut map = shelter_map();
         map.build_menu = Some(view_models::BuildMenuVm {
@@ -2314,17 +2433,23 @@ mod tests {
     fn build_selection_and_placement_fit_both_supported_profiles() {
         for (width, height) in [(80, 24), (60, 20)] {
             let mut selection = shelter_map();
+            let mut options = default_station_blueprints()
+                .into_iter()
+                .map(|blueprint| {
+                    (
+                        blueprint.label.to_string(),
+                        blueprint.build_cost_supplies,
+                        blueprint.effect_label(),
+                    )
+                })
+                .collect::<Vec<_>>();
+            options.push((
+                "Basic Processing".into(),
+                2,
+                "Refines assigned colony recipes".into(),
+            ));
             selection.build_menu = Some(view_models::BuildMenuVm {
-                options: default_station_blueprints()
-                    .into_iter()
-                    .map(|blueprint| {
-                        (
-                            blueprint.label.to_string(),
-                            blueprint.build_cost_supplies,
-                            blueprint.effect_label(),
-                        )
-                    })
-                    .collect(),
+                options,
                 selected: 0,
                 available_supplies: 10,
             });
@@ -2343,6 +2468,8 @@ mod tests {
                 "Workshop",
                 "Bed",
                 "Storage",
+                "Basic Processing",
+                "1-6:highlight",
                 "Enter:placement",
                 "b/Esc:cancel",
             ] {
@@ -2550,6 +2677,54 @@ mod tests {
             1,
             "the compact viewport lost the player at the far shelter edge:\n{output}"
         );
+    }
+
+    #[test]
+    fn distant_build_preview_drives_the_viewport_at_both_supported_profiles() {
+        for (width, height) in [(80, 24), (60, 20)] {
+            let map = MapViewModel {
+                width: 40,
+                height: 30,
+                tiles: vec![Tile::Floor; 40 * 30],
+                player_pos: Some(Position { x: 1, y: 1 }),
+                visuals: vec![view_models::MapVisualVm {
+                    position: Position { x: 1, y: 1 },
+                    token: VisualToken::Player,
+                    glyph: None,
+                }],
+                build_ghost: Some((Position { x: 38, y: 28 }, 'X')),
+                build_placement: Some(view_models::BuildPlacementVm {
+                    label: "Workshop".into(),
+                    supply_cost: 2,
+                    effect: "+2 Materials/day when staffed".into(),
+                }),
+                ..Default::default()
+            };
+
+            let output = render_screen(
+                "outpost",
+                width,
+                height,
+                GameMode::Outpost,
+                &map,
+                &ContainerViewModel::default(),
+            );
+
+            assert_eq!(
+                output.matches('X').count(),
+                1,
+                "contract=VISUAL-BUILD-004 case={width}x{height} \
+                 fixture=colony_build_distant_valid expected the distant build \
+                 preview to remain visible while placement owns viewport focus:\n{output}"
+            );
+            for required in ["Workshop", "2 Supplies", "+2 Materials/day"] {
+                assert!(
+                    output.contains(required),
+                    "contract=VISUAL-BUILD-004 case={width}x{height} \
+                     missing selected detail `{required}`:\n{output}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -2805,6 +2980,42 @@ mod tests {
     }
 
     #[test]
+    fn compact_station_staffing_keeps_each_wrapped_station_status_inside_the_modal() {
+        let stats = StatsViewModel {
+            management: Some(view_models::ManagementMenuVm {
+                kind: view_models::ManagementMenuKind::StationStaffing,
+                survivors: vec!["Mara — Idle".into()],
+                tasks: vec![
+                    "1. Basic Processing — Refines assigned colony recipes — Unstaffed".into(),
+                    "2. Basic Processing — Refines assigned colony recipes — Unstaffed".into(),
+                ],
+                selected_survivor: Some(0),
+                selected_task: None,
+                resources: "Sup 8  Mat 0  Plant 0  Faith 0".into(),
+                forecast: "Next Sup: -3food +0stn +0gath=-3→5 M+0 P+0 F+0".into(),
+            }),
+            ..Default::default()
+        };
+        let output = render_screen_with_state(
+            "outpost",
+            60,
+            20,
+            GameMode::Outpost,
+            &shelter_map(),
+            &ContainerViewModel::default(),
+            stats,
+            LogViewModel::default(),
+        );
+
+        assert_eq!(
+            output.matches("Unstaffed").count(),
+            2,
+            "compact staffing clipped a wrapped station status:\n{output}"
+        );
+        assert!(output.contains("e/Esc:cancel"), "{output}");
+    }
+
+    #[test]
     fn outpost_help_explains_visible_resource_glyphs() {
         let entries = commands::help_entries_with_legend(
             &commands::CommandBindings::default(),
@@ -2829,13 +3040,21 @@ mod tests {
 
     #[test]
     fn rendered_outpost_help_contains_every_foundation_legend_at_supported_profiles() {
+        let mut station_blueprints = default_station_blueprints();
+        let mut processor = station_blueprints[0].clone();
+        processor.id = "station.basic_processor".into();
+        processor.station_type = bd_core::colony::stations::StationType::Custom(1);
+        processor.label = "Basic Processing".into();
+        processor.glyph = 'p';
+        processor.staffed_glyph = 'Q';
+        station_blueprints.push(processor);
         let help = HelpViewModel {
             keys: commands::help_entries_with_legend(
                 &commands::CommandBindings::default(),
                 GameMode::Outpost,
                 commands::InteractionMode::Normal,
                 &SymbolRegistry::phase5_defaults(),
-                &bd_core::colony::stations::StationCatalog::new(default_station_blueprints()),
+                &bd_core::colony::stations::StationCatalog::new(station_blueprints),
             )
             .into_iter()
             .map(|entry| (entry.key, entry.description))

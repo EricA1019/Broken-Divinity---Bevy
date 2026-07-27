@@ -56,14 +56,16 @@ fn build_station(driver: &mut FoundationDriver, station_type: StationType) -> En
             None,
         )
         .expect("station build must resolve through the production action");
-    driver
+    let station = driver
         .stations()
         .into_iter()
         .find(|station| {
             driver.station_type(*station) == Some(station_type)
                 && driver.position(*station).is_some()
         })
-        .expect("built station must exist")
+        .expect("built station must exist");
+    driver.fixture_complete_construction(station);
+    station
 }
 
 fn assign_station(driver: &mut FoundationDriver, survivor: Entity, station: Entity) {
