@@ -1,8 +1,4 @@
 # Ignored tests must be reviewed here by exact test name.
 # Any unlisted ignored test fails scripts/test-gate.sh.
 #
-# Diagnostic-only state dump; it is not Foundation acceptance evidence.
-integration_diagnostic::diagnose_title_to_outpost_state
-#
-# Requires a real terminal device and is covered by the manual Ratatui smoke gate.
-legacy_terminal_first_keypress_in_outpost_is_move_not_build
+# No ignored tests are currently allowlisted.

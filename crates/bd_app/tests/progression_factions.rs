@@ -37,7 +37,7 @@ fn used_item_driver() -> FoundationDriver {
     driver.fixture_pick_up(item).unwrap();
     let player = driver.player().unwrap();
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "medicine action",
             player,
             "ability.use_item",
@@ -45,6 +45,7 @@ fn used_item_driver() -> FoundationDriver {
             Some(item),
         )
         .unwrap();
+    driver.advance_enemy_phase_frame();
     driver
 }
 
@@ -150,7 +151,8 @@ fn hostile_faction_drives_enemy_ai() {
     let before = driver.position(enemy).unwrap();
     let player = driver.player().unwrap();
     driver
-        .expect_action("hostile AI", player, "ability.wait", None, None)
+        .submit_action_and_advance_result_frame("hostile AI", player, "ability.wait", None, None)
         .unwrap();
+    driver.advance_enemy_phase_frame();
     assert_ne!(driver.position(enemy), Some(before));
 }

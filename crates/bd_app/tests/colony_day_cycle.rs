@@ -14,15 +14,22 @@ fn wait_to_next_day(driver: &mut FoundationDriver) {
     while driver.summary().day == starting_day {
         let player = driver.player().unwrap();
         driver
-            .expect_action("advance colony day", player, "ability.wait", None, None)
+            .submit_action_and_advance_result_frame(
+                "advance colony day",
+                player,
+                "ability.wait",
+                None,
+                None,
+            )
             .unwrap();
     }
+    driver.advance_day_resolution_frame();
 }
 
 fn rest_to_next_day(driver: &mut FoundationDriver) {
     let player = driver.player().unwrap();
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "rest to next colony day",
             player,
             "ability.rest_until_next_day",
@@ -30,12 +37,13 @@ fn rest_to_next_day(driver: &mut FoundationDriver) {
             None,
         )
         .unwrap();
+    driver.advance_day_resolution_frame();
 }
 
 fn build_station(driver: &mut FoundationDriver, staffed: bool) {
     let player = driver.player().unwrap();
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "daily cycle: build station",
             player,
             "ability.build",
@@ -46,7 +54,9 @@ fn build_station(driver: &mut FoundationDriver, staffed: bool) {
     let station = driver.station_by_type(StationType::Stove).unwrap();
     driver.fixture_complete_construction(station);
     if staffed {
-        let survivor = driver.first_survivor().unwrap();
+        let survivor = driver
+            .survivor_by_name("Survivor 1")
+            .expect("stable station worker must exist");
         driver
             .expect_station_assignment_action(
                 "daily cycle: staff station",
@@ -106,7 +116,9 @@ fn survivors_consume_food_once_per_day() {
 fn starvation_consequence_applies_once_per_day() {
     let mut driver = colony_driver();
     driver.fixture_set_colony_resource(PoolKind::Supplies, 0);
-    let survivor = driver.first_survivor().unwrap();
+    let survivor = driver
+        .survivor_by_name("Survivor 1")
+        .expect("stable starvation subject must exist");
     wait_to_next_day(&mut driver);
     let after = driver
         .entity_pool_current(survivor, PoolKind::Mood)
@@ -118,47 +130,6 @@ fn starvation_consequence_applies_once_per_day() {
         driver.entity_pool_current(survivor, PoolKind::Mood),
         Some(after)
     );
-}
-
-#[test]
-fn gathering_applies_once_per_day() {
-    let mut driver = colony_driver();
-    let player = driver.player().unwrap();
-    let survivor = driver.first_survivor().unwrap();
-    let tree_position = driver
-        .resource_nodes_with_state()
-        .into_iter()
-        .find_map(|(_, kind, position, _)| {
-            (kind == bd_core::components::ResourceNodeType::Trees).then_some(position)
-        })
-        .expect("configured Trees source");
-    driver
-        .fixture_set_position(
-            survivor,
-            bd_core::components::Position {
-                x: tree_position.x - 1,
-                y: tree_position.y,
-            },
-        )
-        .unwrap();
-    driver
-        .expect_action(
-            "daily cycle: assign gathering",
-            player,
-            "ability.assign_gathering",
-            None,
-            Some(survivor),
-        )
-        .unwrap();
-    wait_to_next_day(&mut driver);
-    let summary = driver.latest_daily_summary().unwrap();
-    assert_eq!(summary.gathering_units, 1);
-    let after = summary.materials_after + summary.wild_plants_after + summary.supplies_after;
-    driver.advance_idle();
-    let idle_total = driver.resource_current(PoolKind::Materials).unwrap()
-        + driver.resource_current(PoolKind::WildPlants).unwrap()
-        + driver.resource_current(PoolKind::Supplies).unwrap();
-    assert_eq!(idle_total, after);
 }
 
 #[test]
@@ -187,7 +158,13 @@ fn save_before_day_boundary_does_not_duplicate_cycle() {
     while driver.summary().turn < 23 {
         let player = driver.player().unwrap();
         driver
-            .expect_action("pre-boundary", player, "ability.wait", None, None)
+            .submit_action_and_advance_result_frame(
+                "pre-boundary",
+                player,
+                "ability.wait",
+                None,
+                None,
+            )
             .unwrap();
     }
     let checkpoint = driver.checkpoint().unwrap();
@@ -225,7 +202,13 @@ fn rest_advances_exactly_the_remaining_turns() {
     for _ in 0..7 {
         let player = driver.player().unwrap();
         driver
-            .expect_action("advance before rest", player, "ability.wait", None, None)
+            .submit_action_and_advance_result_frame(
+                "advance before rest",
+                player,
+                "ability.wait",
+                None,
+                None,
+            )
             .unwrap();
     }
     let before = driver.summary();

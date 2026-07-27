@@ -259,7 +259,7 @@ fn absent_worker_tick_is_a_no_op() {
 fn scheduler_frames_without_accepted_time_do_not_advance_logistics() {
     let mut driver = FoundationDriver::new(4400);
     driver.start_colony().unwrap();
-    let survivor = driver.first_survivor().unwrap();
+    let survivor = driver.survivor_by_name("Survivor 1").unwrap();
     driver
         .assign_recipe(
             "assign render-idle worker",
@@ -291,7 +291,7 @@ fn scheduler_frames_without_accepted_time_do_not_advance_logistics() {
 fn tactical_turns_do_not_advance_colony_logistics() {
     let mut driver = FoundationDriver::new(4405);
     driver.start_colony().unwrap();
-    let survivor = driver.first_survivor().unwrap();
+    let survivor = driver.survivor_by_name("Survivor 1").unwrap();
     driver
         .assign_recipe(
             "assign tactical-paused worker",
@@ -311,7 +311,7 @@ fn tactical_turns_do_not_advance_colony_logistics() {
 
     for step in 0..5 {
         driver
-            .expect_action(
+            .submit_action_and_advance_result_frame(
                 &format!("tactical wait {step}"),
                 player,
                 "ability.wait",
@@ -319,6 +319,7 @@ fn tactical_turns_do_not_advance_colony_logistics() {
                 None,
             )
             .unwrap();
+        driver.advance_enemy_phase_frame();
     }
 
     assert_eq!(
@@ -344,7 +345,7 @@ fn one_survivor_completes_the_pilot_source_to_station_route() {
         "fixture station must not overlap a generated source"
     );
     driver.fixture_spawn_processing_station(station_position);
-    let survivor = driver.first_survivor().unwrap();
+    let survivor = driver.survivor_by_name("Survivor 1").unwrap();
     driver.fixture_assign_recipe(survivor, "recipe.refine_timber");
     let materials_before = driver
         .resource_current(bd_core::signals::PoolKind::Materials)
@@ -353,7 +354,7 @@ fn one_survivor_completes_the_pilot_source_to_station_route() {
 
     for _step in 0..160 {
         driver
-            .expect_action(
+            .submit_action_and_advance_result_frame(
                 "pilot production worker tick",
                 player,
                 "ability.wait",
@@ -388,12 +389,12 @@ fn carrying_checkpoint_preserves_recipe_stage_and_raw_cargo() {
     let mut driver = FoundationDriver::new(4402);
     driver.start_colony().unwrap();
     driver.fixture_spawn_processing_station(Position { x: 3, y: 3 });
-    let survivor = driver.first_survivor().unwrap();
+    let survivor = driver.survivor_by_name("Survivor 1").unwrap();
     driver.fixture_assign_recipe(survivor, "recipe.refine_timber");
     let player = driver.player().unwrap();
     for _ in 0..100 {
         driver
-            .expect_action(
+            .submit_action_and_advance_result_frame(
                 "advance to carrying checkpoint",
                 player,
                 "ability.wait",
@@ -425,7 +426,7 @@ fn carrying_checkpoint_preserves_recipe_stage_and_raw_cargo() {
 fn partial_work_progress_survives_checkpoint_without_free_yield() {
     let mut driver = FoundationDriver::new(4402);
     driver.start_colony().unwrap();
-    let survivor = driver.first_survivor().unwrap();
+    let survivor = driver.survivor_by_name("Survivor 1").unwrap();
     driver.fixture_assign_recipe(survivor, "recipe.refine_timber");
     let source = driver
         .resource_node_layout()
@@ -450,7 +451,7 @@ fn partial_work_progress_survives_checkpoint_without_free_yield() {
 
     let checkpoint = driver.checkpoint().unwrap();
     let mut restored = FoundationDriver::from_checkpoint(&checkpoint).unwrap();
-    let restored_survivor = restored.first_survivor().unwrap();
+    let restored_survivor = restored.survivor_by_name("Survivor 1").unwrap();
     let restored_job = restored.logistics_job(restored_survivor).unwrap();
     assert_eq!(restored_job.stage, JobStage::ReadyToGather);
     assert_eq!(restored_job.work_completed, 1);
@@ -467,12 +468,12 @@ fn carrying_checkpoint_preserves_the_next_deterministic_worker_tick() {
     let mut original = FoundationDriver::new(4403);
     original.start_colony().unwrap();
     original.fixture_spawn_processing_station(Position { x: 3, y: 3 });
-    let survivor = original.first_survivor().unwrap();
+    let survivor = original.survivor_by_name("Survivor 1").unwrap();
     original.fixture_assign_recipe(survivor, "recipe.refine_timber");
     let player = original.player().unwrap();
     for _ in 0..100 {
         original
-            .expect_action(
+            .submit_action_and_advance_result_frame(
                 "advance to deterministic carrying checkpoint",
                 player,
                 "ability.wait",
@@ -488,7 +489,7 @@ fn carrying_checkpoint_preserves_the_next_deterministic_worker_tick() {
     let mut restored = FoundationDriver::from_checkpoint(&checkpoint).unwrap();
     let restored_player = restored.player().unwrap();
     original
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "uninterrupted carrying tick",
             player,
             "ability.wait",
@@ -497,7 +498,7 @@ fn carrying_checkpoint_preserves_the_next_deterministic_worker_tick() {
         )
         .unwrap();
     restored
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "restored carrying tick",
             restored_player,
             "ability.wait",
@@ -538,7 +539,7 @@ fn checkpoint_round_trip_preserves_every_logistics_stage() {
     {
         let mut driver = FoundationDriver::new(4410 + case_index as u64);
         driver.start_colony().unwrap();
-        let survivor = driver.first_survivor().unwrap();
+        let survivor = driver.survivor_by_name("Survivor 1").unwrap();
         driver.fixture_assign_recipe(survivor, "recipe.refine_timber");
         let player = driver.player().unwrap();
         for _ in 0..160 {
@@ -546,7 +547,7 @@ fn checkpoint_round_trip_preserves_every_logistics_stage() {
                 break;
             }
             driver
-                .expect_action(
+                .submit_action_and_advance_result_frame(
                     "advance to durable logistics stage",
                     player,
                     "ability.wait",
@@ -588,12 +589,12 @@ fn checkpoint_round_trip_preserves_every_logistics_stage() {
 fn reassigning_a_carrying_worker_deposits_raw_cargo_and_cancels_logistics() {
     let mut driver = FoundationDriver::new(4404);
     driver.start_colony().unwrap();
-    let survivor = driver.first_survivor().unwrap();
+    let survivor = driver.survivor_by_name("Survivor 1").unwrap();
     driver.fixture_assign_recipe(survivor, "recipe.refine_timber");
     let player = driver.player().unwrap();
     for _ in 0..100 {
         driver
-            .expect_action(
+            .submit_action_and_advance_result_frame(
                 "advance worker until carrying",
                 player,
                 "ability.wait",
@@ -610,7 +611,7 @@ fn reassigning_a_carrying_worker_deposits_raw_cargo_and_cancels_logistics() {
     assert!(cargo.amount > 0);
 
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "reassign carrying worker to idle",
             player,
             "ability.assign_idle",
@@ -635,7 +636,9 @@ fn reassigning_a_carrying_worker_deposits_raw_cargo_and_cancels_logistics() {
 fn two_workers_share_one_station_work_tile_without_stacking_or_duplicate_credit() {
     let mut driver = FoundationDriver::new(4502);
     driver.start_colony().unwrap();
-    let station = driver.first_station().unwrap();
+    let station = driver
+        .station_by_type(bd_core::colony::stations::StationType::Custom(1))
+        .expect("starter Basic Processing station must exist");
     let station_position = Position { x: 10, y: 10 };
     driver
         .fixture_set_position(station, station_position)
@@ -647,9 +650,10 @@ fn two_workers_share_one_station_work_tile_without_stacking_or_duplicate_credit(
     ] {
         driver.fixture_set_outpost_tile(wall, bd_core::components::Tile::Wall);
     }
-    let survivors = driver.survivors();
-    driver.fixture_assign_recipe(survivors[0], "recipe.refine_timber");
-    driver.fixture_assign_recipe(survivors[1], "recipe.refine_timber");
+    let first_worker = driver.survivor_by_name("Survivor 1").unwrap();
+    let second_worker = driver.survivor_by_name("Survivor 2").unwrap();
+    driver.fixture_assign_recipe(first_worker, "recipe.refine_timber");
+    driver.fixture_assign_recipe(second_worker, "recipe.refine_timber");
     let materials_before = driver
         .resource_current(bd_core::signals::PoolKind::Materials)
         .unwrap();
@@ -657,7 +661,7 @@ fn two_workers_share_one_station_work_tile_without_stacking_or_duplicate_credit(
 
     for _ in 0..260 {
         driver
-            .expect_action(
+            .submit_action_and_advance_result_frame(
                 "contested station worker tick",
                 player,
                 "ability.wait",
@@ -699,12 +703,12 @@ fn complete_colony_workflow_replays_deterministically_from_player_actions() {
     let mut second = FoundationDriver::new(4510);
     first.start_colony().unwrap();
     second.start_colony().unwrap();
-    let first_survivor = first.first_survivor().unwrap();
-    let second_survivor = second.first_survivor().unwrap();
+    let original_survivor = first.survivor_by_name("Survivor 1").unwrap();
+    let second_survivor = second.survivor_by_name("Survivor 1").unwrap();
     first
         .assign_recipe(
             "first deterministic recipe assignment",
-            first_survivor,
+            original_survivor,
             "recipe.refine_timber",
         )
         .unwrap();
@@ -720,7 +724,7 @@ fn complete_colony_workflow_replays_deterministically_from_player_actions() {
 
     for step in 0..120 {
         first
-            .expect_action(
+            .submit_action_and_advance_result_frame(
                 &format!("first deterministic worker tick {step}"),
                 first_player,
                 "ability.wait",
@@ -729,7 +733,7 @@ fn complete_colony_workflow_replays_deterministically_from_player_actions() {
             )
             .unwrap();
         second
-            .expect_action(
+            .submit_action_and_advance_result_frame(
                 &format!("second deterministic worker tick {step}"),
                 second_player,
                 "ability.wait",
@@ -739,9 +743,9 @@ fn complete_colony_workflow_replays_deterministically_from_player_actions() {
             .unwrap();
         assert_eq!(
             (
-                first.position(first_survivor),
-                first.logistics_job(first_survivor),
-                first.worker_cargo(first_survivor),
+                first.position(original_survivor),
+                first.logistics_job(original_survivor),
+                first.worker_cargo(original_survivor),
                 first.resource_current(bd_core::signals::PoolKind::Materials),
             ),
             (
@@ -809,9 +813,10 @@ fn two_survivors_complete_different_chains_without_stacking_or_duplicate_credit(
     let mut driver = FoundationDriver::new(4501);
     driver.start_colony().unwrap();
     driver.fixture_spawn_processing_station(Position { x: 3, y: 3 });
-    let survivors = driver.survivors();
-    driver.fixture_assign_recipe(survivors[0], "recipe.refine_timber");
-    driver.fixture_assign_recipe(survivors[1], "recipe.refine_plants");
+    let timber_worker = driver.survivor_by_name("Survivor 1").unwrap();
+    let plant_worker = driver.survivor_by_name("Survivor 2").unwrap();
+    driver.fixture_assign_recipe(timber_worker, "recipe.refine_timber");
+    driver.fixture_assign_recipe(plant_worker, "recipe.refine_plants");
     let materials_before = driver
         .resource_current(bd_core::signals::PoolKind::Materials)
         .unwrap();
@@ -821,7 +826,7 @@ fn two_survivors_complete_different_chains_without_stacking_or_duplicate_credit(
     let player = driver.player().unwrap();
     for _ in 0..200 {
         driver
-            .expect_action(
+            .submit_action_and_advance_result_frame(
                 "concurrent production worker tick",
                 player,
                 "ability.wait",

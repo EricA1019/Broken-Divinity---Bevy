@@ -58,6 +58,10 @@ pub fn load_foundation_content(
     );
     let colony_sources = load_items!("colony_sources", bd_core::content::ColonySourceDefinition);
     let colony_recipes = load_items!("colony_recipes", bd_core::content::ColonyRecipeDefinition);
+    let colony_gather_tasks = load_items!(
+        "colony_gather_tasks",
+        bd_core::content::DirectGatherDefinition
+    );
     let colony_placement_profiles = load_items!(
         "colony_placement_profiles",
         bd_core::content::ColonyPlacementProfile
@@ -74,6 +78,7 @@ pub fn load_foundation_content(
         colony_resources,
         colony_sources,
         colony_recipes,
+        colony_gather_tasks,
         colony_placement_profiles,
     };
     validate_foundation_content(&bundle)?;
@@ -130,6 +135,9 @@ pub fn validate_foundation_content(
     }
     for entry in &content.colony_recipes {
         add_id(&entry.id, "colony_recipes/foundation.ron")?;
+    }
+    for entry in &content.colony_gather_tasks {
+        add_id(&entry.id, "colony_gather_tasks/foundation.ron")?;
     }
     for entry in &content.colony_placement_profiles {
         add_id(&entry.id, "colony_placement_profiles/foundation.ron")?;
@@ -221,6 +229,34 @@ pub fn validate_foundation_content(
                 message: format!(
                     "recipe '{}' output '{}' must map to a finished colony pool",
                     recipe.id, recipe.output_resource_id
+                ),
+            });
+        }
+    }
+    for gathering in &content.colony_gather_tasks {
+        if gathering.output_amount == 0
+            || gathering.work_turns == 0
+            || !source_ids.contains(gathering.source_id.as_str())
+        {
+            return Err(LoadError::Validation {
+                file: "colony_gather_tasks/foundation.ron".into(),
+                message: format!(
+                    "direct gathering '{}' requires positive amount/work and valid source '{}'",
+                    gathering.id, gathering.source_id
+                ),
+            });
+        }
+        let source = content
+            .colony_sources
+            .iter()
+            .find(|source| source.id == gathering.source_id)
+            .expect("source membership checked above");
+        if bd_core::colony::resources::pool_for_node(source.node_type) != gathering.output_pool {
+            return Err(LoadError::Validation {
+                file: "colony_gather_tasks/foundation.ron".into(),
+                message: format!(
+                    "direct gathering '{}' output {:?} does not match source '{}'",
+                    gathering.id, gathering.output_pool, gathering.source_id
                 ),
             });
         }
@@ -353,6 +389,9 @@ pub fn validate_foundation_content(
         "recipe.refine_timber",
         "recipe.refine_water",
         "recipe.refine_plants",
+        "gather.supplies",
+        "gather.materials",
+        "gather.wild_plants",
         "placement.foundation_sources",
         "blueprint.player",
         "blueprint.rat",

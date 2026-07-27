@@ -51,10 +51,10 @@ this plan passes.
 
 ---
 
-## 2. Current Baseline
+## 2. Historical Baseline at Plan Approval
 
-The first execution batch must reproduce rather than trust these observed
-facts:
+The first execution batch was required to reproduce rather than trust these
+then-current observed facts:
 
 - 473 Rust `#[test]` declarations currently exist across 59 files;
 - two tests are ignored;
@@ -62,8 +62,8 @@ facts:
 - therefore the expected current result is 463 passed, 8 failed, and 2
   ignored, not “473 passed”;
 - approximately 54 UI assertions use substring presence;
-- approximately 54 acceptance/support calls use `expect_action`, which
-  currently settles more than one frame;
+- approximately 54 acceptance/support calls used `expect_action`, which
+  settled more than one frame;
 - stable identity is still violated by `first_survivor`, `first_station`, raw
   entity bits, or ECS iteration order;
 - deferred procgen, sanity, overworld, and event tests remain mixed into broad
@@ -71,8 +71,9 @@ facts:
 - `testing/README.md` describes an older Python analytics framework but does
   not establish that framework as current Foundation acceptance evidence.
 
-These are audit inputs, not permanent magic numbers. Phase 0 replaces them
-with generated inventory results.
+These are historical audit inputs, not permanent magic numbers. Current
+generated inventory and migration results live in
+`../testing/FOUNDATION-TEST-EVIDENCE.md`.
 
 ---
 

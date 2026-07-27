@@ -14,7 +14,7 @@ fn second_corner_station_is_rejected_before_it_traps_the_player() {
     driver.start_colony().expect("colony should start");
     let player = driver.player().expect("shelter player should exist");
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "build Stove east of the shelter return",
             player,
             "ability.build",

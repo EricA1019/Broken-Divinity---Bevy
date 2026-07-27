@@ -360,12 +360,12 @@ fn seeded_registry_maps_current_foundation_contract_batches() {
         "bd_app::survivor_work_contract::adjacent_station_worker_produces_once",
         "bd_app::survivor_work_contract::blocked_station_worker_produces_nothing",
         "bd_app::survivor_work_contract::assigned_but_enroute_gatherer_produces_nothing",
-        "bd_app::survivor_work_contract::adjacent_matching_gatherer_produces_once",
         "bd_app::survivor_work_contract::gatherer_at_wrong_node_type_produces_nothing",
-        "bd_app::survivor_work_contract::zero_supply_recovery_remains_reachable_with_physical_gathering",
         "bd_app::survivor_work_contract::forecast_excludes_enroute_worker_output",
         "bd_app::survivor_work_contract::save_load_preserves_the_next_deterministic_worker_step",
         "bd_app::survivor_work_contract::load_does_not_immediately_move_or_produce_for_assigned_worker",
+        "bd_app::persistence::save_load_active_dungeon_preserves_foundation_fingerprint_and_scope_counts",
+        "bd_app::phase6_input::first_outpost_move_key_moves_once_without_opening_or_creating_build_state",
         "bd_app::phase6_input::c_opens_paused_task_management_with_task_identity",
         "bd_app::phase6_input::e_opens_paused_station_staffing_with_station_identity",
         "bd_app::phase6_input::station_staffing_lists_station_assignments_not_gathering_tasks",
@@ -421,12 +421,28 @@ fn seeded_registry_maps_current_foundation_contract_batches() {
         "bd_app::colony_construction_contract::accepted_build_is_a_paid_non_operational_construction_site",
         "bd_app::colony_construction_contract::idle_survivors_travel_to_and_complete_construction_without_stealing_assigned_workers",
         "bd_app::colony_construction_contract::render_frames_and_save_load_do_not_grant_construction_work",
+        "bd_app::colony_direct_gather_contract::foundation_direct_gather_rules_are_declared_in_content",
+        "bd_app::colony_direct_gather_contract::direct_gather_requires_three_work_ticks_and_credits_once",
+        "bd_app::colony_direct_gather_contract::day_boundary_does_not_credit_legacy_direct_gather_output",
+        "bd_app::colony_direct_gather_contract::render_and_tactical_frames_do_not_advance_direct_gathering",
+        "bd_app::colony_direct_gather_contract::partial_direct_gather_progress_survives_save_load_without_free_output",
+        "bd_app::colony_direct_gather_contract::reassignment_clears_partial_direct_gather_progress_without_output",
+        "bd_app::colony_direct_gather_contract::every_foundation_direct_gather_task_uses_the_same_three_tick_rule",
+        "bd_app::colony_direct_gather_contract::zero_supplies_recovers_after_three_worker_ticks_without_waiting_for_day_end",
+        "bd_app::colony_direct_gather_contract::rest_and_equivalent_individual_turns_preserve_direct_gather_results",
         "bd_app::phase6_input::explicit_gather_assignment_overrides_pending_automatic_construction",
+        "bd_app::phase6_input::direct_gather_assignment_projects_source_and_three_tick_progress",
+        "bd_app::phase6_input::recipe_management_uses_human_resource_labels_not_content_ids",
+        "bd_app::phase6_input::colony_projection_separates_next_worker_result_from_next_day_upkeep",
+        "bd_app::mvp_correction::next_day_forecast_excludes_direct_worker_tick_output",
+        "bd_app::phase6_input::nonzero_raw_stockpile_is_projected_with_a_human_label",
+        "bd_app::phase6_input::blocked_direct_gatherer_projects_target_and_actionable_reason",
         "bd_app::phase6_input::placed_construction_site_has_distinct_map_and_progress_feedback",
         "bd_app::phase6_input::processing_assignment_selects_named_survivor_station_and_recipe_while_paused",
         "bd_app::phase6_input::production_key_workflow_assigns_travels_gathers_refines_and_reports",
         "bd_app::phase6_input::deterministic_production_key_fuzz_preserves_colony_invariants",
         "bd_tui::lib::tests::colony_worker_recipe_stage_target_and_cargo_are_visible_at_supported_profiles",
+        "bd_tui::lib::tests::direct_gather_progress_raw_stockpile_and_split_forecast_fit_supported_profiles",
         "bd_app::foundation_actions::valid_fixed_dungeon_movement_changes_one_cardinal_tile",
         "bd_app::foundation_actions::fixed_dungeon_wall_movement_is_typed_and_atomic",
         "bd_app::foundation_actions::extraction_away_from_fixed_exit_is_typed_and_atomic",
@@ -448,7 +464,7 @@ fn seeded_registry_maps_current_foundation_contract_batches() {
     );
     assert_eq!(
         registry.contracts.len(),
-        46,
+        59,
         "the registry must own every contract in the current visual, worker, management, build, spatial, and dungeon batches"
     );
     assert_eq!(
@@ -459,26 +475,17 @@ fn seeded_registry_maps_current_foundation_contract_batches() {
                 contract.id.starts_with("VISUAL-") && contract.status == "GreenUnreviewed"
             })
             .count(),
-        13,
-        "all thirteen registered visual contracts are green but still require review evidence"
+        17,
+        "all seventeen registered visual contracts are green but still require review evidence"
     );
     assert_eq!(
         registry
             .contracts
             .iter()
-            .filter(|contract| { contract.id.starts_with("VISUAL-") && contract.status == "Red" })
+            .filter(|contract| contract.status == "Red")
             .count(),
         0,
-        "no registered presentation contract remains red after remediation"
-    );
-    assert_eq!(
-        registry
-            .contracts
-            .iter()
-            .filter(|contract| contract.id.starts_with("COLONY-") && contract.status == "Red")
-            .count(),
-        0,
-        "no registered physical-worker contract remains red after remediation"
+        "the seeded Foundation registry must have no unresolved red contracts"
     );
     assert_eq!(
         registry
@@ -487,17 +494,8 @@ fn seeded_registry_maps_current_foundation_contract_batches() {
             .filter(|contract| contract.id.starts_with("COLONY-")
                 && contract.status == "GreenUnreviewed")
             .count(),
-        19,
-        "all nineteen colony contracts are green but unreviewed"
-    );
-    assert_eq!(
-        registry
-            .contracts
-            .iter()
-            .filter(|contract| { contract.id.starts_with("INPUT-") && contract.status == "Red" })
-            .count(),
-        0,
-        "no registered management/build input contract remains red after remediation"
+        23,
+        "all twenty-three colony contracts are green but unreviewed"
     );
     assert_eq!(
         registry

@@ -17,7 +17,7 @@ fn colony_driver() -> FoundationDriver {
 fn build_station(driver: &mut FoundationDriver) -> bevy_ecs::entity::Entity {
     let player = driver.player().expect("shelter player must exist");
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "scope fixture: build station",
             player,
             "ability.build",
@@ -55,7 +55,9 @@ fn built_station_survives_dungeon_round_trip() {
 fn station_assignment_survives_dungeon_round_trip() {
     let mut driver = colony_driver();
     let station = build_station(&mut driver);
-    let survivor = driver.first_survivor().expect("starter survivor");
+    let survivor = driver
+        .survivor_by_name("Survivor 1")
+        .expect("named starter survivor");
     driver
         .fixture_assign_station(survivor, station)
         .expect("legacy assignment setup must use the production assignment system");
@@ -103,7 +105,7 @@ fn colony_entities_do_not_block_dungeon_queries() {
     driver.enter_dungeon(FIXED_DUNGEON).unwrap();
     let player = driver.player().expect("dungeon player");
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "scope: dungeon movement ignores colony station",
             player,
             "ability.move",

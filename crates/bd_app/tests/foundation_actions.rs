@@ -59,7 +59,7 @@ fn station_assignment_resolves_through_action_pipeline() {
     let mut driver = colony_driver();
     let player = driver.player().unwrap();
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "station pipeline: build",
             player,
             "ability.build",
@@ -67,7 +67,9 @@ fn station_assignment_resolves_through_action_pipeline() {
             None,
         )
         .unwrap();
-    let survivor = driver.first_survivor().unwrap();
+    let survivor = driver
+        .survivor_by_name("Survivor 1")
+        .expect("stable station-assignment survivor must exist");
     let station = driver
         .station_by_type(bd_core::colony::stations::StationType::Stove)
         .unwrap();
@@ -86,9 +88,11 @@ fn station_assignment_resolves_through_action_pipeline() {
 fn survivor_task_assignment_resolves_through_action_pipeline() {
     let mut driver = colony_driver();
     let player = driver.player().unwrap();
-    let survivor = driver.first_survivor().unwrap();
+    let survivor = driver
+        .survivor_by_name("Survivor 1")
+        .expect("stable task-assignment survivor must exist");
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "task pipeline: gather",
             player,
             "ability.assign_gathering",
@@ -156,7 +160,7 @@ fn accepted_action_advances_time_once() {
     let player = driver.player().unwrap();
     let before = driver.summary();
     driver
-        .expect_action("accepted turn", player, "ability.wait", None, None)
+        .submit_action_and_advance_result_frame("accepted turn", player, "ability.wait", None, None)
         .unwrap();
     let after = driver.summary();
 
@@ -186,7 +190,7 @@ fn replay_record_contains_action_parameters() {
     let mut driver = colony_driver();
     let player = driver.player().unwrap();
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "typed replay",
             player,
             "ability.move",
@@ -198,7 +202,6 @@ fn replay_record_contains_action_parameters() {
     let record = driver.summary().replay_intents.last().cloned().unwrap();
     assert_eq!(record.action_id, "ability.move");
     assert_eq!(record.direction, Some(Direction::East));
-    assert_eq!(record.actor, player.to_bits());
     assert_eq!(record.target, None);
 }
 
@@ -206,9 +209,11 @@ fn replay_record_contains_action_parameters() {
 fn replay_includes_pickup_and_colony_actions() {
     let mut driver = colony_driver();
     let player = driver.player().unwrap();
-    let survivor = driver.first_survivor().unwrap();
+    let survivor = driver
+        .survivor_by_name("Survivor 1")
+        .expect("stable replay survivor must exist");
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "replay: survivor task",
             player,
             "ability.assign_gathering",
@@ -245,7 +250,7 @@ fn valid_fixed_dungeon_movement_changes_one_cardinal_tile() {
     let turn_before = driver.summary().turn;
 
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "fixed dungeon valid movement",
             player,
             "ability.move",

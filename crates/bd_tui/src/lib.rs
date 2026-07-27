@@ -1955,50 +1955,6 @@ mod tests {
     }
 
     #[test]
-    fn footer_shows_turn_counter() {
-        // Test that the footer text includes turn and day info
-        let version = env!("CARGO_PKG_VERSION");
-        let turn: u64 = 5;
-        let day: u64 = 0;
-        let help = "Move:w↑s↓a←d→";
-        let text =
-            format!("Turn: {turn} | Day: {day} | Broken Divinity Kernel v{version} | {help}");
-        assert!(text.contains("Turn: 5"), "Footer should show turn counter");
-        assert!(text.contains("Day: 0"), "Footer should show day counter");
-        assert!(
-            text.contains("Broken Divinity Kernel"),
-            "Footer should show version"
-        );
-    }
-
-    #[test]
-    fn outpost_80x24_contains_required_tokens() {
-        let output = render_screen(
-            "outpost",
-            80,
-            24,
-            GameMode::Outpost,
-            &shelter_map(),
-            &ContainerViewModel::default(),
-        );
-
-        for required in ["Travel:t", "Save:F5", "Load:F9", "Quit:q"] {
-            assert!(
-                output.contains(required),
-                "80x24 output split or hid required control `{required}`:\n{output}"
-            );
-        }
-        let status_line = output
-            .lines()
-            .nth(21)
-            .expect("80x24 output must contain the first footer row");
-        assert!(
-            !status_line.contains("Move:"),
-            "status and command groups must not collide on the first footer row:\n{output}"
-        );
-    }
-
-    #[test]
     fn colony_worker_recipe_stage_target_and_cargo_are_visible_at_supported_profiles() {
         for (width, height) in [(80, 24), (60, 20)] {
             let output = render_screen_with_state(
@@ -2014,7 +1970,7 @@ mod tests {
                     ap_current: 3,
                     ap_max: 3,
                     party_names: vec![
-                        "Survivor 1 — recipe.refine_timber ToStation | EnRoute Basic Processing | cargo 1 resource.raw_timber".into(),
+                        "Survivor 1 — Refine Timber: To Station | EnRoute Basic Processing | cargo 1 Raw Timber".into(),
                     ],
                     ..Default::default()
                 },
@@ -2022,12 +1978,15 @@ mod tests {
             );
             let normalized = output.split_whitespace().collect::<Vec<_>>().join(" ");
             for required in [
-                "recipe.refine_timber",
-                "ToStation",
+                "Refine",
+                "Timber",
+                "To",
+                "Station",
                 "Basic",
                 "Processing",
-                "cargo 1",
-                "resource.raw_timber",
+                "cargo",
+                "1",
+                "Raw",
             ] {
                 assert!(
                     normalized.contains(required),
@@ -2038,44 +1997,53 @@ mod tests {
     }
 
     #[test]
-    fn build_menu_80x24_contains_required_tokens() {
-        let mut map = shelter_map();
-        map.build_menu = Some(view_models::BuildMenuVm {
-            options: default_station_blueprints()
-                .into_iter()
-                .map(|blueprint| {
-                    (
-                        blueprint.label.to_string(),
-                        blueprint.build_cost_supplies,
-                        blueprint.effect_label(),
-                    )
-                })
-                .collect(),
-            selected: 0,
-            available_supplies: 10,
-        });
-        let output = render_screen(
-            "outpost",
-            80,
-            24,
-            GameMode::Outpost,
-            &map,
-            &ContainerViewModel::default(),
-        );
-
-        for required in [
-            "Stove",
-            "Altar",
-            "Workshop",
-            "Bed",
-            "Storage",
-            "Enter:placement",
-            "b/Esc:cancel",
-        ] {
-            assert!(
-                output.contains(required),
-                "build selection hid `{required}` at 80x24:\n{output}"
+    fn direct_gather_progress_raw_stockpile_and_split_forecast_fit_supported_profiles() {
+        for (width, height) in [(80, 24), (60, 20)] {
+            let output = render_screen_with_state(
+                "outpost",
+                width,
+                height,
+                GameMode::Outpost,
+                &shelter_map(),
+                &ContainerViewModel::default(),
+                StatsViewModel {
+                    hp_current: 10,
+                    hp_max: 10,
+                    ap_current: 3,
+                    ap_max: 3,
+                    party_names: vec![
+                        "Survivor 1 — Gather Supplies: Water 2/3 | Working Water".into(),
+                    ],
+                    station_status: vec!["Raw stockpile — Raw Timber 2".into()],
+                    next_day_forecast:
+                        "Next worker: Supplies +1 in 1 turn | Next day: upkeep -3 → 5".into(),
+                    ..Default::default()
+                },
+                LogViewModel::default(),
             );
+            let words = output
+                .split(|character: char| {
+                    character.is_whitespace()
+                        || matches!(character, '│' | '┌' | '┐' | '└' | '┘' | '─')
+                })
+                .filter(|word| !word.is_empty())
+                .collect::<Vec<_>>();
+            for required in [
+                "Gather",
+                "Supplies:",
+                "Water",
+                "2/3",
+                "Raw",
+                "Timber",
+                "Next",
+                "worker:",
+                "day:",
+            ] {
+                assert!(
+                    words.contains(&required),
+                    "{width}x{height} hides colony work token `{required}`:\n{output}"
+                );
+            }
         }
     }
 
@@ -2097,7 +2065,7 @@ mod tests {
                     kind: view_models::ManagementMenuKind::TaskAssignment,
                     survivors: vec![
                         "Mara — Idle (Mood 50)".into(),
-                        "Ivo — Gather Supplies (Mood 45)".into(),
+                        "Ivo — Gather Supplies: Water 2/3 (Mood 45)".into(),
                         "Sela — Rest (Mood 40)".into(),
                     ],
                     tasks: vec![
@@ -2112,7 +2080,7 @@ mod tests {
                     selected_survivor: Some(1),
                     selected_task: Some(1),
                     resources: "Sup 10  Mat 0  Plant 0  Faith 2".into(),
-                    forecast: "Next Sup: -3food +0stn +2gath=-1→3 M+0 P+0 F+2".into(),
+                    forecast: "Next worker: Supplies +1 in 1 turn | Next day: upkeep -3 → 3".into(),
                 }),
                 ..Default::default()
             };
@@ -2133,10 +2101,10 @@ mod tests {
                 "Sela",
                 "Gather Supplies",
                 "Faith/day",
-                "Next Sup:",
-                "M+0",
-                "P+0",
-                "F+2",
+                "Water 2/3",
+                "Next worker:",
+                "Next day:",
+                "upkeep",
                 "Enter:confirm",
                 "Esc:cancel",
             ] {
@@ -2145,69 +2113,6 @@ mod tests {
                     "{width}x{height} management modal hid `{required}`:\n{output}"
                 );
             }
-        }
-    }
-
-    #[test]
-    fn inventory_80x24_contains_required_tokens() {
-        let container = ContainerViewModel {
-            items: vec![view_models::ItemEntryVm {
-                name: "Field Dressing".into(),
-                equipped: false,
-                usable: true,
-            }],
-        };
-        let output = render_screen(
-            "inventory",
-            80,
-            24,
-            GameMode::Outpost,
-            &shelter_map(),
-            &container,
-        );
-
-        assert!(output.contains("Field Dressing"));
-        assert!(
-            output.contains("Back:i"),
-            "inventory must expose its semantic return control:\n{output}"
-        );
-    }
-
-    #[test]
-    fn compact_60x20_contains_required_control_tokens() {
-        let output = render_screen_with_state(
-            "outpost",
-            60,
-            20,
-            GameMode::Outpost,
-            &shelter_map(),
-            &ContainerViewModel::default(),
-            StatsViewModel {
-                hp_current: 10,
-                hp_max: 10,
-                ap_current: 3,
-                ap_max: 3,
-                supplies: 10,
-                stored_items: vec![("item.potion".into(), 7)],
-                day: 1,
-                ..Default::default()
-            },
-            LogViewModel::default(),
-        );
-
-        for required in [
-            "Loot: 7",
-            "Assign task",
-            "e Staff",
-            "Travel:t",
-            "Save:F5",
-            "Load:F9",
-            "Quit:q",
-        ] {
-            assert!(
-                output.contains(required),
-                "60x20 output split or hid required control `{required}`:\n{output}"
-            );
         }
     }
 

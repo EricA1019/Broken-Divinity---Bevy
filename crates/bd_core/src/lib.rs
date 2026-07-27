@@ -292,18 +292,10 @@ fn register_foundation(app: &mut App, foundation: bool) {
         crate::colony::production::process_production.in_set(BdSet::Mutation),
     );
 
-    // P22: Register survivor gathering system
-    app.add_systems(
-        bevy_app::Update,
-        crate::colony::resources::process_survivor_gathering
-            .after(crate::colony::production::process_production)
-            .in_set(BdSet::Mutation),
-    );
     app.add_systems(
         bevy_app::Update,
         crate::colony::production::finalize_daily_cycle
             .after(crate::colony::survivors::consume_shelter_resources)
-            .after(crate::colony::resources::process_survivor_gathering)
             .in_set(BdSet::Mutation),
     );
 

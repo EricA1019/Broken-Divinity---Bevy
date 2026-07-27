@@ -188,21 +188,7 @@ pub fn forecast_colony(
     let mut credited_stations = std::collections::HashSet::new();
     for worker in survivors {
         match evaluate_physical_work(worker, stations, nodes) {
-            PhysicalWorkEvaluation::Contributes(PhysicalWorkContribution::Resource(node)) => {
-                match crate::colony::resources::pool_for_node(node.kind) {
-                    PoolKind::Supplies => {
-                        forecast.gathered_supplies +=
-                            crate::colony::resources::GATHERING_YIELD_PER_DAY
-                    }
-                    PoolKind::Materials => {
-                        forecast.materials_net += crate::colony::resources::GATHERING_YIELD_PER_DAY
-                    }
-                    PoolKind::WildPlants => {
-                        forecast.plants_net += crate::colony::resources::GATHERING_YIELD_PER_DAY
-                    }
-                    _ => {}
-                }
-            }
+            PhysicalWorkEvaluation::Contributes(PhysicalWorkContribution::Resource(_)) => {}
             PhysicalWorkEvaluation::Contributes(PhysicalWorkContribution::Station(station)) => {
                 if !credited_stations.insert(station.entity_bits) {
                     continue;

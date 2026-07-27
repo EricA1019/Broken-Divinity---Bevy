@@ -49,7 +49,7 @@ fn construction_deducts_authoritative_colony_supplies_once() {
     let stations_before = driver.summary().stations;
 
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "build one Stove",
             player,
             "ability.build",
@@ -112,7 +112,7 @@ fn dungeon_entry_deducts_colony_supplies_once() {
     let player = driver.player().expect("shelter player must exist");
 
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "paid Foundation dungeon entry",
             player,
             "ability.enter_foundation_dungeon",
@@ -120,6 +120,7 @@ fn dungeon_entry_deducts_colony_supplies_once() {
             None,
         )
         .expect("entry action must resolve");
+    driver.advance_transition_frame();
 
     assert_eq!(driver.summary().mode, GameMode::Tactical);
     assert_eq!(
@@ -163,7 +164,7 @@ fn dungeon_entry_replay_preserves_cost_and_transition() {
     let player = driver.player().expect("shelter player must exist");
 
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "record Foundation dungeon entry",
             player,
             "ability.enter_foundation_dungeon",
@@ -171,6 +172,7 @@ fn dungeon_entry_replay_preserves_cost_and_transition() {
             None,
         )
         .expect("entry action must resolve");
+    driver.advance_transition_frame();
 
     let summary = driver.summary();
     assert_eq!(summary.mode, GameMode::Tactical);
@@ -190,7 +192,7 @@ fn construction_cost_survives_save_load() {
     let mut driver = colony_driver();
     let player = driver.player().expect("shelter player must exist");
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "build before save",
             player,
             "ability.build",
@@ -225,7 +227,7 @@ fn two_builds_charge_twice_and_third_unaffordable_build_is_atomic() {
     driver.fixture_set_colony_resource(PoolKind::Supplies, BUILD_COST * 2);
     let player = driver.player().expect("shelter player must exist");
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "first affordable build",
             player,
             "ability.build",
@@ -234,7 +236,7 @@ fn two_builds_charge_twice_and_third_unaffordable_build_is_atomic() {
         )
         .expect("first build must resolve");
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "move to a second safe footprint",
             player,
             "ability.move",
@@ -243,7 +245,7 @@ fn two_builds_charge_twice_and_third_unaffordable_build_is_atomic() {
         )
         .expect("player must reach a non-trapping build position");
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "second affordable build",
             player,
             "ability.build",
@@ -427,7 +429,7 @@ fn rest_until_next_day_emits_one_day_boundary() {
     let day_before = driver.summary().day;
 
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "rest until next day",
             player,
             "ability.rest_until_next_day",

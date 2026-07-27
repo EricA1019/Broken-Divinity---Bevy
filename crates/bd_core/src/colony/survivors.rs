@@ -264,6 +264,7 @@ pub fn process_station_assignments(
             .remove::<(
                 crate::colony::logistics::LogisticsJob,
                 crate::colony::logistics::Cargo,
+                crate::colony::resources::DirectGatherProgress,
             )>();
         let survivor_name = targets
             .names
@@ -380,6 +381,7 @@ struct WorkerStepState {
     position: Position,
     task: SurvivorTask,
     activity: Option<WorkerActivity>,
+    direct_gather_progress: Option<crate::colony::resources::DirectGatherProgress>,
 }
 
 #[derive(Debug, Clone)]
@@ -682,6 +684,64 @@ fn observe_worker_activity(
     }
 }
 
+fn advance_direct_gather_work(
+    worker: &mut WorkerStepState,
+    nodes: &[(Position, ResourceNode, String)],
+    content: &crate::content::FoundationContent,
+    resources: &mut crate::colony::production::ColonyResources,
+    game_log: &mut crate::gamelog::GameLog,
+) -> bool {
+    let SurvivorTask::Gathering(output_pool) = worker.task else {
+        worker.direct_gather_progress = None;
+        return false;
+    };
+    let Some(definition) = crate::colony::resources::direct_gather_definition(content, output_pool)
+    else {
+        return false;
+    };
+    let at_source = nodes.iter().any(|(position, node, _)| {
+        !node.depleted
+            && node.source_id == definition.source_id
+            && cardinally_adjacent(worker.position, *position)
+    });
+    if !at_source {
+        return false;
+    }
+
+    let progress = worker.direct_gather_progress.get_or_insert_with(|| {
+        crate::colony::resources::DirectGatherProgress {
+            definition_id: definition.id.clone(),
+            work_completed: 0,
+        }
+    });
+    if progress.definition_id != definition.id {
+        progress.definition_id.clone_from(&definition.id);
+        progress.work_completed = 0;
+    }
+    progress.work_completed = progress.work_completed.saturating_add(1);
+    if progress.work_completed < definition.work_turns {
+        return true;
+    }
+
+    progress.work_completed = 0;
+    if let Some(pool) = resources.pools.get_mut(definition.output_pool) {
+        let amount = i32::try_from(definition.output_amount).unwrap_or(i32::MAX);
+        let before = pool.current;
+        pool.current = pool.current.saturating_add(amount).min(pool.max);
+        let credited = pool.current - before;
+        if credited > 0 {
+            game_log.push(
+                format!(
+                    "{} completed direct gathering: +{} {:?}.",
+                    worker.name, credited, definition.output_pool
+                ),
+                crate::gamelog::LogLevel::Info,
+            );
+        }
+    }
+    true
+}
+
 /// Resolve derived activity every frame and move assigned survivors once for
 /// each logical Outpost worker step compiled from the accepted action.
 #[allow(clippy::type_complexity, clippy::too_many_arguments)]
@@ -694,6 +754,7 @@ pub(crate) fn process_survivor_movement(
             &Position,
             &SurvivorTask,
             Option<&WorkerActivity>,
+            Option<&crate::colony::resources::DirectGatherProgress>,
         ),
         (
             With<Survivor>,
@@ -711,24 +772,29 @@ pub(crate) fn process_survivor_movement(
     mode: Res<crate::spatial::GameMode>,
     mut time_plan: ResMut<crate::time::TimeAdvancePlan>,
     mut game_log: ResMut<crate::gamelog::GameLog>,
+    content: Option<Res<crate::content::FoundationContent>>,
+    mut colony_resources: ResMut<crate::colony::production::ColonyResources>,
     recomputing: Option<Res<RecomputingWorkerActivity>>,
 ) {
-    if *mode != crate::spatial::GameMode::Outpost {
+    if *mode != crate::spatial::GameMode::Outpost && recomputing.is_none() {
         time_plan.outpost_worker_steps = 0;
         return;
     }
 
     let mut workers = survivors
         .iter()
-        .map(|(entity, name, position, task, activity)| WorkerStepState {
-            entity,
-            name: name
-                .map(|name| name.0.clone())
-                .unwrap_or_else(|| format!("Survivor {}", entity.to_bits())),
-            position: *position,
-            task: task.clone(),
-            activity: activity.cloned(),
-        })
+        .map(
+            |(entity, name, position, task, activity, direct_gather_progress)| WorkerStepState {
+                entity,
+                name: name
+                    .map(|name| name.0.clone())
+                    .unwrap_or_else(|| format!("Survivor {}", entity.to_bits())),
+                position: *position,
+                task: task.clone(),
+                activity: activity.cloned(),
+                direct_gather_progress: direct_gather_progress.cloned(),
+            },
+        )
         .collect::<Vec<_>>();
     workers.sort_by(|left, right| {
         left.name
@@ -776,7 +842,17 @@ pub(crate) fn process_survivor_movement(
             blocked.extend(occupied.iter().copied());
             blocked.remove(&worker.position);
 
-            let (next_position, final_activity) = if allow_movement {
+            let performed_direct_work = allow_movement
+                && content.as_ref().is_some_and(|content| {
+                    advance_direct_gather_work(
+                        worker,
+                        &nodes,
+                        content,
+                        &mut colony_resources,
+                        &mut game_log,
+                    )
+                });
+            let (next_position, final_activity) = if allow_movement && !performed_direct_work {
                 resolve_worker_activity(worker, &map, &stations, &nodes, &blocked)
             } else {
                 (
@@ -806,10 +882,16 @@ pub(crate) fn process_survivor_movement(
     }
 
     for worker in workers {
-        commands.entity(worker.entity).insert((
+        let mut entity = commands.entity(worker.entity);
+        entity.insert((
             worker.position,
             worker.activity.unwrap_or(WorkerActivity::Idle),
         ));
+        if let Some(progress) = worker.direct_gather_progress {
+            entity.insert(progress);
+        } else {
+            entity.remove::<crate::colony::resources::DirectGatherProgress>();
+        }
     }
 }
 

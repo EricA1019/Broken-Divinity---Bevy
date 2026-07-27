@@ -33,7 +33,7 @@ fn named_survivor(driver: &mut FoundationDriver, name: &str) -> Entity {
 fn wait_once(driver: &mut FoundationDriver, step: &str) {
     let player = driver.player().expect("player must exist");
     driver
-        .expect_action(step, player, "ability.wait", None, None)
+        .submit_action_and_advance_result_frame(step, player, "ability.wait", None, None)
         .unwrap_or_else(|error| panic!("{step}: {error}"));
 }
 
@@ -48,7 +48,7 @@ fn build_station(driver: &mut FoundationDriver, station_type: StationType) -> En
     let player = driver.player().expect("player must exist");
     driver.fixture_select_station(station_type);
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "build physical-work station",
             player,
             "ability.build",
@@ -72,7 +72,7 @@ fn assign_station(driver: &mut FoundationDriver, survivor: Entity, station: Enti
     let player = driver.player().expect("player must exist");
     driver.fixture_select_station_assignment(station);
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "assign named station worker",
             player,
             "ability.assign_station",
@@ -98,7 +98,7 @@ fn assign_gathering(driver: &mut FoundationDriver, survivor: Entity, kind: PoolK
     };
     let player = driver.player().expect("player must exist");
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "assign named gatherer",
             player,
             action_id,
@@ -455,7 +455,7 @@ fn rest_and_individual_waits_produce_the_same_worker_position() {
         wait_once(&mut waits, "individual worker movement turn");
     }
     let rest_player = rest.player().expect("player must exist");
-    rest.expect_action(
+    rest.submit_action_and_advance_result_frame(
         "rest with assigned worker",
         rest_player,
         "ability.rest_until_next_day",
@@ -494,6 +494,7 @@ fn assigned_but_enroute_station_worker_produces_nothing() {
     );
 
     wait_once(&mut driver, "resolve en-route station boundary");
+    driver.advance_day_resolution_frame();
     let summary = driver
         .latest_daily_summary()
         .expect("day boundary must publish a summary");
@@ -547,6 +548,7 @@ fn adjacent_station_worker_produces_once() {
     assign_station(&mut driver, survivor, station);
 
     wait_once(&mut driver, "resolve adjacent station boundary");
+    driver.advance_day_resolution_frame();
     let summary = driver
         .latest_daily_summary()
         .expect("day boundary must publish a summary");
@@ -581,45 +583,13 @@ fn assigned_but_enroute_gatherer_produces_nothing() {
     assert!(distance_before > 2, "gatherer fixture must be en route");
 
     wait_once(&mut driver, "resolve en-route gathering boundary");
+    driver.advance_day_resolution_frame();
     let summary = driver
         .latest_daily_summary()
         .expect("day boundary must publish a summary");
 
     assert_eq!(summary.gathering_units, 0);
     assert_eq!(summary.gathered_supplies, 0);
-}
-
-#[test]
-fn adjacent_matching_gatherer_produces_once() {
-    let mut driver = colony_driver(718);
-    wait_until_turn(&mut driver, 23);
-    let survivor = named_survivor(&mut driver, "Survivor 1");
-    let nodes = driver.resource_nodes_with_state();
-    let occupied = nodes
-        .iter()
-        .map(|(_, _, position, _)| *position)
-        .collect::<HashSet<_>>();
-    let (_, _, target, _) = nodes
-        .iter()
-        .find(|(_, kind, _, depleted)| !depleted && pool_for_node(*kind) == PoolKind::Supplies)
-        .copied()
-        .expect("fixture needs a non-depleted Supplies node");
-    let (width, height) = driver.summary().map_size;
-    let work_position = cardinal_work_positions(target, width, height)
-        .find(|candidate| !occupied.contains(candidate))
-        .expect("Supplies node needs one adjacent work tile");
-    driver
-        .fixture_set_position(survivor, work_position)
-        .expect("matching work-position fixture must be valid");
-    assign_gathering(&mut driver, survivor, PoolKind::Supplies);
-
-    wait_once(&mut driver, "resolve matching gathering boundary");
-    let summary = driver
-        .latest_daily_summary()
-        .expect("day boundary must publish a summary");
-
-    assert_eq!(summary.gathering_units, 1);
-    assert_eq!(summary.gathered_supplies, 1);
 }
 
 #[test]
@@ -663,59 +633,13 @@ fn gatherer_at_wrong_node_type_produces_nothing() {
     assign_gathering(&mut driver, survivor, PoolKind::Supplies);
 
     wait_once(&mut driver, "resolve wrong-node gathering boundary");
+    driver.advance_day_resolution_frame();
     let summary = driver
         .latest_daily_summary()
         .expect("day boundary must publish a summary");
 
     assert_eq!(summary.gathering_units, 0);
     assert_eq!(summary.gathered_supplies, 0);
-}
-
-#[test]
-fn zero_supply_recovery_remains_reachable_with_physical_gathering() {
-    let mut driver = colony_driver(723);
-    wait_until_turn(&mut driver, 23);
-    driver.fixture_set_colony_resource(PoolKind::Supplies, 0);
-    let nodes = driver.resource_nodes_with_state();
-    let occupied = nodes
-        .iter()
-        .map(|(_, _, position, _)| *position)
-        .collect::<HashSet<_>>();
-    let (width, height) = driver.summary().map_size;
-    let mut work_positions = nodes
-        .iter()
-        .filter(|(_, kind, _, depleted)| !depleted && pool_for_node(*kind) == PoolKind::Supplies)
-        .flat_map(|(_, _, target, _)| cardinal_work_positions(*target, width, height))
-        .filter(|candidate| !occupied.contains(candidate))
-        .collect::<Vec<_>>();
-    work_positions.sort_by_key(|position| (position.y, position.x));
-    work_positions.dedup();
-    assert!(
-        work_positions.len() >= 3,
-        "fixed shelter needs three distinct physical Supplies work positions; found {work_positions:?}"
-    );
-
-    for (name, work_position) in ["Survivor 1", "Survivor 2", "Survivor 3"]
-        .into_iter()
-        .zip(work_positions)
-    {
-        let survivor = named_survivor(&mut driver, name);
-        driver
-            .fixture_set_position(survivor, work_position)
-            .expect("zero-Supplies work fixture must be valid");
-        assign_gathering(&mut driver, survivor, PoolKind::Supplies);
-    }
-
-    wait_once(&mut driver, "resolve zero-Supplies recovery boundary");
-    let summary = driver
-        .latest_daily_summary()
-        .expect("day boundary must publish a summary");
-
-    assert_eq!(summary.supplies_before, 0);
-    assert_eq!(summary.food_consumed, 0);
-    assert_eq!(summary.gathering_units, 3);
-    assert_eq!(summary.gathered_supplies, 3);
-    assert_eq!(summary.supplies_after, 3);
 }
 
 #[test]
@@ -739,6 +663,7 @@ fn blocked_station_worker_produces_nothing() {
     assign_station(&mut driver, survivor, station);
 
     wait_once(&mut driver, "resolve blocked station boundary");
+    driver.advance_day_resolution_frame();
     let summary = driver
         .latest_daily_summary()
         .expect("day boundary must publish a summary");
@@ -793,7 +718,7 @@ fn rest_and_individual_waits_produce_the_same_daily_resources() {
         wait_once(&mut waits, "individual daily-resource turn");
     }
     let rest_player = rest.player().expect("player must exist");
-    rest.expect_action(
+    rest.submit_action_and_advance_result_frame(
         "rest daily-resource transaction",
         rest_player,
         "ability.rest_until_next_day",

@@ -190,7 +190,55 @@ type SurvivorPartyItem<'a> = (
     &'a bd_core::colony::survivors::SurvivorTask,
     Option<&'a Pools>,
     Option<&'a bd_core::spatial::EntityScope>,
+    Option<&'a bd_core::colony::survivors::WorkerActivity>,
+    Option<&'a bd_core::colony::resources::DirectGatherProgress>,
 );
+
+fn pool_label(kind: PoolKind) -> &'static str {
+    match kind {
+        PoolKind::Supplies => "Supplies",
+        PoolKind::Materials => "Materials",
+        PoolKind::WildPlants => "Wild Plants",
+        PoolKind::Faith => "Faith",
+        _ => "Resource",
+    }
+}
+
+fn content_resource_label(content: &bd_core::content::FoundationContent, id: &str) -> String {
+    content
+        .colony_resources
+        .iter()
+        .find(|resource| resource.id == id)
+        .map_or_else(
+            || "Unknown resource".into(),
+            |resource| resource.label.clone(),
+        )
+}
+
+fn activity_label(activity: Option<&bd_core::colony::survivors::WorkerActivity>) -> String {
+    activity.map_or_else(
+        || "Assigned".into(),
+        |activity| match activity {
+            bd_core::colony::survivors::WorkerActivity::Idle => "Idle".into(),
+            bd_core::colony::survivors::WorkerActivity::EnRoute { target, .. } => {
+                format!("EnRoute {target}")
+            }
+            bd_core::colony::survivors::WorkerActivity::Working { target, .. } => {
+                format!("Working {target}")
+            }
+            bd_core::colony::survivors::WorkerActivity::Blocked { target, reason, .. } => {
+                let reason = reason.to_string();
+                let mut characters = reason.chars();
+                let readable_reason = characters.next().map_or_else(String::new, |first| {
+                    first.to_uppercase().collect::<String>() + characters.as_str()
+                });
+                format!("Blocked {target}: {readable_reason}")
+            }
+            bd_core::colony::survivors::WorkerActivity::Resting => "Resting".into(),
+            bd_core::colony::survivors::WorkerActivity::Defending => "Defending".into(),
+        },
+    )
+}
 
 fn build_stats_vm(
     player_pools: Query<&Pools, With<Player>>,
@@ -309,7 +357,7 @@ fn build_party_vm(
 ) {
     let mut active_survivors: Vec<_> = survivors
         .iter()
-        .filter(|(_, _, _, _, scope)| scope_active(*scope, *mode))
+        .filter(|(_, _, _, _, scope, _, _)| scope_active(*scope, *mode))
         .collect::<Vec<_>>();
     active_survivors.sort_by(|left, right| left.1.0.cmp(&right.1.0));
     let mut active_stations: Vec<_> = stations
@@ -321,77 +369,104 @@ fn build_party_vm(
     });
     vm.party_names = active_survivors
         .iter()
-        .map(|(entity, name, task, pools, _)| {
-            let task = if let Ok((job, cargo, activity)) = logistics.get(*entity) {
-                let activity = activity.map_or_else(
-                    || "Assigned".into(),
-                    |activity| match activity {
-                        bd_core::colony::survivors::WorkerActivity::Idle => "Idle".into(),
-                        bd_core::colony::survivors::WorkerActivity::EnRoute { target, .. } => {
-                            format!("EnRoute {target}")
-                        }
-                        bd_core::colony::survivors::WorkerActivity::Working { target, .. } => {
-                            format!("Working {target}")
-                        }
-                        bd_core::colony::survivors::WorkerActivity::Blocked {
-                            target,
-                            reason,
-                            ..
-                        } => format!("Blocked {target}: {reason}"),
-                        bd_core::colony::survivors::WorkerActivity::Resting => "Resting".into(),
-                        bd_core::colony::survivors::WorkerActivity::Defending => "Defending".into(),
-                    },
-                );
-                let work_required = foundation_content
-                    .as_ref()
-                    .and_then(|content| {
+        .map(
+            |(entity, name, task, pools, _, activity, direct_progress)| {
+                let task = if let Ok((job, cargo, activity)) = logistics.get(*entity) {
+                    let activity = activity_label(activity);
+                    let recipe = foundation_content.as_ref().and_then(|content| {
                         content
                             .colony_recipes
                             .iter()
                             .find(|recipe| recipe.id == job.recipe_id)
-                    })
-                    .map(|recipe| match job.stage {
-                        bd_core::colony::logistics::JobStage::ReadyToGather => {
-                            recipe.gather_work_turns
+                    });
+                    let work_required = recipe
+                        .map(|recipe| match job.stage {
+                            bd_core::colony::logistics::JobStage::ReadyToGather => {
+                                recipe.gather_work_turns
+                            }
+                            bd_core::colony::logistics::JobStage::ReadyToRefine => {
+                                recipe.refine_work_turns
+                            }
+                            _ => 0,
+                        })
+                        .unwrap_or(0);
+                    let recipe_label =
+                        recipe.map_or(job.recipe_id.as_str(), |recipe| recipe.label.as_str());
+                    let cargo_label = cargo.resource_id.as_deref().map_or("empty".into(), |id| {
+                        foundation_content.as_ref().map_or_else(
+                            || "Unknown resource".into(),
+                            |content| content_resource_label(content, id),
+                        )
+                    });
+                    format!(
+                        "{} {:?} {}/{} | {} | cargo {} {}",
+                        recipe_label,
+                        job.stage,
+                        job.work_completed,
+                        work_required,
+                        activity,
+                        cargo.amount,
+                        cargo_label
+                    )
+                } else {
+                    match task {
+                        bd_core::colony::survivors::SurvivorTask::Idle => "Idle".into(),
+                        bd_core::colony::survivors::SurvivorTask::Gathering(kind) => {
+                            let definition = foundation_content.as_ref().and_then(|content| {
+                                bd_core::colony::resources::direct_gather_definition(content, *kind)
+                            });
+                            let source = definition
+                                .and_then(|definition| {
+                                    foundation_content.as_ref().and_then(|content| {
+                                        content
+                                            .colony_sources
+                                            .iter()
+                                            .find(|source| source.id == definition.source_id)
+                                    })
+                                })
+                                .map_or("Unknown source", |source| source.label.as_str());
+                            let completed = definition
+                                .zip(*direct_progress)
+                                .filter(|(definition, progress)| {
+                                    progress.definition_id == definition.id
+                                })
+                                .map_or(0, |(_, progress)| progress.work_completed);
+                            let required = definition.map_or(0, |definition| definition.work_turns);
+                            let output =
+                                definition.map_or(0, |definition| definition.output_amount);
+                            let work_state = activity.map_or_else(
+                                || format!("Assigned {source}"),
+                                |_| activity_label(*activity),
+                            );
+                            format!(
+                                "Gather {} | {} | {}/{} → {} {}",
+                                pool_label(*kind),
+                                work_state,
+                                completed,
+                                required,
+                                output,
+                                pool_label(*kind)
+                            )
                         }
-                        bd_core::colony::logistics::JobStage::ReadyToRefine => {
-                            recipe.refine_work_turns
+                        bd_core::colony::survivors::SurvivorTask::Defending => "Defend".into(),
+                        bd_core::colony::survivors::SurvivorTask::Resting => "Rest".into(),
+                        bd_core::colony::survivors::SurvivorTask::AssignedTo(bits) => {
+                            active_stations
+                                .iter()
+                                .find(|(entity, _, _, _, _)| entity.to_bits() == *bits)
+                                .map_or_else(
+                                    || "Invalid station".into(),
+                                    |(_, name, _, _, _)| name.0.clone(),
+                                )
                         }
-                        _ => 0,
-                    })
-                    .unwrap_or(0);
-                format!(
-                    "{} {:?} {}/{} | {} | cargo {} {}",
-                    job.recipe_id,
-                    job.stage,
-                    job.work_completed,
-                    work_required,
-                    activity,
-                    cargo.amount,
-                    cargo.resource_id.as_deref().unwrap_or("empty")
-                )
-            } else {
-                match task {
-                    bd_core::colony::survivors::SurvivorTask::Idle => "Idle".into(),
-                    bd_core::colony::survivors::SurvivorTask::Gathering(kind) => {
-                        format!("Gather {kind:?}")
                     }
-                    bd_core::colony::survivors::SurvivorTask::Defending => "Defend".into(),
-                    bd_core::colony::survivors::SurvivorTask::Resting => "Rest".into(),
-                    bd_core::colony::survivors::SurvivorTask::AssignedTo(bits) => active_stations
-                        .iter()
-                        .find(|(entity, _, _, _, _)| entity.to_bits() == *bits)
-                        .map_or_else(
-                            || "Invalid station".into(),
-                            |(_, name, _, _, _)| name.0.clone(),
-                        ),
-                }
-            };
-            let mood = pools
-                .and_then(|pools| pools.get(PoolKind::Mood))
-                .map_or(0, |mood| mood.current);
-            format!("{} — {} (Mood {})", name.0, task, mood)
-        })
+                };
+                let mood = pools
+                    .and_then(|pools| pools.get(PoolKind::Mood))
+                    .map_or(0, |mood| mood.current);
+                format!("{} — {} (Mood {})", name.0, task, mood)
+            },
+        )
         .collect();
     vm.station_status = active_stations
         .iter()
@@ -401,14 +476,14 @@ fn build_party_vm(
                 .map_or_else(|| "Unknown effect".into(), |entry| entry.effect_label());
             let worker = active_survivors
                 .iter()
-                .find(|(_, _, task, _, _)| {
+                .find(|(_, _, task, _, _, _, _)| {
                     matches!(
                         task,
                         bd_core::colony::survivors::SurvivorTask::AssignedTo(bits)
                             if *bits == entity.to_bits()
                     )
                 })
-                .map_or("Unstaffed", |(_, name, _, _, _)| name.0.as_str());
+                .map_or("Unstaffed", |(_, name, _, _, _, _, _)| name.0.as_str());
             format!("{} — {} — {}", name.0, effect, worker)
         })
         .collect();
@@ -424,6 +499,18 @@ fn build_party_vm(
         .collect::<Vec<_>>();
     site_status.sort();
     vm.station_status.extend(site_status);
+    if let Some(content) = foundation_content.as_ref() {
+        let raw = colony_resources
+            .raw
+            .iter()
+            .filter(|(_, count)| **count > 0)
+            .map(|(id, count)| format!("{} {}", content_resource_label(content, id), count))
+            .collect::<Vec<_>>();
+        if !raw.is_empty() {
+            vm.station_status
+                .push(format!("Raw stockpile — {}", raw.join(", ")));
+        }
+    }
     let work_survivors = work_survivors
         .iter()
         .map(
@@ -460,11 +547,30 @@ fn build_party_vm(
         &work_nodes,
         &station_catalog,
     );
+    let next_worker = active_survivors
+        .iter()
+        .find_map(|(_, _, task, _, _, _, direct_progress)| {
+            let bd_core::colony::survivors::SurvivorTask::Gathering(kind) = task else {
+                return None;
+            };
+            let definition = foundation_content.as_ref().and_then(|content| {
+                bd_core::colony::resources::direct_gather_definition(content, *kind)
+            })?;
+            let completed = direct_progress
+                .filter(|progress| progress.definition_id == definition.id)
+                .map_or(0, |progress| progress.work_completed);
+            Some(format!(
+                "{} +{} after {} work",
+                pool_label(*kind),
+                definition.output_amount,
+                definition.work_turns.saturating_sub(completed)
+            ))
+        });
     vm.next_day_forecast = format!(
-        "Next Sup: -{}food {:+}stn {:+}gath={:+}→{} M{:+} P{:+} F{:+}",
+        "Next worker: {} | Next day: Sup -{}food {:+}stn={:+}→{} M{:+} P{:+} F{:+}",
+        next_worker.as_deref().unwrap_or("no direct completion"),
         forecast.food_consumed,
         forecast.station_supplies,
-        forecast.gathered_supplies,
         forecast.supplies_net,
         forecast.supplies_after,
         forecast.materials_net,
@@ -515,13 +621,10 @@ fn build_party_vm(
                         .iter()
                         .enumerate()
                         .map(|(index, recipe)| {
-                            format!(
-                                "{}. {} — {} → {}",
-                                index + 1,
-                                recipe.label,
-                                recipe.input_resource_id,
-                                recipe.output_resource_id
-                            )
+                            let input = content_resource_label(content, &recipe.input_resource_id);
+                            let output =
+                                content_resource_label(content, &recipe.output_resource_id);
+                            format!("{}. {} — {} → {}", index + 1, recipe.label, input, output)
                         })
                         .collect()
                 })
@@ -535,14 +638,14 @@ fn build_party_vm(
                         .map_or_else(|| "Unknown effect".into(), |entry| entry.effect_label());
                     let worker = active_survivors
                         .iter()
-                        .find(|(_, _, task, _, _)| {
+                        .find(|(_, _, task, _, _, _, _)| {
                             matches!(
                                 task,
                                 bd_core::colony::survivors::SurvivorTask::AssignedTo(bits)
                                     if *bits == entity.to_bits()
                             )
                         })
-                        .map_or("Unstaffed", |(_, name, _, _, _)| name.0.as_str());
+                        .map_or("Unstaffed", |(_, name, _, _, _, _, _)| name.0.as_str());
                     format!("{}. {} — {} — {}", index + 1, name.0, effect, worker)
                 })
                 .collect(),

@@ -13,7 +13,7 @@ fn build_and_assign(driver: &mut FoundationDriver) {
     let player = driver.player().expect("player must exist");
     driver.fixture_select_station(StationType::Stove);
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "build fingerprint station",
             player,
             "ability.build",
@@ -80,7 +80,7 @@ fn enroute_worker_fingerprint_and_next_step_survive_save_load() {
     let original_player = original.player().expect("original player exists");
     let restored_player = restored.player().expect("restored player exists");
     original
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "original next worker step",
             original_player,
             "ability.wait",
@@ -89,7 +89,7 @@ fn enroute_worker_fingerprint_and_next_step_survive_save_load() {
         )
         .expect("original wait resolves");
     restored
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "restored next worker step",
             restored_player,
             "ability.wait",
@@ -168,7 +168,7 @@ fn working_station_contribution_survives_save_load() {
         let original_player = original.player().expect("original player exists");
         let restored_player = restored.player().expect("restored player exists");
         original
-            .expect_action(
+            .submit_action_and_advance_result_frame(
                 "original Working day",
                 original_player,
                 "ability.wait",
@@ -177,7 +177,7 @@ fn working_station_contribution_survives_save_load() {
             )
             .expect("original wait resolves");
         restored
-            .expect_action(
+            .submit_action_and_advance_result_frame(
                 "restored Working day",
                 restored_player,
                 "ability.wait",

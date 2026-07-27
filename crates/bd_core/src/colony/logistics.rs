@@ -53,16 +53,19 @@ pub(crate) fn process_recipe_assignments(
         if let Ok(cargo) = cargo.get(assignment.survivor) {
             deposit_cargo(&mut colony_resources, cargo);
         }
-        commands.entity(assignment.survivor).insert((
-            crate::colony::survivors::SurvivorTask::Idle,
-            LogisticsJob {
-                recipe_id: assignment.recipe_id.clone(),
-                stage: JobStage::ToSource,
-                work_completed: 0,
-                blocked: None,
-            },
-            Cargo::default(),
-        ));
+        commands
+            .entity(assignment.survivor)
+            .insert((
+                crate::colony::survivors::SurvivorTask::Idle,
+                LogisticsJob {
+                    recipe_id: assignment.recipe_id.clone(),
+                    stage: JobStage::ToSource,
+                    work_completed: 0,
+                    blocked: None,
+                },
+                Cargo::default(),
+            ))
+            .remove::<crate::colony::resources::DirectGatherProgress>();
         game_log.push(
             format!("Production assigned: {}.", assignment.recipe_id),
             crate::gamelog::LogLevel::Info,

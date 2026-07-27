@@ -86,6 +86,26 @@ fn managed_launcher_builds_the_current_workspace_instead_of_running_a_stale_bina
 }
 
 #[test]
+fn action_harness_keeps_result_and_enemy_frames_explicit() {
+    let support = read("crates/bd_test_support/src/lib.rs");
+    let retired_helper = ["pub fn expect_", "action("].concat();
+    let retired_calls = [".expect_", "action("].concat();
+
+    assert!(
+        !support.contains(&retired_helper) && !support.contains(&retired_calls),
+        "the retired action helper must not reintroduce unconditional two-frame settling"
+    );
+    assert!(
+        support.contains("pub fn submit_action_and_advance_result_frame("),
+        "accepted actions need an API that names its single result-frame update"
+    );
+    assert!(
+        support.contains("pub fn advance_enemy_phase_frame("),
+        "Tactical workflows need a separate, explicit enemy-phase frame"
+    );
+}
+
+#[test]
 fn canonical_document_links_resolve_inside_the_repository() {
     const CANONICAL_DOCUMENTS: &[&str] = &[
         "AGENTS.md",

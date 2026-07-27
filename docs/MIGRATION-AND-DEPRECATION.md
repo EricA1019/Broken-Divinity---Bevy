@@ -224,3 +224,127 @@ No procgen topology, raids, events, sanity, overworld generation, faction
 reputation, Product P2 automation, queues, upgrades, or depletion balance was
 activated. C0–C7 implementation and C8 PTY behavior are green. Formal visual
 acceptance remains pending owner review under D-19.
+
+## D-22 direct-gather test replacement — 2026-07-27
+
+The owner-approved turn-based direct-gather contract replaces three
+day-boundary assumptions:
+
+- `colony_day_cycle::gathering_applies_once_per_day`;
+- `survivor_work_contract::adjacent_matching_gatherer_produces_once`;
+- `survivor_work_contract::zero_supply_recovery_remains_reachable_with_physical_gathering`.
+
+They were removed because their expected one-tick/day-boundary credit directly
+contradicts D-22. Replacement evidence is
+`COLONY-DIRECT-GATHER-001`, `COLONY-DIRECT-GATHER-002`, and the supporting
+three-tick zero-Supplies recovery case. En-route and wrong-source physical
+range tests remain valid and were retained.
+
+## Test reliability migration — 2026-07-27
+
+This pass removed tests that manufactured their own result, asserted a string
+assembled inside the test, relied only on entity counts, used prohibited
+wall-clock correctness, or contradicted D-22. No production behavior was
+changed.
+
+| Retired test | Insufficient proof | Replacement evidence | Validation |
+|---|---|---|---|
+| `integration_diagnostic::diagnose_title_to_outpost_state` | Ignored state dump with no acceptance assertion; source explicitly said not to commit it | `foundation_scenario::clean_launch_reaches_colony` and current PTY evidence | Green / manual evidence recorded |
+| `legacy_fixture_run_can_start` | Catalog existence only; no run started | factory spawn units and Foundation content validation | Green |
+| `invalid_direct_mutation_player_can_kill_enemy` | Test set enemy Health to zero itself | canonical combat/action contracts | Green |
+| `invalid_direct_mutation_enemy_can_kill_player` | Test set player Health to zero itself | canonical defeat and exact-once cleanup contracts | Green |
+| `invalid_direct_mutation_player_can_pick_up_loot` | Test inserted `ContainedIn` itself | `foundation_actions::pickup_resolves_through_action_pipeline` | Green |
+| `legacy_fixture_debug_overlay_reads_only` | Never opened or rendered the debug overlay | No active Foundation contract; diagnostic claim retired | n/a |
+| `legacy_fixture_validator_catches_missing_reference` | Checked only that shipped defaults were nonempty | `bd_data` invalid-reference and required-ID validation tests | Green |
+| `legacy_fixture_panic_path_restores_terminal` | Constructed an empty `App`; installed no handler and observed no terminal | recorded real-terminal cleanup evidence | Manual evidence recorded |
+| `legacy_fixture_save_load_roundtrip` | Queried for any Pools and any matching position | normalized fingerprint persistence contracts | Green, with one newly exposed active-dungeon red case |
+| `legacy_terminal_first_keypress_in_outpost_is_move_not_build` | Permanently ignored and did not run in the gate | `INPUT-MOVE-001` plus PTY evidence | Green unreviewed |
+| `legacy_action_first_foundation_action_in_outpost_is_move_not_build` | Direct intent duplicated only part of the first-key defect | `INPUT-MOVE-001` production-key state diff | Green unreviewed |
+| `bd_test_support::tests::legacy_direct_mutation_round_trip_fixture_regression` | Manufactured carried loot and exit position, then used counts for continuity | canonical extraction, entity-scope, and fingerprint contracts | Green |
+| `prototype_fixed_seed_deterministic_run` | Combined unrelated procgen, blueprint, and tile assertions | focused `deferred_procgen_regressions` target and existing units | Green |
+| `synthetic_spawn_despawn_fixture_returns_to_baseline` | Proved only its hand-written spawn/despawn loop | `production_colony_dungeon_cycles_do_not_leak_scoped_entities` | Green |
+| `procgen_timing_is_reasonable` | Hardware-dependent wall-clock correctness assertion | Performance remains a reported non-acceptance metric | n/a |
+| `footer_shows_turn_counter` | Built its own footer string and searched that same string | rendered supported-profile/footer tests | Green |
+| `outpost_80x24_contains_required_tokens` | Substring-only single-profile evidence | supported panel geometry and input/help contracts | Green |
+| `build_menu_80x24_contains_required_tokens` | Substring-only single-profile evidence | build selection/placement tests at both profiles | Green |
+| `inventory_80x24_contains_required_tokens` | Substring-only single-profile evidence | combat/inventory layout test at both profiles | Green |
+| `compact_60x20_contains_required_control_tokens` | Broad token presence without ownership or geometry | compact footer and supported-panel contracts | Green |
+| `three_explicit_supplies_assignments_recover_the_action_threshold` | Could pass from legacy day-boundary gathering and did not prove three-tick work | `zero_supplies_recovers_after_three_worker_ticks_without_waiting_for_day_end` | Green |
+| `zero_supply_recovery_survives_save_load` | Saved immediately before a day boundary and could not distinguish persisted work from legacy daily credit | `partial_direct_gather_progress_survives_save_load_without_free_output` | Green |
+| `forecast_matches_adverse_gathering_matrix` | Required the obsolete combined day-gathering forecast | `next_day_forecast_excludes_direct_worker_tick_output` and `VISUAL-COLONY-WORK-003` | Green |
+
+The three deferred procgen regressions were moved intact in purpose but
+rewritten as one-rule tests under `deferred_procgen_regressions.rs`. The old
+`legacy_kernel_regressions.rs` target and ignored-test allowlist entries were
+removed. Repeated production save/load now compares the complete normalized
+fingerprint and deterministic next action instead of checking that at least
+one pooled entity exists.
+
+The stronger active-dungeon fingerprint test exposed a pre-existing restore
+drift: survivor activity changes from `Idle` to `Unresolved` in Tactical mode.
+`PERSIST-DUNGEON-001` owns that red result. It must not be weakened back to
+count-only evidence.
+
+## Explicit accepted-action frame migration — 2026-07-27
+
+The retired `expect_action` boundary advanced two frames for every accepted
+action: one action-result frame and one unconditional follow-up frame. That
+made Outpost tests receive an accidental scheduler tick and concealed whether
+Tactical workflows, transitions, or day boundaries genuinely required another
+frame.
+
+The migration changed test infrastructure and callers only:
+
+- all 93 existing call sites now use
+  `submit_action_and_advance_result_frame`, whose name and implementation
+  commit to exactly one update;
+- Tactical workflows request `advance_enemy_phase_frame` explicitly;
+- dungeon entry/extraction workflows request `advance_transition_frame`
+  explicitly;
+- tests that inspect a completed day transaction request
+  `advance_day_resolution_frame` explicitly;
+- a harness characterization proves the hostile remains unchanged after the
+  action-result frame and responds only after the explicit enemy-phase frame;
+- a repository-governance test prevents the retired helper from returning.
+
+The migration initially exposed seven day-transaction tests, four Tactical
+workflows, and two direct dungeon-entry tests that had depended on the hidden
+follow-up frame. Each caller now states the required frame purpose. No
+production gameplay behavior was changed.
+
+Validation after migration:
+
+- zero `expect_action` definitions or call sites;
+- 603 tests listed;
+- 588 passed, 15 failed, 0 ignored with `--no-fail-fast`;
+- the 15 failures are unchanged required evidence: eight direct-gather
+  contracts, five colony presentation/input contracts, one forecast contract,
+  and one active-Tactical persistence contract;
+- `bd_test_support` passes 37/37, including explicit-frame characterization
+  and governance;
+- formatting passes.
+
+## D-22 direct-gather and Tactical restore resolution — 2026-07-27
+
+The red contracts exposed by the reliability migration were repaired at their
+production boundaries:
+
+- direct gathering now loads source, finished pool, amount, and work duration
+  from Foundation content;
+- accepted Outpost worker ticks own three-step progress and exactly-once
+  output, while movement, arrival, rendering, Tactical frames, save/load, and
+  day boundaries grant no work;
+- reassignment clears partial work and persistence restores it without free
+  output;
+- the legacy day-boundary direct-gather credit and forecast contribution were
+  removed;
+- colony projection now exposes human task/resource labels, source, progress,
+  result, blocked reason, raw stockpile, and separate next-worker/next-day
+  information;
+- Tactical restore recomputes durable survivor activity without advancing
+  movement or production.
+
+Validation: the locked workspace suite lists 603 tests and passes 603 with
+zero failures and zero ignored tests. The D-22 and `PERSIST-DUNGEON-001`
+registry records are `GreenUnreviewed`; visual rows remain unaccepted until
+their open style and real-PTY evidence is reviewed.

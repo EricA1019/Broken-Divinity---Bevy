@@ -106,6 +106,8 @@ pub struct EntityData {
     pub logistics_job: Option<crate::colony::logistics::LogisticsJob>,
     #[serde(default)]
     pub cargo: Option<crate::colony::logistics::Cargo>,
+    #[serde(default)]
+    pub direct_gather_progress: Option<crate::colony::resources::DirectGatherProgress>,
     pub exit_tile: bool,
 }
 
@@ -494,6 +496,10 @@ fn build_snapshot(world: &mut World, seed: u64, turn: u64) -> RunSnapshot {
                 .entity(entity)
                 .get::<crate::colony::logistics::Cargo>()
                 .cloned(),
+            direct_gather_progress: world
+                .entity(entity)
+                .get::<crate::colony::resources::DirectGatherProgress>()
+                .cloned(),
             exit_tile: world.entity(entity).contains::<ExitTile>(),
         };
 
@@ -763,6 +769,9 @@ pub fn restore_snapshot_into(
         }
         if let Some(cargo) = ed.cargo.clone() {
             world.entity_mut(entity).insert(cargo);
+        }
+        if let Some(progress) = ed.direct_gather_progress.clone() {
+            world.entity_mut(entity).insert(progress);
         }
         if ed.exit_tile {
             world.entity_mut(entity).insert(ExitTile);
@@ -1044,6 +1053,7 @@ mod tests {
             resource_node: None,
             logistics_job: None,
             cargo: None,
+            direct_gather_progress: None,
             exit_tile: false,
         });
 

@@ -1323,6 +1323,7 @@ pub(crate) fn resolve_action_effects(
                             crate::colony::logistics::LogisticsJob,
                             crate::colony::logistics::Cargo,
                             crate::colony::stations::AutoConstructing,
+                            crate::colony::resources::DirectGatherProgress,
                         )>();
                         if player_flag.is_some() {
                             game_log.push(

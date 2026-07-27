@@ -24,7 +24,7 @@ fn dungeon_driver() -> FoundationDriver {
 fn build_and_assign(driver: &mut FoundationDriver) {
     let player = driver.player().unwrap();
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "persistence fixture: build",
             player,
             "ability.build",
@@ -36,7 +36,9 @@ fn build_and_assign(driver: &mut FoundationDriver) {
         .station_by_type(bd_core::colony::stations::StationType::Stove)
         .unwrap();
     driver.fixture_complete_construction(station);
-    let survivor = driver.first_survivor().unwrap();
+    let survivor = driver
+        .survivor_by_name("Survivor 1")
+        .expect("stable assigned survivor must exist");
     driver.fixture_assign_station(survivor, station).unwrap();
 }
 
@@ -48,15 +50,15 @@ fn temp_save_dir(label: &str) -> PathBuf {
 fn save_load_colony_preserves_survivors_stations_and_assignments() {
     let mut driver = colony_driver();
     build_and_assign(&mut driver);
-    let before = driver.summary();
+    let before = driver.fingerprint();
     let checkpoint = driver.checkpoint().unwrap();
     driver.restore_checkpoint(&checkpoint).unwrap();
-    let after = driver.summary();
+    let after = driver.fingerprint();
 
-    assert_eq!(after.survivors, before.survivors);
-    assert_eq!(after.stations, before.stations);
-    assert_eq!(after.assigned_survivors, before.assigned_survivors);
-    assert_eq!(after.resource_nodes, before.resource_nodes);
+    assert_eq!(
+        after, before,
+        "colony save/load must preserve the complete durable fingerprint"
+    );
 }
 
 #[test]
@@ -65,7 +67,7 @@ fn station_catalog_identity_survives_save_load() {
     driver.fixture_select_station(StationType::Workshop);
     let player = driver.player().unwrap();
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "build Workshop identity fixture",
             player,
             "ability.build",
@@ -84,17 +86,17 @@ fn station_catalog_identity_survives_save_load() {
 }
 
 #[test]
-fn save_load_dungeon_preserves_player_enemy_item_and_scope() {
+fn save_load_active_dungeon_preserves_foundation_fingerprint_and_scope_counts() {
     let mut driver = dungeon_driver();
-    let before = driver.summary();
+    let before = driver.fingerprint();
     let checkpoint = driver.checkpoint().unwrap();
     driver.restore_checkpoint(&checkpoint).unwrap();
-    let after = driver.summary();
+    let after = driver.fingerprint();
 
-    assert_eq!(after.player_position, before.player_position);
-    assert_eq!(after.player_health, before.player_health);
-    assert_eq!(after.hostiles, 1);
-    assert_eq!(after.loose_items, 1);
+    assert_eq!(
+        after, before,
+        "active-dungeon save/load must preserve the complete durable fingerprint"
+    );
     assert_eq!(driver.scope_count(EntityScope::RunPersistent), 1);
     assert_eq!(driver.scope_count(EntityScope::DungeonTransient), 3);
 }
@@ -183,7 +185,13 @@ fn manual_slot_replaces_atomically() {
     let first = driver.save_manual_slot(&save_dir).unwrap();
     let player = driver.player().unwrap();
     driver
-        .expect_action("manual slot: advance", player, "ability.wait", None, None)
+        .submit_action_and_advance_result_frame(
+            "manual slot: advance",
+            player,
+            "ability.wait",
+            None,
+            None,
+        )
         .unwrap();
     let second = driver.save_manual_slot(&save_dir).unwrap();
 
@@ -202,12 +210,18 @@ fn latest_state_does_not_depend_on_turn_within_day() {
     let player = driver.player().unwrap();
     for _ in 0..23 {
         driver
-            .expect_action("day boundary", player, "ability.wait", None, None)
+            .submit_action_and_advance_result_frame(
+                "day boundary",
+                player,
+                "ability.wait",
+                None,
+                None,
+            )
             .unwrap();
     }
     driver.save_manual_slot(&save_dir).unwrap();
     driver
-        .expect_action("day boundary", player, "ability.wait", None, None)
+        .submit_action_and_advance_result_frame("day boundary", player, "ability.wait", None, None)
         .unwrap();
     driver.save_manual_slot(&save_dir).unwrap();
 
@@ -248,7 +262,7 @@ fn same_snapshot_and_actions_match_after_process_restart() {
     let mut right = FoundationDriver::from_checkpoint(&checkpoint).unwrap();
     let left_player = left.player().unwrap();
     let right_player = right.player().unwrap();
-    left.expect_action(
+    left.submit_action_and_advance_result_frame(
         "restart determinism",
         left_player,
         "ability.move",
@@ -257,7 +271,7 @@ fn same_snapshot_and_actions_match_after_process_restart() {
     )
     .unwrap();
     right
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "restart determinism",
             right_player,
             "ability.move",
@@ -266,7 +280,11 @@ fn same_snapshot_and_actions_match_after_process_restart() {
         )
         .unwrap();
 
-    assert_eq!(left.summary(), right.summary());
+    assert_eq!(
+        left.fingerprint(),
+        right.fingerprint(),
+        "identical restored actions must produce identical durable state"
+    );
 }
 
 #[test]

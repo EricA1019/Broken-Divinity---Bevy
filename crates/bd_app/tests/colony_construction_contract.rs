@@ -15,7 +15,7 @@ fn accepted_build_is_a_paid_non_operational_construction_site() {
     let mut driver = colony_driver();
     let player = driver.player().unwrap();
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "place Stove construction site",
             player,
             "ability.build",
@@ -40,9 +40,11 @@ fn accepted_build_is_a_paid_non_operational_construction_site() {
 fn idle_survivors_travel_to_and_complete_construction_without_stealing_assigned_workers() {
     let mut driver = colony_driver();
     let player = driver.player().unwrap();
-    let protected = driver.survivors()[0];
+    let protected = driver
+        .survivor_by_name("Survivor 1")
+        .expect("stable protected survivor must exist");
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "assign protected survivor to defense",
             player,
             "ability.assign_defending",
@@ -51,7 +53,7 @@ fn idle_survivors_travel_to_and_complete_construction_without_stealing_assigned_
         )
         .unwrap();
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "place Stove construction site",
             player,
             "ability.build",
@@ -75,7 +77,7 @@ fn idle_survivors_travel_to_and_complete_construction_without_stealing_assigned_
             break;
         }
         driver
-            .expect_action(
+            .submit_action_and_advance_result_frame(
                 &format!("construction worker turn {turn}"),
                 player,
                 "ability.wait",
@@ -104,7 +106,7 @@ fn render_frames_and_save_load_do_not_grant_construction_work() {
     let mut driver = colony_driver();
     let player = driver.player().unwrap();
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "place persisted construction site",
             player,
             "ability.build",

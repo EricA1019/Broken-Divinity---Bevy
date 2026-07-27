@@ -67,7 +67,7 @@ green while remaining ineligible to close a Foundation contract.
 | `bd_app` main/config/application units | 22 | Contract | Startup/config/persistence adapters | Temporary config/save roots | Partial | Does not exercise full terminal lifecycle | Partial |
 | `bd_core` units | 199 | Contract/Regression/Deferred | Pure rules and individual systems | Frequent direct ECS/value setup | No | Includes deferred procgen, sanity, overworld, events; cannot prove integrated player outcomes | Partial by named rule only |
 | `bd_data` units | 24 | Contract | Loader/registry/validation | Content fixtures | No | Does not prove projected presentation | Partial |
-| `bd_test_support` units and registry integration | 30 | Contract/Legacy | Test harness around Foundation app plus contract-governance boundary | Harness-owned state and RON metadata fixtures | No | Existing action helper settles frames implicitly; one legacy direct-mutation test | Registry validation passes; gameplay harness remains open |
+| `bd_test_support` units and registry integration | 37 | Contract | Test harness around Foundation app plus contract-governance boundary | Harness-owned state and RON metadata fixtures | No | Accepted-action result and Tactical enemy frames are explicit; remaining helper boundaries require their own audits | Registry validation and explicit-frame characterization pass |
 | `bd_tui` units | 59 | Contract/Regression | Production render/view-model functions and `TestBackend` | Controlled app/render state | Partial | Full style/layer/stale-cell snapshot matrix remains open | Partial |
 
 ## Required remediation ledger
@@ -451,3 +451,134 @@ A clean isolated 80x24 real-terminal run confirmed:
 - ordinary paced input produced no bounded-input warning or malformed frame.
 
 The new construction visual remains `GreenUnreviewed` pending owner review.
+
+## Direct gathering coherence red baseline
+
+Authority: GDD Minimum Colony Foundation and D-22.
+
+The test-first baseline adds eleven discrete required contracts without changing
+production behavior:
+
+- content ownership for source, output, amount, and work duration;
+- exact three-tick completion and one-credit semantics;
+- removal of legacy day-boundary direct-gather output;
+- render/Tactical isolation and Rest equivalence;
+- partial-progress persistence and reassignment reset;
+- paused input workflow with source and progress;
+- human recipe/resource labels;
+- separately named worker completion and day upkeep;
+- visible human-labelled raw stockpiles;
+- blocked direct gathering with a named target and actionable reason.
+
+Focused red execution:
+
+- `colony_direct_gather_contract`: 9 listed; 1 passed and 8 failed. Rest versus
+  equivalent individual turns is the one green characterization.
+- `phase6_input`: 36 listed; 31 passed and 5 failed. The failures precisely
+  identify missing direct-gather progress, leaked resource IDs, the ambiguous
+  forecast, the absent raw-stockpile projection, and missing blocked-work
+  feedback.
+- `bd_tui --lib`: 63 passed, 0 failed. Synthetic projection evidence proves
+  the required progress, stockpile, and split-forecast information fits both
+  supported terminal profiles once the application supplies it.
+- Existing construction override, production route, input isolation, and
+  compact-layout tests remain green.
+- Canonical gate inventory: 622 tests listed. Formatting, compilation,
+  contract-registry validation, ignored-test allowlist validation, strict
+  Clippy, content validation, and whitespace validation pass. Workspace tests
+  stop at the intentional direct-gather red target (1 passed, 8 failed), so
+  outcome-count and contract-metric checks also fail by design until
+  implementation turns the required contracts green.
+
+These contracts must remain `Red` until implementation satisfies the stated
+outcomes. Test deletion, weakening, reclassification, or day-boundary
+expectation changes are not valid fixes.
+
+## Legacy test reliability migration — 2026-07-27
+
+The owner-authorized reliability pass removed 23 tests whose assertions were
+manufactured, tautological, count-only duplicates, ignored diagnostics,
+single-profile substring duplicates, or prohibited wall-clock checks. Three
+deferred procgen rules were moved into focused tests, and repeated persistence
+stress was rewritten around the normalized fingerprint and deterministic next
+action.
+
+Current generated inventory and workspace result after the explicit-frame
+migration:
+
+- 603 tests listed;
+- 588 passed, 15 failed, 0 ignored;
+- the only failing targets are `colony_direct_gather_contract` (8),
+  `phase6_input` (5), `mvp_correction` (1), and `persistence` (1);
+- all direct-gather and projection failures remain intentional D-22 red
+  evidence;
+- the `mvp_correction` failure proves the legacy next-day forecast still
+  credits direct worker output;
+- the strengthened persistence failure proves an active Tactical restore
+  changes survivor activity from `Idle` to `Unresolved`.
+
+Quality metrics after migration:
+
+- zero `first_survivor` or `first_station` selectors remain;
+- zero ignored tests remain;
+- zero wall-clock functional assertions remain in `bd_app` integration tests;
+- the committed diagnostic and manufactured direct-mutation targets are gone;
+- TUI `contains` calls fell from 52 to 43 after removing superseded
+  single-profile token checks;
+- `INPUT-MOVE-001` passes through the production physical-key path and proves
+  the first Outpost movement key cannot open or create Build state;
+- 59 required contracts are registered, including the newly red
+  `PERSIST-DUNGEON-001`.
+- zero `expect_action` definitions or call sites remain;
+- all 93 former call sites now name their one action-result frame, while
+  Tactical enemy responses, mode transitions, and day resolution use separate
+  purpose-specific frame calls.
+
+Canonical gate result after the explicit-frame rerun: 8 steps pass and 3 fail.
+Formatting, compile-all, registry validation, the now-empty ignored allowlist,
+603-test inventory,
+strict Clippy, content validation, and whitespace pass. Workspace execution
+stops at the first intentional red target, so the outcome-count and contract
+metrics steps also fail from the partial 46 observed outcomes. The separate
+`--no-fail-fast` workspace run is the authoritative 588/15/0 result.
+
+The detailed old-proof, replacement, and validation record is in
+`docs/MIGRATION-AND-DEPRECATION.md`. The accepted-action frame-control
+migration is complete. Denial, buffered-input, and higher-level transition
+helpers are outside that 93-call migration and remain subject to the general
+hidden-update audit rather than being silently declared complete.
+
+## D-22 implementation and regression closure — 2026-07-27
+
+Authority: GDD Minimum colony foundation and D-22.
+
+The implementation closed all 15 failures exposed by the explicit-frame
+migration without deleting, ignoring, or weakening their replacement
+contracts:
+
+- data-defined direct-gather source, output, amount, and three-turn duration;
+- exactly-once direct output on accepted Outpost worker ticks;
+- no movement/arrival, render, Tactical, persistence, or day-boundary work;
+- Rest equivalence, reassignment reset, and partial-progress persistence;
+- no legacy direct-gather contribution in next-day forecasting;
+- human colony work labels, source/progress/result/blocked feedback, visible
+  raw stockpiles, and separate next-worker/next-day projections;
+- stable survivor activity across active-Tactical save/load.
+
+Validation:
+
+- focused `colony_direct_gather_contract`: 9 passed;
+- focused `phase6_input`: 37 passed;
+- neighboring `mvp_correction`: 17 passed;
+- neighboring `persistence`: 13 passed;
+- neighboring `survivor_work_contract`: 22 passed;
+- neighboring `colony_day_cycle`: 12 passed;
+- neighboring `colony_production_route_contract`: 18 passed;
+- `bd_core --lib`: 200 passed;
+- `bd_data --lib`: 32 passed;
+- `bd_tui --lib`: 58 passed;
+- locked workspace inventory: 603 listed, 603 passed, 0 failed, 0 ignored.
+
+All 59 required registry contracts are now automated-green and recorded as
+`GreenUnreviewed`. Visual contracts are not `Accepted`: unresolved style and
+real-PTY cells remain open in `testing/VISUAL-ACCEPTANCE-MATRIX.md`.

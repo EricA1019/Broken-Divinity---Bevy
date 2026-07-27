@@ -340,3 +340,32 @@ system.
 
 This is Foundation worker scheduling, not a general priority, hauling,
 blueprint, stockpile, or construction-queue system.
+
+## D-22 — Direct gathering work coherence — LOCKED
+
+**Decision:**
+
+- `c` remains the owner of non-station survivor tasks, including direct
+  Supplies, Materials, and Wild Plants gathering;
+- each direct gathering definition owns a stable source identity, finished
+  colony pool, positive output amount, and positive work-turn requirement;
+- Foundation direct gathering requires three adjacent work turns and produces
+  one configured resource; movement and arrival produce nothing;
+- rendering, paused UI, blocked time, Tactical turns, save, and load produce
+  no gathering work;
+- a crossed day boundary does not credit legacy direct-gather output; Rest
+  replays the same worker ticks as equivalent individual Outpost turns;
+- partial direct-gather progress survives save/load and is cleared without
+  output when the survivor is reassigned;
+- direct gathering remains the station-independent emergency recovery path;
+  recipe work remains the source-to-cargo-to-station refining path and the two
+  paths never credit the same operation;
+- survivor and management presentation uses human labels and exposes source,
+  progress, configured result, and blocked reason without internal content
+  IDs;
+- the colony projection distinguishes next worker completion from next-day
+  upkeep and exposes nonzero raw stockpiles separately from finished pools.
+
+This decision improves Foundation work coherence and feedback. It does not
+authorize queues, priorities, hauling, upgrades, depletion, raids, events, or
+Product P2 automation.

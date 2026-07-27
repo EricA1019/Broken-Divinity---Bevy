@@ -118,7 +118,7 @@ fn canonical_colony_setup_uses_actions() {
         .expect("colony setup step: a player actor must exist in the shelter");
 
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "colony setup: build station",
             player,
             "ability.build",
@@ -131,8 +131,8 @@ fn canonical_colony_setup_uses_actions() {
         .expect("colony setup step: build action must create a Stove");
     driver.fixture_complete_construction(station);
     let survivor = driver
-        .first_survivor()
-        .expect("colony setup step: starter survivor must exist");
+        .survivor_by_name("Survivor 1")
+        .expect("colony setup step: named starter survivor must exist");
 
     driver
         .expect_station_assignment_action(
@@ -155,7 +155,7 @@ fn canonical_dungeon_run_uses_actions() {
         .expect("fixed dungeon must contain its hostile encounter");
 
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "dungeon run: explore",
             player,
             "ability.move",
@@ -163,6 +163,7 @@ fn canonical_dungeon_run_uses_actions() {
             None,
         )
         .unwrap();
+    driver.advance_enemy_phase_frame();
     driver
         .approach_and_defeat("dungeon run: defeat hostile", hostile)
         .unwrap();
@@ -274,7 +275,7 @@ fn canonical_progression_emits_two_virtues() {
 #[test]
 fn canonical_colony_state_survives_round_trip() {
     let mut driver = colony_driver();
-    let before = driver.summary();
+    let before = driver.fingerprint();
 
     driver
         .enter_dungeon(FIXED_DUNGEON)
@@ -283,26 +284,28 @@ fn canonical_colony_state_survives_round_trip() {
         .return_to_colony("round trip: dungeon → colony")
         .unwrap();
 
-    let after = driver.summary();
+    let after = driver.fingerprint();
     assert_eq!(after.survivors, before.survivors);
     assert_eq!(after.stations, before.stations);
     assert_eq!(after.resource_nodes, before.resource_nodes);
+    assert_eq!(after.colony_storage, before.colony_storage);
 }
 
 #[test]
 fn canonical_save_load_resumes_state() {
     let mut driver = colony_driver();
-    let before = driver.summary();
+    let before = driver.fingerprint();
     let checkpoint = driver.checkpoint().expect("save must produce a checkpoint");
 
     driver
         .restore_checkpoint(&checkpoint)
         .expect("load must restore the production app");
 
-    let after = driver.summary();
-    assert_eq!(after.mode, before.mode);
-    assert_eq!(after.survivors, before.survivors);
-    assert_eq!(after.resource_nodes, before.resource_nodes);
+    let after = driver.fingerprint();
+    assert_eq!(
+        after, before,
+        "canonical save/load must preserve the complete durable fingerprint"
+    );
 }
 
 #[test]
@@ -316,7 +319,7 @@ fn same_snapshot_and_actions_match() {
 
     let left_player = left.player().expect("left player must restore");
     let right_player = right.player().expect("right player must restore");
-    left.expect_action(
+    left.submit_action_and_advance_result_frame(
         "determinism: left move",
         left_player,
         "ability.move",
@@ -325,7 +328,7 @@ fn same_snapshot_and_actions_match() {
     )
     .unwrap();
     right
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "determinism: right move",
             right_player,
             "ability.move",
@@ -334,5 +337,9 @@ fn same_snapshot_and_actions_match() {
         )
         .unwrap();
 
-    assert_eq!(left.summary(), right.summary());
+    assert_eq!(
+        left.fingerprint(),
+        right.fingerprint(),
+        "identical snapshots and actions must produce identical durable state"
+    );
 }

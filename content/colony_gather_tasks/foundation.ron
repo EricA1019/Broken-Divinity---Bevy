@@ -1,0 +1,23 @@
+[
+    (
+        id: "gather.supplies",
+        source_id: "source.water",
+        output_pool: Supplies,
+        output_amount: 1,
+        work_turns: 3,
+    ),
+    (
+        id: "gather.materials",
+        source_id: "source.trees",
+        output_pool: Materials,
+        output_amount: 1,
+        work_turns: 3,
+    ),
+    (
+        id: "gather.wild_plants",
+        source_id: "source.wild_plants",
+        output_pool: WildPlants,
+        output_amount: 1,
+        work_turns: 3,
+    ),
+]

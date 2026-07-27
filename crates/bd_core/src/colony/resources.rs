@@ -6,6 +6,7 @@
 use std::collections::HashSet;
 
 use bevy_ecs::prelude::*;
+use serde::{Deserialize, Serialize};
 
 use crate::components::{
     BlocksMovement, ContentIdentity, Name, Position, ResourceNode, ResourceNodeType,
@@ -15,18 +16,28 @@ use crate::map::SmokeMap;
 use crate::pathfinding::{AStarPathfinder, Pathfinder};
 use crate::signals::PoolKind;
 
-// ── Constants ──
-
-/// Legacy non-recipe gathering yield retained only for explicitly assigned
-/// `SurvivorTask::Gathering` workers.
-pub const GATHERING_YIELD_PER_DAY: i32 = 1;
-
 pub fn pool_for_node(kind: ResourceNodeType) -> PoolKind {
     match kind {
         ResourceNodeType::Trees => PoolKind::Materials,
         ResourceNodeType::WaterSource => PoolKind::Supplies,
         ResourceNodeType::WildPlants => PoolKind::WildPlants,
     }
+}
+
+#[derive(Component, Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DirectGatherProgress {
+    pub definition_id: String,
+    pub work_completed: u32,
+}
+
+pub fn direct_gather_definition(
+    content: &crate::content::FoundationContent,
+    output_pool: PoolKind,
+) -> Option<&crate::content::DirectGatherDefinition> {
+    content
+        .colony_gather_tasks
+        .iter()
+        .find(|definition| definition.output_pool == output_pool)
 }
 
 // ── Spawning ──
@@ -202,84 +213,6 @@ pub fn spawn_resource_nodes(commands: &mut Commands, placements: &[ResourceNodeP
         ));
     }
     u32::try_from(placements.len()).unwrap_or(u32::MAX)
-}
-
-// ── Gathering system ──
-
-/// Process gathering at day change: survivors with Gathering task near resource
-/// nodes produce resources into ColonyResources.
-#[allow(clippy::type_complexity)]
-pub(crate) fn process_survivor_gathering(
-    survivors: Query<
-        (
-            &Position,
-            &crate::colony::survivors::SurvivorTask,
-            Option<&Name>,
-        ),
-        (
-            With<crate::colony::survivors::Survivor>,
-            Without<crate::colony::logistics::LogisticsJob>,
-        ),
-    >,
-    nodes: Query<(&Position, &ResourceNode)>,
-    mut colony_res: ResMut<crate::colony::production::ColonyResources>,
-    mut days: bevy_ecs::message::MessageReader<crate::time::DayAdvanced>,
-    mut game_log: ResMut<crate::gamelog::GameLog>,
-    mut draft: ResMut<crate::colony::production::DailyCycleDraft>,
-) {
-    if days.read().next().is_none() {
-        return;
-    }
-
-    let node_snapshots = nodes
-        .iter()
-        .map(
-            |(position, node)| crate::colony::production::ResourceWorkSnapshot {
-                kind: node.kind,
-                position: *position,
-                depleted: node.depleted,
-            },
-        )
-        .collect::<Vec<_>>();
-
-    for (pos, task, name) in &survivors {
-        let worker = crate::colony::production::SurvivorWorkSnapshot {
-            task: task.clone(),
-            position: *pos,
-        };
-        let crate::colony::production::PhysicalWorkEvaluation::Contributes(
-            crate::colony::production::PhysicalWorkContribution::Resource(node),
-        ) = crate::colony::production::evaluate_physical_work(&worker, &[], &node_snapshots)
-        else {
-            continue;
-        };
-
-        let pool_kind = pool_for_node(node.kind);
-        let gathered = if let Some(pool) = colony_res.pools.get_mut(pool_kind) {
-            let before = pool.current;
-            pool.current = (pool.current + GATHERING_YIELD_PER_DAY).min(pool.max);
-            pool.current - before
-        } else {
-            0
-        };
-        if let Some(summary) = draft.0.as_mut() {
-            summary.gathering_units += 1;
-            match pool_kind {
-                PoolKind::Supplies => summary.gathered_supplies += gathered,
-                PoolKind::Materials => summary.gathered_materials += gathered,
-                PoolKind::WildPlants => summary.gathered_wild_plants += gathered,
-                _ => {}
-            }
-        }
-        let survivor_name = name.map_or("A survivor", |n| n.0.as_str());
-        game_log.push(
-            format!(
-                "{} gathered 1 {:?} from {:?}.",
-                survivor_name, pool_kind, node.kind
-            ),
-            crate::gamelog::LogLevel::Info,
-        );
-    }
 }
 
 #[cfg(test)]

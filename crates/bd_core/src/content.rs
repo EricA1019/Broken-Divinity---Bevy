@@ -112,6 +112,15 @@ pub struct ColonyRecipeDefinition {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DirectGatherDefinition {
+    pub id: String,
+    pub source_id: String,
+    pub output_pool: PoolKind,
+    pub output_amount: u32,
+    pub work_turns: u32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ColonyPlacementProfile {
     pub id: String,
     pub minimum_manhattan_spacing: u32,
@@ -131,6 +140,7 @@ pub struct FoundationContent {
     pub colony_resources: Vec<ColonyResourceDefinition>,
     pub colony_sources: Vec<ColonySourceDefinition>,
     pub colony_recipes: Vec<ColonyRecipeDefinition>,
+    pub colony_gather_tasks: Vec<DirectGatherDefinition>,
     pub colony_placement_profiles: Vec<ColonyPlacementProfile>,
 }
 

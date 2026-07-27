@@ -301,6 +301,13 @@ required and the amount produced when that work completes; partial work never
 creates partial resources. For the Foundation balance profile, gathering takes
 three work turns and refining takes two work turns.
 
+The simple survivor gathering tasks use the same readable worker-tick
+language. A survivor travels to the matching source, arrival grants nothing,
+and three later adjacent work turns produce one configured colony resource.
+Day advancement does not grant a second legacy gathering result. This direct
+path preserves emergency recovery without requiring a processing station;
+station-backed recipes remain the separate gather-carry-refine path.
+
 Placing a buildable station creates a paid construction site rather than an
 immediately usable station. Station data defines its positive construction
 work requirement; the Foundation profile uses four work turns. Genuinely idle

@@ -1,14 +1,17 @@
+use std::collections::HashSet;
+
 use bd_core::{
     colony::{
         production::ColonyResources,
         stations::{BuildInteraction, Station, StationType},
         survivors::{Survivor, SurvivorTask},
     },
-    components::{Name, Player, Position, ResourceNode, ResourceNodeType},
+    components::{Name, Player, Position, ResourceNode, ResourceNodeType, Tile},
     direction::Direction,
+    map::SmokeMap,
     session::RunSession,
     signals::{ActionIntent, PoolKind},
-    spatial::{FOUNDATION_DUNGEON_ID, GameMode, TransitionIntent},
+    spatial::{FOUNDATION_DUNGEON_ID, GameMode, OutpostState, TransitionIntent},
 };
 use bd_test_support::foundation_content;
 use bevy_app::App;
@@ -43,15 +46,15 @@ fn survivor_tasks(app: &mut App) -> Vec<bd_core::colony::survivors::SurvivorTask
         .world_mut()
         .query_filtered::<
             (
-                Entity,
+                &Name,
                 &bd_core::colony::survivors::SurvivorTask,
             ),
             bevy_ecs::query::With<bd_core::colony::survivors::Survivor>,
         >()
         .iter(app.world())
-        .map(|(entity, task)| (entity.to_bits(), task.clone()))
+        .map(|(name, task)| (name.0.clone(), task.clone()))
         .collect::<Vec<_>>();
-    survivors.sort_by_key(|(bits, _)| *bits);
+    survivors.sort_by(|left, right| left.0.cmp(&right.0));
     survivors.into_iter().map(|(_, task)| task).collect()
 }
 
@@ -218,6 +221,77 @@ fn resource_map_glyph(app: &mut App, expected_kind: ResourceNodeType) -> char {
         .glyph
 }
 
+fn place_named_survivor_at_resource_work_tile(
+    app: &mut App,
+    survivor_name: &str,
+    expected_kind: ResourceNodeType,
+) -> Entity {
+    let survivor = named_survivor(app, survivor_name);
+    let nodes = app
+        .world_mut()
+        .query::<(&Position, &ResourceNode)>()
+        .iter(app.world())
+        .map(|(position, node)| (*position, node.kind))
+        .collect::<Vec<_>>();
+    let target = nodes
+        .iter()
+        .find_map(|(position, kind)| (*kind == expected_kind).then_some(*position))
+        .unwrap_or_else(|| panic!("fixture requires {expected_kind:?}"));
+    let mut occupied = nodes
+        .iter()
+        .map(|(position, _)| *position)
+        .collect::<HashSet<_>>();
+    let survivor_positions = app
+        .world_mut()
+        .query_filtered::<(Entity, &Position), With<Survivor>>()
+        .iter(app.world())
+        .map(|(entity, position)| (entity, *position))
+        .collect::<Vec<_>>();
+    occupied.extend(
+        survivor_positions
+            .iter()
+            .filter_map(|(entity, position)| (*entity != survivor).then_some(*position)),
+    );
+    let station_positions = app
+        .world_mut()
+        .query_filtered::<&Position, With<Station>>()
+        .iter(app.world())
+        .copied()
+        .collect::<Vec<_>>();
+    occupied.extend(station_positions);
+    let player_position = {
+        let player = player(app);
+        *app.world()
+            .get::<Position>(player)
+            .expect("player must have a position")
+    };
+    occupied.insert(player_position);
+    let map = &app.world().resource::<OutpostState>().map;
+    let work_position = [
+        Position {
+            x: target.x,
+            y: target.y - 1,
+        },
+        Position {
+            x: target.x,
+            y: target.y + 1,
+        },
+        Position {
+            x: target.x - 1,
+            y: target.y,
+        },
+        Position {
+            x: target.x + 1,
+            y: target.y,
+        },
+    ]
+    .into_iter()
+    .find(|candidate| map.is_walkable(candidate.x, candidate.y) && !occupied.contains(candidate))
+    .unwrap_or_else(|| panic!("{expected_kind:?} requires a free cardinal work tile"));
+    app.world_mut().entity_mut(survivor).insert(work_position);
+    survivor
+}
+
 fn send_keys(app: &mut App, keys: &[KeyCode]) {
     let mut messages = app.world_mut().resource_mut::<Messages<KeyMessage>>();
     for key in keys {
@@ -246,6 +320,48 @@ fn action_ids(app: &App) -> Vec<String> {
         .iter()
         .map(|record| record.action_id.clone())
         .collect()
+}
+
+#[test]
+fn first_outpost_move_key_moves_once_without_opening_or_creating_build_state() {
+    let mut app = outpost_runtime();
+    let actor = player(&mut app);
+    let before_position = *app
+        .world()
+        .get::<Position>(actor)
+        .expect("Foundation player position must exist");
+    let stations_before = station_count(&mut app);
+    let turn_before = app.world().resource::<bd_core::time::GameTime>().turn;
+
+    send_physical_key(&mut app, KeyCode::Char('d'));
+    app.update();
+    app.update();
+
+    assert_eq!(
+        app.world().get::<Position>(actor),
+        Some(&Position {
+            x: before_position.x + 1,
+            y: before_position.y,
+        }),
+        "contract=INPUT-MOVE-001 step=first-outpost-key expected=one eastward move"
+    );
+    assert_eq!(
+        station_count(&mut app),
+        stations_before,
+        "contract=INPUT-MOVE-001 first movement key created a station"
+    );
+    assert!(
+        matches!(
+            app.world().resource::<BuildInteraction>(),
+            BuildInteraction::Inactive
+        ),
+        "contract=INPUT-MOVE-001 first movement key opened Build interaction"
+    );
+    assert_eq!(
+        app.world().resource::<bd_core::time::GameTime>().turn,
+        turn_before + 1,
+        "contract=INPUT-MOVE-001 first movement key must advance exactly one turn"
+    );
 }
 
 #[test]
@@ -689,6 +805,228 @@ fn task_management_lists_survivor_tasks_not_station_staffing_choices() {
 }
 
 #[test]
+fn direct_gather_assignment_projects_source_and_three_tick_progress() {
+    let mut app = outpost_runtime();
+    place_named_survivor_at_resource_work_tile(
+        &mut app,
+        "Survivor 1",
+        ResourceNodeType::WaterSource,
+    );
+
+    send_physical_key(&mut app, KeyCode::Char('c'));
+    app.update();
+    let survivor_key = named_survivor_menu_key(&app, "Survivor 1");
+    send_physical_key(&mut app, survivor_key);
+    app.update();
+    let gather_key = management_choice_key(&app, "Gather Supplies");
+    send_physical_key(&mut app, gather_key);
+    app.update();
+    send_physical_key(&mut app, KeyCode::Enter);
+    app.update();
+    app.update();
+
+    let assigned = app
+        .world()
+        .resource::<bd_tui::view_models::StatsViewModel>()
+        .party_names
+        .iter()
+        .find(|entry| entry.starts_with("Survivor 1"))
+        .cloned()
+        .expect("assigned survivor must remain projected");
+    assert!(
+        assigned.contains("Gather Supplies")
+            && assigned.contains("Water")
+            && assigned.contains("0/3"),
+        "contract=INPUT-MGMT-006 step=confirmed expected direct-gather source \
+         and progress; actual={assigned:?}"
+    );
+
+    send_physical_key(&mut app, KeyCode::Char('.'));
+    app.update();
+    app.update();
+    let progressed = app
+        .world()
+        .resource::<bd_tui::view_models::StatsViewModel>()
+        .party_names
+        .iter()
+        .find(|entry| entry.starts_with("Survivor 1"))
+        .cloned()
+        .expect("working survivor must remain projected");
+    assert!(
+        progressed.contains("Gather Supplies")
+            && progressed.contains("Water")
+            && progressed.contains("1/3"),
+        "contract=INPUT-MGMT-006 step=first-work-tick expected=1/3; \
+         actual={progressed:?}"
+    );
+}
+
+#[test]
+fn recipe_management_uses_human_resource_labels_not_content_ids() {
+    let mut app = outpost_runtime();
+
+    send_physical_key(&mut app, KeyCode::Char('e'));
+    app.update();
+    let survivor_key = named_survivor_menu_key(&app, "Survivor 1");
+    send_physical_key(&mut app, survivor_key);
+    app.update();
+    let station_key = management_choice_key(&app, "Basic Processing");
+    send_physical_key(&mut app, station_key);
+    app.update();
+
+    let choices = &app
+        .world()
+        .resource::<bd_tui::view_models::StatsViewModel>()
+        .management
+        .as_ref()
+        .expect("recipe selection must be projected")
+        .tasks;
+    assert!(
+        choices.iter().any(|choice| {
+            choice.contains("Refine Timber")
+                && choice.contains("Raw Timber")
+                && choice.contains("Refined Materials")
+        }),
+        "contract=VISUAL-COLONY-WORK-002 case=recipe-choices expected human \
+         source/result labels; actual={choices:?}"
+    );
+    assert!(
+        choices
+            .iter()
+            .all(|choice| !choice.contains("recipe.") && !choice.contains("resource.")),
+        "content IDs leaked into player-facing recipe choices: {choices:?}"
+    );
+}
+
+#[test]
+fn colony_projection_separates_next_worker_result_from_next_day_upkeep() {
+    let mut app = outpost_runtime();
+    place_named_survivor_at_resource_work_tile(
+        &mut app,
+        "Survivor 2",
+        ResourceNodeType::WaterSource,
+    );
+
+    send_physical_key(&mut app, KeyCode::Char('c'));
+    app.update();
+    let survivor_key = named_survivor_menu_key(&app, "Survivor 2");
+    send_physical_key(&mut app, survivor_key);
+    app.update();
+    let gather_key = management_choice_key(&app, "Gather Supplies");
+    send_physical_key(&mut app, gather_key);
+    app.update();
+    send_physical_key(&mut app, KeyCode::Enter);
+    app.update();
+    app.update();
+
+    let forecast = &app
+        .world()
+        .resource::<bd_tui::view_models::StatsViewModel>()
+        .next_day_forecast;
+    assert!(
+        forecast.contains("Next worker") && forecast.contains("Next day"),
+        "contract=VISUAL-COLONY-WORK-003 expected separately named worker \
+         completion and day upkeep; actual={forecast:?}"
+    );
+}
+
+#[test]
+fn nonzero_raw_stockpile_is_projected_with_a_human_label() {
+    let mut app = outpost_runtime();
+    app.world_mut()
+        .resource_mut::<ColonyResources>()
+        .raw
+        .insert("resource.raw_timber".into(), 2);
+    app.update();
+
+    let stats = app
+        .world()
+        .resource::<bd_tui::view_models::StatsViewModel>();
+    let visible_colony_text = stats
+        .party_names
+        .iter()
+        .chain(stats.station_status.iter())
+        .cloned()
+        .chain(std::iter::once(stats.next_day_forecast.clone()))
+        .collect::<Vec<_>>()
+        .join(" | ");
+    assert!(
+        visible_colony_text.contains("Raw Timber")
+            && visible_colony_text.contains('2')
+            && !visible_colony_text.contains("resource.raw_timber"),
+        "contract=VISUAL-COLONY-WORK-004 expected visible human-labelled raw \
+         stockpile; actual={visible_colony_text:?}"
+    );
+}
+
+#[test]
+fn blocked_direct_gatherer_projects_target_and_actionable_reason() {
+    let mut app = outpost_runtime();
+    let survivor = named_survivor(&mut app, "Survivor 3");
+    let blocked_position = Position { x: 8, y: 8 };
+    app.world_mut()
+        .entity_mut(survivor)
+        .insert(blocked_position);
+    for blocker in [
+        Position {
+            x: blocked_position.x,
+            y: blocked_position.y - 1,
+        },
+        Position {
+            x: blocked_position.x,
+            y: blocked_position.y + 1,
+        },
+        Position {
+            x: blocked_position.x - 1,
+            y: blocked_position.y,
+        },
+        Position {
+            x: blocked_position.x + 1,
+            y: blocked_position.y,
+        },
+    ] {
+        app.world_mut()
+            .resource_mut::<SmokeMap>()
+            .set(blocker.x, blocker.y, Tile::Wall);
+        app.world_mut()
+            .resource_mut::<OutpostState>()
+            .map
+            .set(blocker.x, blocker.y, Tile::Wall);
+    }
+
+    send_physical_key(&mut app, KeyCode::Char('c'));
+    app.update();
+    let survivor_key = named_survivor_menu_key(&app, "Survivor 3");
+    send_physical_key(&mut app, survivor_key);
+    app.update();
+    let gather_key = management_choice_key(&app, "Gather Supplies");
+    send_physical_key(&mut app, gather_key);
+    app.update();
+    send_physical_key(&mut app, KeyCode::Enter);
+    app.update();
+    app.update();
+    send_physical_key(&mut app, KeyCode::Char('.'));
+    app.update();
+    app.update();
+
+    let row = app
+        .world()
+        .resource::<bd_tui::view_models::StatsViewModel>()
+        .party_names
+        .iter()
+        .find(|entry| entry.starts_with("Survivor 3"))
+        .cloned()
+        .expect("blocked survivor must remain projected");
+    assert!(
+        row.contains("Blocked")
+            && row.contains("Water")
+            && (row.contains("No route") || row.contains("unreachable")),
+        "contract=VISUAL-COLONY-WORK-005 expected blocked direct gather \
+         target and actionable reason; actual={row:?}"
+    );
+}
+
+#[test]
 fn explicit_gather_assignment_overrides_pending_automatic_construction() {
     let mut app = outpost_runtime();
 
@@ -923,8 +1261,10 @@ fn production_key_workflow_assigns_travels_gathers_refines_and_reports() {
     assert!(
         party.iter().any(|entry| {
             entry.contains("Survivor 1")
-                && entry.contains("recipe.refine_timber")
                 && entry.contains("cargo")
+                && (entry.contains("ToStation")
+                    || entry.contains("ReadyToRefine")
+                    || entry.contains("ToSource"))
         }),
         "worker projection must retain recipe, stage/activity, and cargo; party={party:?}"
     );

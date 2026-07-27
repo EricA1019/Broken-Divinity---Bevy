@@ -144,6 +144,7 @@ pub struct SurvivorFingerprint {
     pub activity: String,
     pub logistics: Option<String>,
     pub cargo: Option<(Option<String>, u32)>,
+    pub direct_gather_progress: Option<(String, u32)>,
     pub pools: Vec<PoolFingerprint>,
 }
 
@@ -451,6 +452,9 @@ impl FoundationDriver {
                     cargo: entity_ref
                         .get::<bd_core::colony::logistics::Cargo>()
                         .map(|cargo| (cargo.resource_id.clone(), cargo.amount)),
+                    direct_gather_progress: entity_ref
+                        .get::<bd_core::colony::resources::DirectGatherProgress>()
+                        .map(|progress| (progress.definition_id.clone(), progress.work_completed)),
                     pools: entity_ref
                         .get::<Pools>()
                         .map_or_else(Vec::new, pool_fingerprint),
@@ -584,13 +588,14 @@ impl FoundationDriver {
         let player = self
             .player()
             .ok_or_else(|| ScenarioError::new("colony → fixed dungeon", "player unavailable"))?;
-        self.expect_action(
+        self.submit_action_and_advance_result_frame(
             "colony → fixed dungeon",
             player,
             "ability.enter_foundation_dungeon",
             None,
             None,
         )?;
+        self.advance_transition_frame();
         if self.summary().mode != GameMode::Tactical {
             return Err(ScenarioError::new(
                 "colony → fixed dungeon",
@@ -630,7 +635,12 @@ impl FoundationDriver {
         Ok(())
     }
 
-    pub fn expect_action(
+    /// Submit one production action and advance exactly its result frame.
+    ///
+    /// Tactical enemy resolution is deliberately not advanced here. Call
+    /// [`Self::advance_enemy_phase_frame`] explicitly when the workflow needs
+    /// the response to an accepted Tactical action.
+    pub fn submit_action_and_advance_result_frame(
         &mut self,
         step: &str,
         actor: Entity,
@@ -671,11 +681,22 @@ impl FoundationDriver {
                 format!("action {action_id} produced no typed result"),
             ));
         }
-
-        // Resolve the one permitted enemy phase and any next-frame result
-        // messages before returning a stable state summary.
-        self.app.update();
         Ok(())
+    }
+
+    /// Advance exactly one frame reserved for a pending Tactical enemy phase.
+    pub fn advance_enemy_phase_frame(&mut self) {
+        self.app.update();
+    }
+
+    /// Advance exactly one frame reserved for a pending mode transition.
+    pub fn advance_transition_frame(&mut self) {
+        self.app.update();
+    }
+
+    /// Advance exactly one frame reserved for pending day-boundary resolution.
+    pub fn advance_day_resolution_frame(&mut self) {
+        self.app.update();
     }
 
     pub fn expect_denied_action(
@@ -738,7 +759,13 @@ impl FoundationDriver {
         survivor: Entity,
         station: Entity,
     ) -> Result<(), ScenarioError> {
-        self.expect_action(step, player, "ability.assign_station", None, Some(survivor))?;
+        self.submit_action_and_advance_result_frame(
+            step,
+            player,
+            "ability.assign_station",
+            None,
+            Some(survivor),
+        )?;
         match self.app.world().get::<SurvivorTask>(survivor) {
             Some(SurvivorTask::AssignedTo(station_bits)) if *station_bits == station.to_bits() => {
                 Ok(())
@@ -758,7 +785,15 @@ impl FoundationDriver {
         let player = self
             .player()
             .ok_or_else(|| ScenarioError::new(step, "player was defeated before attacking"))?;
-        self.expect_action(step, player, "ability.quick_attack", None, Some(hostile))
+        self.submit_action_and_advance_result_frame(
+            step,
+            player,
+            "ability.quick_attack",
+            None,
+            Some(hostile),
+        )?;
+        self.advance_enemy_phase_frame();
+        Ok(())
     }
 
     pub fn approach_and_defeat_first_hostile(&mut self, step: &str) -> Result<(), ScenarioError> {
@@ -794,7 +829,14 @@ impl FoundationDriver {
             let player = self
                 .player()
                 .ok_or_else(|| ScenarioError::new(step, "player was defeated"))?;
-            self.expect_action(step, player, "ability.quick_attack", None, Some(hostile))?;
+            self.submit_action_and_advance_result_frame(
+                step,
+                player,
+                "ability.quick_attack",
+                None,
+                Some(hostile),
+            )?;
+            self.advance_enemy_phase_frame();
         }
         Err(ScenarioError::new(
             step,
@@ -850,7 +892,14 @@ impl FoundationDriver {
                 .ok_or_else(|| ScenarioError::new(step, "no route to hostile"))?;
             let direction = direction_between(player_pos, next)
                 .ok_or_else(|| ScenarioError::new(step, "hostile route was non-cardinal"))?;
-            self.expect_action(step, player, "ability.move", Some(direction), None)?;
+            self.submit_action_and_advance_result_frame(
+                step,
+                player,
+                "ability.move",
+                Some(direction),
+                None,
+            )?;
+            self.advance_enemy_phase_frame();
         }
         Err(ScenarioError::new(
             step,
@@ -869,7 +918,15 @@ impl FoundationDriver {
         let player = self
             .player()
             .ok_or_else(|| ScenarioError::new(step, "player is unavailable"))?;
-        self.expect_action(step, player, "ability.pickup", None, Some(item))
+        self.submit_action_and_advance_result_frame(
+            step,
+            player,
+            "ability.pickup",
+            None,
+            Some(item),
+        )?;
+        self.advance_enemy_phase_frame();
+        Ok(())
     }
 
     pub fn move_player_to_exit(&mut self, step: &str) -> Result<(), ScenarioError> {
@@ -907,7 +964,14 @@ impl FoundationDriver {
         for positions in path.windows(2) {
             let direction = direction_between(positions[0], positions[1])
                 .ok_or_else(|| ScenarioError::new(step, "path contains a non-cardinal movement"))?;
-            self.expect_action(step, player, "ability.move", Some(direction), None)?;
+            self.submit_action_and_advance_result_frame(
+                step,
+                player,
+                "ability.move",
+                Some(direction),
+                None,
+            )?;
+            self.advance_enemy_phase_frame();
         }
         let actual = self
             .position(player)
@@ -925,8 +989,8 @@ impl FoundationDriver {
         let player = self
             .player()
             .ok_or_else(|| ScenarioError::new(step, "player is unavailable"))?;
-        self.expect_action(step, player, "ability.extract", None, None)?;
-        self.app.update();
+        self.submit_action_and_advance_result_frame(step, player, "ability.extract", None, None)?;
+        self.advance_transition_frame();
         if self.summary().mode != GameMode::Outpost {
             return Err(ScenarioError::new(
                 step,
@@ -944,7 +1008,8 @@ impl FoundationDriver {
             let player = self.player().ok_or_else(|| {
                 ScenarioError::new(step, "player disappeared before defeat result")
             })?;
-            self.expect_action(step, player, "ability.wait", None, None)?;
+            self.submit_action_and_advance_result_frame(step, player, "ability.wait", None, None)?;
+            self.advance_enemy_phase_frame();
         }
         Err(ScenarioError::new(
             step,
@@ -1142,7 +1207,13 @@ impl FoundationDriver {
         let player = self
             .player()
             .ok_or_else(|| ScenarioError::new(step, "player is unavailable"))?;
-        self.expect_action(step, player, "ability.assign_recipe", None, Some(survivor))?;
+        self.submit_action_and_advance_result_frame(
+            step,
+            player,
+            "ability.assign_recipe",
+            None,
+            Some(survivor),
+        )?;
         match self.logistics_job(survivor) {
             Some(job) if job.recipe_id == recipe_id => Ok(()),
             job => Err(ScenarioError::new(
@@ -1188,13 +1259,14 @@ impl FoundationDriver {
         let player = self
             .player()
             .ok_or_else(|| ScenarioError::new("scope fixture pickup", "player is unavailable"))?;
-        self.expect_action(
+        self.submit_action_and_advance_result_frame(
             "scope fixture pickup",
             player,
             "ability.pickup",
             None,
             Some(item),
         )?;
+        self.advance_enemy_phase_frame();
         match self.app.world().get::<ContainedIn>(item) {
             Some(contained) if contained.0 == player => Ok(()),
             _ => Err(ScenarioError::new(
@@ -1311,19 +1383,19 @@ impl FoundationDriver {
             .count()
     }
 
-    pub fn first_survivor(&mut self) -> Option<Entity> {
-        let entities = self.entity_ids();
-        entities
-            .into_iter()
-            .find(|entity| self.app.world().entity(*entity).contains::<Survivor>())
-    }
-
     pub fn survivors(&mut self) -> Vec<Entity> {
         let entities = self.entity_ids();
-        entities
+        let mut survivors = entities
             .into_iter()
             .filter(|entity| self.app.world().entity(*entity).contains::<Survivor>())
-            .collect()
+            .collect::<Vec<_>>();
+        survivors.sort_by_key(|entity| {
+            self.app
+                .world()
+                .get::<Name>(*entity)
+                .map_or_else(|| "Unnamed survivor".into(), |name| name.0.clone())
+        });
+        survivors
     }
 
     pub fn survivor_positions(&mut self) -> Vec<Position> {
@@ -1348,13 +1420,6 @@ impl FoundationDriver {
         self.app.world().get::<SurvivorTask>(survivor).cloned()
     }
 
-    pub fn first_station(&mut self) -> Option<Entity> {
-        let entities = self.entity_ids();
-        entities
-            .into_iter()
-            .find(|entity| self.app.world().entity(*entity).contains::<Station>())
-    }
-
     pub fn station_by_type(&mut self, expected: StationType) -> Option<Entity> {
         self.stations()
             .into_iter()
@@ -1363,10 +1428,28 @@ impl FoundationDriver {
 
     pub fn stations(&mut self) -> Vec<Entity> {
         let entities = self.entity_ids();
-        entities
+        let mut stations = entities
             .into_iter()
             .filter(|entity| self.app.world().entity(*entity).contains::<Station>())
-            .collect()
+            .collect::<Vec<_>>();
+        stations.sort_by_key(|entity| {
+            let station_type = self
+                .app
+                .world()
+                .get::<StationType>(*entity)
+                .map_or_else(|| "MissingStationType".into(), |kind| format!("{kind:?}"));
+            let position = self
+                .app
+                .world()
+                .get::<Position>(*entity)
+                .copied()
+                .unwrap_or(Position {
+                    x: i32::MAX,
+                    y: i32::MAX,
+                });
+            (station_type, position.y, position.x)
+        });
+        stations
     }
 
     pub fn station_type(&self, station: Entity) -> Option<bd_core::colony::stations::StationType> {
@@ -1411,19 +1494,10 @@ impl FoundationDriver {
         let mut station_types = self
             .stations()
             .into_iter()
-            .filter_map(|entity| {
-                self.app
-                    .world()
-                    .get::<bd_core::colony::stations::StationType>(entity)
-                    .copied()
-                    .map(|station_type| (entity.to_bits(), station_type))
-            })
+            .filter_map(|entity| self.app.world().get::<StationType>(entity).copied())
             .collect::<Vec<_>>();
-        station_types.sort_by_key(|(bits, _)| *bits);
+        station_types.sort_by_key(|station_type| format!("{station_type:?}"));
         station_types
-            .into_iter()
-            .map(|(_, station_type)| station_type)
-            .collect()
     }
 
     pub fn first_hostile(&mut self) -> Option<Entity> {
@@ -1883,9 +1957,8 @@ mod tests {
     use bd_core::{
         components::{Name, Player, Position},
         pools::Pools,
-        session::{RunOutcome, RunSession},
         signals::{ActionIntent, PoolKind},
-        spatial::{GameMode, PersistentEntity, TransientEntity, TransitionIntent},
+        spatial::{GameMode, TransitionIntent},
     };
     use bevy_ecs::{message::Messages, query::With};
 
@@ -1994,138 +2067,6 @@ mod tests {
                 .is_none()
         );
         assert!(app.world().get_resource::<FoundationContent>().is_some());
-    }
-
-    #[test]
-    /// Legacy fixture regression only. This test deliberately manufactures
-    /// carried loot and exit position, so it is not Foundation acceptance
-    /// evidence; `bd_app/tests/foundation_scenario.rs` owns that proof.
-    fn legacy_direct_mutation_round_trip_fixture_regression() {
-        let mut app = foundation_app();
-
-        app.world_mut()
-            .resource_mut::<Messages<TransitionIntent>>()
-            .write(TransitionIntent {
-                target: GameMode::Outpost,
-                node_id: None,
-            });
-        app.update();
-
-        let survivor_count = app
-            .world_mut()
-            .query_filtered::<(), With<bd_core::colony::survivors::Survivor>>()
-            .iter(app.world())
-            .count();
-        assert_eq!(survivor_count, 3);
-        let supplies_before = app
-            .world()
-            .resource::<bd_core::colony::production::ColonyResources>()
-            .pools
-            .get(bd_core::signals::PoolKind::Supplies)
-            .unwrap()
-            .current;
-
-        app.world_mut()
-            .resource_mut::<Messages<TransitionIntent>>()
-            .write(TransitionIntent {
-                target: GameMode::Tactical,
-                node_id: Some("dungeon.foundation".into()),
-            });
-        app.update();
-
-        assert_eq!(
-            app.world().resource::<GameMode>().clone(),
-            GameMode::Tactical
-        );
-        assert_eq!(app.world().resource::<bd_core::map::SmokeMap>().width, 12);
-        assert_eq!(app.world().resource::<bd_core::map::SmokeMap>().height, 8);
-        let factioned_enemies = app
-            .world_mut()
-            .query_filtered::<&bd_core::relationships::FactionMember, With<bd_core::relationships::FactionMember>>()
-            .iter(app.world())
-            .map(|faction| faction.0.as_str())
-            .collect::<Vec<_>>();
-        assert_eq!(
-            factioned_enemies,
-            vec!["faction.placeholder_a"],
-            "fixed encounter should carry content faction identity"
-        );
-        let player = app
-            .world_mut()
-            .query_filtered::<(bevy_ecs::entity::Entity, &Position), With<Player>>()
-            .iter(app.world())
-            .next()
-            .map(|(entity, position)| (entity, *position))
-            .expect("fixed dungeon should provide a player");
-        let potion = app
-            .world_mut()
-            .query_filtered::<bevy_ecs::entity::Entity, With<bd_core::inventory::Item>>()
-            .iter(app.world())
-            .next()
-            .expect("fixed dungeon should provide loot");
-        app.world_mut()
-            .entity_mut(potion)
-            .insert(bd_core::relationships::ContainedIn(player.0));
-        assert_eq!(player.1, Position { x: 1, y: 1 });
-
-        app.world_mut()
-            .entity_mut(player.0)
-            .insert(Position { x: 10, y: 6 });
-
-        app.world_mut()
-            .resource_mut::<Messages<bd_core::signals::ActionIntent>>()
-            .write(bd_core::signals::ActionIntent {
-                actor: player.0,
-                action_id: "ability.extract".into(),
-                direction: None,
-                target: None,
-            });
-        app.update();
-        app.update();
-
-        assert_eq!(
-            app.world().resource::<GameMode>().clone(),
-            GameMode::Outpost
-        );
-        assert_eq!(
-            app.world().resource::<RunSession>().outcome,
-            RunOutcome::Extracted
-        );
-        assert!(app.world().resource::<RunSession>().extraction_applied);
-        let survivor_count_after = app
-            .world_mut()
-            .query_filtered::<(), With<bd_core::colony::survivors::Survivor>>()
-            .iter(app.world())
-            .count();
-        assert_eq!(survivor_count_after, 3);
-        let supplies_after = app
-            .world()
-            .resource::<bd_core::colony::production::ColonyResources>()
-            .pools
-            .get(bd_core::signals::PoolKind::Supplies)
-            .unwrap()
-            .current;
-        assert_eq!(supplies_after, supplies_before);
-        assert_eq!(
-            app.world()
-                .resource::<bd_core::colony::production::ColonyStorage>()
-                .count("item.healing_potion"),
-            1,
-            "extracted carried loot should enter colony storage exactly once",
-        );
-        let transient_count = app
-            .world_mut()
-            .query_filtered::<(), With<TransientEntity>>()
-            .iter(app.world())
-            .count();
-        assert_eq!(transient_count, 0);
-        assert!(
-            app.world_mut()
-                .query_filtered::<(), With<PersistentEntity>>()
-                .iter(app.world())
-                .count()
-                >= 4
-        );
     }
 
     #[test]
@@ -2248,6 +2189,42 @@ mod tests {
         assert_eq!(
             rat_after_idle, rat_after_enemy,
             "one player action must not permit repeated enemy phases"
+        );
+    }
+
+    #[test]
+    fn driver_exposes_action_result_and_enemy_phase_as_separate_frames() {
+        let mut driver = FoundationDriver::new(991);
+        driver.start_colony().expect("colony must start");
+        driver
+            .enter_dungeon(bd_core::spatial::FOUNDATION_DUNGEON_ID)
+            .expect("dungeon must start");
+        let player = driver.player().expect("player must exist");
+        let hostile = driver.first_hostile().expect("hostile must exist");
+        let hostile_before = driver.position(hostile).expect("hostile has a position");
+
+        driver
+            .submit_action_and_advance_result_frame(
+                "explicit result frame",
+                player,
+                "ability.move",
+                Some(Direction::East),
+                None,
+            )
+            .expect("move result must resolve");
+
+        assert_eq!(
+            driver.position(hostile),
+            Some(hostile_before),
+            "the result-frame helper must not hide the pending enemy phase"
+        );
+
+        driver.advance_enemy_phase_frame();
+
+        assert_ne!(
+            driver.position(hostile),
+            Some(hostile_before),
+            "the explicitly requested enemy-phase frame must resolve one response"
         );
     }
 

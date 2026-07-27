@@ -20,7 +20,7 @@ fn colony_driver(seed: u64) -> FoundationDriver {
 fn wait_once(driver: &mut FoundationDriver, step: &str) {
     let player = driver.player().unwrap();
     driver
-        .expect_action(step, player, "ability.wait", None, None)
+        .submit_action_and_advance_result_frame(step, player, "ability.wait", None, None)
         .unwrap();
 }
 
@@ -34,6 +34,7 @@ fn cross_tactical_day_boundary(driver: &mut FoundationDriver) {
     advance_to_turn_23(driver);
     driver.enter_dungeon(FOUNDATION_DUNGEON_ID).unwrap();
     wait_once(driver, "cross Tactical day boundary");
+    driver.advance_day_resolution_frame();
 }
 
 fn place_gatherers_at_source(
@@ -74,12 +75,14 @@ fn place_gatherers_at_source(
         gatherers,
         "insufficient source work tiles"
     );
-    for (survivor, position) in driver
-        .survivors()
+    for (name, position) in ["Survivor 1", "Survivor 2", "Survivor 3"]
         .into_iter()
         .take(gatherers)
         .zip(work_tiles)
     {
+        let survivor = driver
+            .survivor_by_name(name)
+            .unwrap_or_else(|| panic!("stable gatherer `{name}` must exist"));
         driver.fixture_set_position(survivor, position).unwrap();
     }
 }
@@ -112,6 +115,8 @@ fn tactical_day_boundary_survives_save_load_without_replay() {
 
     wait_once(&mut original, "original Tactical boundary");
     wait_once(&mut restored, "restored Tactical boundary");
+    original.advance_day_resolution_frame();
+    restored.advance_day_resolution_frame();
 
     assert_eq!(
         original.latest_daily_summary(),
@@ -132,6 +137,7 @@ fn every_legal_day_boundary_has_one_summary() {
     let mut outpost = colony_driver(203);
     advance_to_turn_23(&mut outpost);
     wait_once(&mut outpost, "Outpost boundary");
+    outpost.advance_day_resolution_frame();
     assert_eq!(outpost.last_day_advanced_count(), 1);
     let outpost_summary = outpost
         .latest_daily_summary()
@@ -145,31 +151,6 @@ fn every_legal_day_boundary_has_one_summary() {
     assert!(
         tactical.latest_daily_summary().is_some(),
         "Tactical boundary must publish one summary"
-    );
-}
-
-#[test]
-fn three_explicit_supplies_assignments_recover_the_action_threshold() {
-    let mut driver = colony_driver(205);
-    driver.fixture_set_colony_resource(PoolKind::Supplies, 0);
-    let player = driver.player().unwrap();
-    for survivor in driver.survivors() {
-        driver
-            .expect_action(
-                "assign explicit Supplies gathering",
-                player,
-                "ability.gather_supplies",
-                None,
-                Some(survivor),
-            )
-            .expect("Foundation management must expose explicit Supplies gathering");
-    }
-
-    advance_to_turn_23(&mut driver);
-    wait_once(&mut driver, "resolve recovery day");
-    assert!(
-        driver.resource_current(PoolKind::Supplies).unwrap() >= 2,
-        "three explicit gatherers must restore the minimum action threshold"
     );
 }
 
@@ -195,96 +176,32 @@ fn fixed_shelter_has_every_reachable_gathering_target() {
 }
 
 #[test]
-fn zero_supply_recovery_survives_save_load() {
-    let mut original = colony_driver(215);
-    original.fixture_set_colony_resource(PoolKind::Supplies, 0);
-    place_gatherers_at_source(&mut original, ResourceNodeType::WaterSource, 3);
-    let player = original.player().unwrap();
-    for survivor in original.survivors() {
-        original
-            .expect_action(
-                "assign explicit Supplies gathering",
-                player,
-                "ability.gather_supplies",
-                None,
-                Some(survivor),
-            )
-            .unwrap();
-    }
-    advance_to_turn_23(&mut original);
-    let checkpoint = original.checkpoint().unwrap();
-    let mut restored = FoundationDriver::from_checkpoint(&checkpoint).unwrap();
+fn next_day_forecast_excludes_direct_worker_tick_output() {
+    let mut driver = colony_driver(301);
+    driver.fixture_set_colony_resource(PoolKind::Supplies, 5);
+    place_gatherers_at_source(&mut driver, ResourceNodeType::WaterSource, 1);
+    let survivor = driver
+        .survivor_by_name("Survivor 1")
+        .expect("stable Supplies gatherer must exist");
+    let player = driver.player().expect("Foundation player must exist");
+    driver
+        .submit_action_and_advance_result_frame(
+            "assign direct Supplies gathering",
+            player,
+            "ability.gather_supplies",
+            None,
+            Some(survivor),
+        )
+        .expect("direct gathering assignment must resolve");
+    wait_once(&mut driver, "direct gathering work tick 1");
+    wait_once(&mut driver, "direct gathering work tick 2");
 
-    wait_once(&mut original, "original recovery boundary");
-    wait_once(&mut restored, "restored recovery boundary");
-
+    let forecast = driver.colony_forecast();
     assert_eq!(
-        original.resource_current(PoolKind::Supplies),
-        restored.resource_current(PoolKind::Supplies)
+        forecast.gathered_supplies, 0,
+        "contract=VISUAL-COLONY-WORK-003 expected=next-day forecast excludes \
+         direct worker-tick output actual={forecast:?}"
     );
-    assert!(restored.resource_current(PoolKind::Supplies).unwrap() >= 2);
-}
-
-#[test]
-fn forecast_matches_adverse_gathering_matrix() {
-    let targets = [
-        (PoolKind::Supplies, "ability.gather_supplies"),
-        (PoolKind::Materials, "ability.gather_materials"),
-        (PoolKind::WildPlants, "ability.gather_plants"),
-    ];
-    let mut seed = 300;
-    for supplies in [0, 1, 2] {
-        for gatherers in 1..=3 {
-            for (target, action_id) in targets {
-                seed += 1;
-                let mut driver = colony_driver(seed);
-                driver.fixture_set_colony_resource(PoolKind::Supplies, supplies);
-                let node_kind = match target {
-                    PoolKind::Supplies => ResourceNodeType::WaterSource,
-                    PoolKind::Materials => ResourceNodeType::Trees,
-                    PoolKind::WildPlants => ResourceNodeType::WildPlants,
-                    _ => unreachable!("matrix contains only gathering pools"),
-                };
-                place_gatherers_at_source(&mut driver, node_kind, gatherers);
-                let player = driver.player().unwrap();
-                for survivor in driver.survivors().into_iter().take(gatherers) {
-                    driver
-                        .expect_action(
-                            "assign matrix gathering target",
-                            player,
-                            action_id,
-                            None,
-                            Some(survivor),
-                        )
-                        .unwrap();
-                }
-                advance_to_turn_23(&mut driver);
-                let forecast = driver.colony_forecast();
-                wait_once(&mut driver, "resolve matrix day");
-                let summary = driver.latest_daily_summary().unwrap();
-
-                assert_eq!(
-                    summary.supplies_after, forecast.supplies_after,
-                    "Supplies forecast drifted for supplies={supplies} gatherers={gatherers} target={target:?}"
-                );
-                assert_eq!(
-                    summary.materials_after - summary.materials_before,
-                    forecast.materials_net,
-                    "Materials forecast drifted for supplies={supplies} gatherers={gatherers} target={target:?}"
-                );
-                assert_eq!(
-                    summary.wild_plants_after - summary.wild_plants_before,
-                    forecast.plants_net,
-                    "Plants forecast drifted for supplies={supplies} gatherers={gatherers} target={target:?}"
-                );
-                assert_eq!(
-                    summary.faith_after - summary.faith_before,
-                    forecast.faith_net,
-                    "Faith forecast drifted for supplies={supplies} gatherers={gatherers} target={target:?}"
-                );
-            }
-        }
-    }
 }
 
 #[test]
@@ -313,13 +230,16 @@ fn every_buildable_station_catalog_entry_has_an_implemented_effect() {
 #[test]
 fn management_targets_a_named_survivor_and_task() {
     let mut driver = colony_driver(206);
-    let survivors = driver.survivors();
-    let selected = survivors[1];
-    let untouched = survivors[0];
+    let selected = driver
+        .survivor_by_name("Survivor 2")
+        .expect("selected survivor must exist");
+    let untouched = driver
+        .survivor_by_name("Survivor 1")
+        .expect("untouched survivor must exist");
     let player = driver.player().unwrap();
 
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "assign Survivor 2 to Supplies",
             player,
             "ability.gather_supplies",
@@ -344,7 +264,7 @@ fn staffing_targets_a_named_survivor_and_station() {
     let player = driver.player().unwrap();
     driver.fixture_select_station(StationType::Stove);
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "build first station fixture through production action",
             player,
             "ability.build",
@@ -353,7 +273,7 @@ fn staffing_targets_a_named_survivor_and_station() {
         )
         .unwrap();
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "move to safe second station footprint",
             player,
             "ability.move",
@@ -363,7 +283,7 @@ fn staffing_targets_a_named_survivor_and_station() {
         .unwrap();
     driver.fixture_select_station(StationType::Altar);
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "build second station fixture through production action",
             player,
             "ability.build",
@@ -371,14 +291,17 @@ fn staffing_targets_a_named_survivor_and_station() {
             None,
         )
         .unwrap();
-    let survivor = driver.survivors()[1];
-    let stations = driver.stations();
-    let selected_station = stations[1];
+    let survivor = driver
+        .survivor_by_name("Survivor 2")
+        .expect("selected survivor must exist");
+    let selected_station = driver
+        .station_by_type(StationType::Altar)
+        .expect("selected Altar must exist");
     driver.fixture_complete_construction(selected_station);
     driver.fixture_select_station_assignment(selected_station);
 
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "assign named survivor to selected station",
             player,
             "ability.assign_station",
@@ -402,7 +325,7 @@ fn bed_restores_only_its_assigned_worker_by_the_catalog_amount() {
     let player = driver.player().unwrap();
     driver.fixture_select_station(StationType::Bed);
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "build Bed",
             player,
             "ability.build",
@@ -410,13 +333,17 @@ fn bed_restores_only_its_assigned_worker_by_the_catalog_amount() {
             None,
         )
         .unwrap();
-    let survivor = driver.survivors()[1];
-    let untouched = driver.survivors()[0];
+    let survivor = driver
+        .survivor_by_name("Survivor 2")
+        .expect("Bed worker must exist");
+    let untouched = driver
+        .survivor_by_name("Survivor 1")
+        .expect("untouched survivor must exist");
     let bed = driver.station_by_type(StationType::Bed).unwrap();
     driver.fixture_complete_construction(bed);
     driver.fixture_select_station_assignment(bed);
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "assign Bed worker",
             player,
             "ability.assign_station",
@@ -433,6 +360,7 @@ fn bed_restores_only_its_assigned_worker_by_the_catalog_amount() {
         .unwrap();
     advance_to_turn_23(&mut driver);
     wait_once(&mut driver, "Bed recovery boundary");
+    driver.advance_day_resolution_frame();
 
     assert_eq!(
         driver.entity_pool_current(survivor, PoolKind::Mood),
@@ -456,7 +384,7 @@ fn each_catalog_station_effect_applies_once_when_staffed() {
         let player = driver.player().unwrap();
         driver.fixture_select_station(station_type);
         driver
-            .expect_action(
+            .submit_action_and_advance_result_frame(
                 "build catalog station",
                 player,
                 "ability.build",
@@ -464,12 +392,14 @@ fn each_catalog_station_effect_applies_once_when_staffed() {
                 None,
             )
             .unwrap();
-        let survivor = driver.survivors()[0];
+        let survivor = driver
+            .survivor_by_name("Survivor 1")
+            .expect("station worker must exist");
         let station = driver.station_by_type(station_type).unwrap();
         driver.fixture_complete_construction(station);
         driver.fixture_select_station_assignment(station);
         driver
-            .expect_action(
+            .submit_action_and_advance_result_frame(
                 "staff catalog station",
                 player,
                 "ability.assign_station",
@@ -481,6 +411,7 @@ fn each_catalog_station_effect_applies_once_when_staffed() {
         let before = driver.resource_current(pool_kind).unwrap();
         let forecast = driver.colony_forecast();
         wait_once(&mut driver, "catalog station day");
+        driver.advance_day_resolution_frame();
         let after = driver.resource_current(pool_kind).unwrap();
         let expected_delta = if pool_kind == PoolKind::Supplies {
             forecast.supplies_net
@@ -606,7 +537,7 @@ fn canonical_feedback_contains_no_duplicate_results() {
     let before = driver.log_messages().len();
     let player = driver.player().unwrap();
     driver
-        .expect_action(
+        .submit_action_and_advance_result_frame(
             "build one Stove",
             player,
             "ability.build",

@@ -48,6 +48,7 @@ Status meanings:
 | Press/Repeat/Release policy is explicit | `phase6_input::build_interaction_is_a_paused_press_only_state_machine` | Partial | Normal movement, management, Help, persistence, and lifecycle cases |
 | Buffered input preserves order | `phase6_input::buffered_semantic_commands_resolve_in_input_order` | Green | None for the bounded gameplay queue |
 | Queue overflow is bounded and visible | `phase6_input::buffered_input_is_bounded_and_reports_one_overflow_warning` | Green | None for the current capacity |
+| First Outpost movement key cannot enter Build | `phase6_input::first_outpost_move_key_moves_once_without_opening_or_creating_build_state` | Green unreviewed | Production-key state diff is exact; final PTY observation remains supporting evidence |
 | Modal input never leaks | `phase6_input::management_cancel_is_atomic_and_discards_modal_gameplay_input` | Green | Same-batch routing predicts modal ownership and discards uncommitted input |
 | Footer, Help, action panel, configuration, and runtime agree | `input_help` target | Partial | A generated all-command consistency matrix |
 
@@ -118,7 +119,7 @@ Status meanings:
 | EnRoute/Blocked station workers produce zero | `assigned_but_enroute_station_worker_produces_nothing`; `blocked_station_worker_produces_nothing` | Green | Shared physical-work evaluator rejects remote/blocked work |
 | Adjacent station worker produces once | `adjacent_station_worker_produces_once` | Green | Shared physical-work evaluator credits once |
 | EnRoute/Blocked gatherers produce zero | `assigned_but_enroute_gatherer_produces_nothing` | Green | Shared physical-work evaluator rejects remote gathering |
-| Matching adjacent gatherer produces once | `adjacent_matching_gatherer_produces_once` | Green | None |
+| Matching adjacent gatherer produces after configured work | `direct_gather_requires_three_work_ticks_and_credits_once` | Green | None |
 | Wrong-node gatherer produces zero | `gatherer_at_wrong_node_type_produces_nothing` | Green | The adjacent physical node must match the durable task |
 | Blocked station worker produces zero | `blocked_station_worker_produces_nothing` | Green | None |
 | Rest equals equivalent individual turns | position and daily-resource equivalence tests | Green | Rest replays the same logical worker steps before each crossed day boundary |
@@ -143,10 +144,11 @@ Status meanings:
 |---|---|---|---|
 | Every day boundary runs one transaction | `colony_day_cycle::day_advanced_emits_once`; `mvp_correction::every_legal_day_boundary_has_one_summary` | Green | None |
 | Tactical and Outpost day boundaries agree | tactical day-boundary tests | Green | Exact normalized state equality would strengthen this |
-| Food, station output, gathering, mood, and summary run once | `colony_day_cycle` and `mvp_correction` matrices | Partial | Physical worker rules currently invalidate remote-output assumptions |
+| Food, station output, mood, and summary run once | `colony_day_cycle` and `mvp_correction` matrices | Green | Direct worker output is intentionally owned by accepted Outpost ticks, not this transaction |
 | Summary equals authoritative delta | `colony_day_cycle::daily_summary_matches_resource_delta` | Green | Physical activity fields remain absent |
-| Forecast equals execution | `mvp_correction::forecast_matches_adverse_gathering_matrix`; `forecast_excludes_enroute_worker_output` | Green | Forecast uses the same current physical-work evaluator as daily execution |
-| Zero-Supplies recovery is reachable | `zero_supply_recovery_remains_reachable_with_physical_gathering`; shelter target reachability | Green at the physical positive fixture | EnRoute travel time and player-visible recovery guidance remain incomplete |
+| Next-day forecast excludes direct worker output | `mvp_correction::next_day_forecast_excludes_direct_worker_tick_output` | Green | None |
+| Next worker completion and next-day upkeep are distinct | `phase6_input::colony_projection_separates_next_worker_result_from_next_day_upkeep` | Green unreviewed | Real-PTY visual review remains open |
+| Zero-Supplies recovery is reachable | `zero_supplies_recovers_after_three_worker_ticks_without_waiting_for_day_end`; shelter target reachability | Green unreviewed | Real-PTY recovery-guidance review remains open |
 | Storage rejects before payment | `mvp_correction::disabled_storage_rejection_is_atomic` | Green | None |
 | Station catalog owns costs/effects/availability | catalog and loader tests | Green | Presentation still drops placement details |
 
@@ -181,7 +183,7 @@ Status meanings:
 | EnRoute checkpoint | deterministic next worker step test | Partial | Typed activity and projection equality |
 | Working checkpoint | no primary contract | Open | Physical Working state is not implemented |
 | Before/after day boundary checkpoints | `save_before_day_boundary...`; `save_after_day_boundary...` | Green | Fingerprint equality |
-| Active dungeon checkpoint | dungeon preservation and RNG continuation tests | Partial | Full entity-independent fingerprint |
+| Active dungeon checkpoint | `persistence::save_load_active_dungeon_preserves_foundation_fingerprint_and_scope_counts` | Green | Durable player, colony, worker-activity, resource, and entity-scope state survives the checkpoint |
 | Carrying loot checkpoint | core save inventory tests and dungeon fixture | Partial | Foundation-level explicit checkpoint |
 | Extracted checkpoint | post-extraction no-reapply test | Green | Full fingerprint |
 | Game Over checkpoint | defeat outcome test | Green | Rendered outcome equality |
@@ -256,3 +258,22 @@ workflow evidence.
 | Explicit gathering immediately releases an automatic builder | `explicit_gather_assignment_overrides_pending_automatic_construction` | Green | None |
 | Render/save/load grant no construction work | `render_frames_and_save_load_do_not_grant_construction_work` | Green | None |
 | Site and progress are player-visible | `placed_construction_site_has_distinct_map_and_progress_feedback` | Green | Real-terminal owner review |
+
+## 14. Direct gathering coherence and feedback
+
+| Requirement piece | Primary evidence | Status | Remaining review |
+|---|---|---|---|
+| Direct gathering rules are data-defined | `foundation_direct_gather_rules_are_declared_in_content` | Green | Balance values remain owner-tunable content |
+| Three adjacent worker ticks produce exactly one resource | `direct_gather_requires_three_work_ticks_and_credits_once` | Green | None |
+| All three Foundation gathering tasks share the rule | `every_foundation_direct_gather_task_uses_the_same_three_tick_rule` | Green | None |
+| Day advancement grants no legacy duplicate | `day_boundary_does_not_credit_legacy_direct_gather_output` | Green | None |
+| Render and Tactical frames grant no work | `render_and_tactical_frames_do_not_advance_direct_gathering` | Green | None |
+| Rest equals equivalent individual turns | `rest_and_equivalent_individual_turns_preserve_direct_gather_results` | Green | None |
+| Partial progress survives save/load | `partial_direct_gather_progress_survives_save_load_without_free_output` | Green | None |
+| Reassignment clears partial work | `reassignment_clears_partial_direct_gather_progress_without_output` | Green | None |
+| Zero Supplies recovers before day end | `zero_supplies_recovers_after_three_worker_ticks_without_waiting_for_day_end` | Green | None |
+| `c` workflow shows source and progress | `direct_gather_assignment_projects_source_and_three_tick_progress` | Green unreviewed | Real-PTY visual review remains open |
+| Recipe choices use human labels | `recipe_management_uses_human_resource_labels_not_content_ids` | Green unreviewed | Real-PTY visual review remains open |
+| Worker result and day upkeep are distinct | `colony_projection_separates_next_worker_result_from_next_day_upkeep` | Green unreviewed | Real-PTY visual review remains open |
+| Nonzero raw stockpiles are visible | `nonzero_raw_stockpile_is_projected_with_a_human_label` | Green unreviewed | Real-PTY visual review remains open |
+| Blocked direct gathering names target and reason | `blocked_direct_gatherer_projects_target_and_actionable_reason` | Green unreviewed | Real-PTY visual review remains open |
