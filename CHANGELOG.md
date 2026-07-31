@@ -2,6 +2,41 @@
 
 All notable changes to Broken Divinity are documented here.
 
+## [Unreleased] — 2026-07-31
+
+### Foundation Colony UX Hardening and UI Guide Evidence
+
+#### Added
+- **InvalidSelection visual token** (`!`, Danger style): invalid build previews
+  differ from valid ones without relying on color alone
+- **Blocked worker Danger style**: the blocked worker glyph resolves through the
+  warning/danger style instead of the ally style
+- **DailySummary display lines**: authoritative day deltas (Supplies, Materials,
+  Plants, Faith, Food) projected as one readable summary line
+- **PendingAssignmentFeedback**: assignment confirmation shows the named action
+  label back to the player
+- **SaveAvailability resource**: the title screen knows whether a manual slot
+  exists so an unavailable Load is explained
+- **UI red-first guide suite** (`bd_tui/src/ui_development_contract_tests.rs`):
+  cell-level glyph/style/geometry observations rendered at both 80x24 and 60x20
+- **Persistence checkpoint matrix** (`bd_app/tests/persistence_checkpoint_matrix.rs`,
+  PERSIST-MATRIX-001): five projections round-trip the full normalized
+  fingerprint through both the checkpoint and atomic manual-slot paths
+- **Input press/repeat/release policy matrix**
+  (`bd_app/tests/press_repeat_release_policy.rs`, INPUT-POLICY-001): only a
+  physical Press mutates; Repeat and Release are inert for outpost controls
+- **Foundation UI Improvement Plan** (`docs/FOUNDATION-UI-IMPROVEMENT-PLAN.md`):
+  owner-approved red-first Ratatui presentation sequence
+
+#### Changed
+- **Contract registry** now owns 88 contracts; requirement-map evidence statuses
+  reconciled (no contract is Red; automated layers green, PTY/owner review open)
+- **Application boundary tests** cover missing/corrupt title load and single
+  quit-key exit through the production app wiring
+
+#### Tests
+- 642 automated tests green across the workspace gate
+
 ## [Unreleased] — 2026-07-23/24
 
 ### Colony Overhaul (Phases 0-2)
