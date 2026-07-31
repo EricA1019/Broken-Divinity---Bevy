@@ -324,6 +324,12 @@ fn register_foundation(app: &mut App, foundation: bool) {
             .after(crate::colony::stations::process_idle_construction)
             .in_set(BdSet::Mutation),
     );
+    app.add_systems(
+        bevy_app::Update,
+        crate::colony::survivors::report_assignment_feedback
+            .after(crate::colony::survivors::process_survivor_movement)
+            .in_set(BdSet::Mutation),
+    );
 }
 
 /// Register systems intentionally excluded from the MVP foundation.

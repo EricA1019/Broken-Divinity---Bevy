@@ -89,6 +89,9 @@ fn run_application() -> Result<(), String> {
     app.insert_resource(application_content.foundation);
 
     app.add_plugins(bd_tui::BdTuiPlugin);
+    app.insert_resource(bd_tui::view_models::SaveAvailability {
+        manual_slot: bd_core::save::manual_slot_path(&save_dir).is_file(),
+    });
     app.insert_resource(command_bindings);
     app.insert_resource(application_content.symbols);
     app.insert_resource(application_content.themes);
@@ -142,9 +145,16 @@ fn process_persistence_requests(world: &mut bevy_ecs::world::World) {
     world.resource_mut::<bd_core::save::SaveRequest>().0 = false;
     if save_requested {
         match bd_core::save::save_manual_slot(world, &save_dir) {
-            Ok(path) => world
-                .resource_mut::<GameLog>()
-                .push(format!("Game saved to {}.", path.display()), LogLevel::Info),
+            Ok(path) => {
+                if let Some(mut availability) =
+                    world.get_resource_mut::<bd_tui::view_models::SaveAvailability>()
+                {
+                    availability.manual_slot = true;
+                }
+                world
+                    .resource_mut::<GameLog>()
+                    .push(format!("Game saved to {}.", path.display()), LogLevel::Info);
+            }
             Err(error) => {
                 tracing::warn!("Manual save failed: {error}");
                 world
@@ -304,6 +314,42 @@ mod application_tests {
     use bevy_ecs::entity::Entity;
     use bevy_ecs::message::Messages;
     use bevy_ecs::query::With;
+    use bevy_ratatui::{
+        crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
+        event::KeyMessage,
+    };
+
+    fn application_test_app(save_dir: PathBuf) -> bevy_app::App {
+        let content = load_application_content(&content_dir()).unwrap();
+        let mut app = bevy_app::App::new();
+        app.add_plugins(bd_core::BdFoundationPlugin);
+        app.insert_resource(bd_core::colony::stations::StationCatalog::new(
+            content.foundation.stations.clone(),
+        ));
+        app.insert_resource(content.foundation);
+        app.add_plugins(bd_tui::BdTuiPlugin);
+        app.insert_resource(ManualSaveDirectory(save_dir));
+        configure_application_boundary_systems(&mut app);
+        app
+    }
+
+    fn send_physical_key(app: &mut bevy_app::App, key: KeyCode) {
+        let mut keys = app.world_mut().resource_mut::<Messages<KeyMessage>>();
+        keys.write(KeyMessage(KeyEvent::new_with_kind(
+            key,
+            KeyModifiers::NONE,
+            KeyEventKind::Press,
+        )));
+        keys.write(KeyMessage(KeyEvent::new_with_kind(
+            key,
+            KeyModifiers::NONE,
+            KeyEventKind::Release,
+        )));
+    }
+
+    fn temp_save_dir(label: &str) -> PathBuf {
+        std::env::temp_dir().join(format!("bd-shell-contract-{label}-{}", std::process::id()))
+    }
 
     #[test]
     fn invalid_content_returns_readable_application_error() {
@@ -367,6 +413,149 @@ mod application_tests {
             assert_eq!(message, expected);
             assert!(!message.contains("raw"));
         }
+    }
+
+    #[test]
+    fn missing_title_load_is_atomic_visible_and_recoverable_by_new_game() {
+        // Contract: SHELL-LOAD-001
+        // Given: Title has no manual save.
+        // When: F9 is pressed, then New Game is requested.
+        // Then: the error is visible and one valid Outpost player is created.
+        // Must not change: the failed load cannot mutate the title run.
+        // Evidence layers: input state machine, state diff, persistence, workflow.
+        let save_dir = temp_save_dir("missing");
+        let _ = std::fs::remove_dir_all(&save_dir);
+        let mut app = application_test_app(save_dir);
+        let session_before = format!(
+            "{:?}",
+            app.world().resource::<bd_core::session::RunSession>()
+        );
+
+        send_physical_key(&mut app, KeyCode::F(9));
+        app.update();
+
+        assert_eq!(
+            *app.world().resource::<bd_core::spatial::GameMode>(),
+            bd_core::spatial::GameMode::Title,
+            "contract=SHELL-LOAD-001 case=missing-save load left Title"
+        );
+        assert_eq!(
+            format!(
+                "{:?}",
+                app.world().resource::<bd_core::session::RunSession>()
+            ),
+            session_before,
+            "contract=SHELL-LOAD-001 case=missing-save failed load mutated the run"
+        );
+        assert!(
+            app.world()
+                .resource::<GameLog>()
+                .iter()
+                .any(|entry| entry.message == "No manual save exists yet."),
+            "contract=SHELL-LOAD-001 case=missing-save player-facing failure was not retained"
+        );
+
+        send_physical_key(&mut app, KeyCode::Enter);
+        app.update();
+        app.update();
+
+        assert_eq!(
+            *app.world().resource::<bd_core::spatial::GameMode>(),
+            bd_core::spatial::GameMode::Outpost,
+            "contract=SHELL-LOAD-001 case=missing-save New Game did not recover"
+        );
+        let player_count = app
+            .world_mut()
+            .query_filtered::<Entity, With<Player>>()
+            .iter(app.world())
+            .count();
+        assert_eq!(
+            player_count, 1,
+            "contract=SHELL-LOAD-001 case=missing-save recovery created {player_count} players"
+        );
+    }
+
+    #[test]
+    fn corrupt_title_load_is_atomic_visible_and_recoverable_by_new_game() {
+        // Contract: SHELL-LOAD-002
+        // Given: Title has a corrupt manual save.
+        // When: F9 is pressed, then New Game is requested.
+        // Then: the error is classified and New Game reaches Outpost.
+        // Must not change: the failed load cannot mutate the title run.
+        // Evidence layers: input state machine, state diff, persistence, workflow.
+        let save_dir = temp_save_dir("corrupt");
+        std::fs::create_dir_all(&save_dir).unwrap();
+        std::fs::write(
+            bd_core::save::manual_slot_path(&save_dir),
+            "this is not a valid Foundation snapshot",
+        )
+        .unwrap();
+        let mut app = application_test_app(save_dir.clone());
+        let session_before = format!(
+            "{:?}",
+            app.world().resource::<bd_core::session::RunSession>()
+        );
+
+        send_physical_key(&mut app, KeyCode::F(9));
+        app.update();
+
+        assert_eq!(
+            format!(
+                "{:?}",
+                app.world().resource::<bd_core::session::RunSession>()
+            ),
+            session_before,
+            "contract=SHELL-LOAD-002 case=corrupt-save failed load mutated the run"
+        );
+        assert!(
+            app.world().resource::<GameLog>().iter().any(|entry| {
+                entry.message == "The manual save is corrupt and could not be loaded."
+            }),
+            "contract=SHELL-LOAD-002 case=corrupt-save classified failure was not retained"
+        );
+
+        send_physical_key(&mut app, KeyCode::Enter);
+        app.update();
+        app.update();
+        assert_eq!(
+            *app.world().resource::<bd_core::spatial::GameMode>(),
+            bd_core::spatial::GameMode::Outpost,
+            "contract=SHELL-LOAD-002 case=corrupt-save New Game did not recover"
+        );
+        let _ = std::fs::remove_dir_all(save_dir);
+    }
+
+    #[test]
+    fn quit_key_emits_exactly_one_application_exit() {
+        // Contract: SHELL-QUIT-001
+        // Given: the production application boundary is active on Title.
+        // When: one physical q press/release pair is submitted.
+        // Then: exactly one successful application-exit event is emitted.
+        // Must not change: later frames cannot emit a duplicate exit.
+        // Evidence layers: input state machine, state diff, workflow.
+        let mut app = application_test_app(temp_save_dir("quit"));
+
+        send_physical_key(&mut app, KeyCode::Char('q'));
+        app.update();
+        let first = app
+            .world_mut()
+            .resource_mut::<Messages<AppExit>>()
+            .drain()
+            .collect::<Vec<_>>();
+        app.update();
+        let second = app
+            .world_mut()
+            .resource_mut::<Messages<AppExit>>()
+            .drain()
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            first.len() + second.len(),
+            1,
+            "contract=SHELL-QUIT-001 case=title-quit expected one exit; \
+             first={first:?} second={second:?}"
+        );
+        assert_eq!(first, vec![AppExit::Success]);
     }
 
     #[test]

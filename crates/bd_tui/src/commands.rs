@@ -42,6 +42,8 @@ pub enum UiCommand {
 pub enum InteractionMode {
     Normal,
     Build,
+    TaskManagement,
+    StationStaffing,
     GameOver,
 }
 
@@ -330,6 +332,7 @@ fn command_order(mode: GameMode, interaction: InteractionMode) -> &'static [UiCo
         UiCommand::Load,
         UiCommand::Quit,
     ];
+    const MANAGEMENT: &[UiCommand] = &[];
     const TITLE: &[UiCommand] = &[UiCommand::Load, UiCommand::Quit];
     const COLONY: &[UiCommand] = &[
         UiCommand::Travel,
@@ -375,6 +378,7 @@ fn command_order(mode: GameMode, interaction: InteractionMode) -> &'static [UiCo
 
     match interaction {
         InteractionMode::Build => BUILD,
+        InteractionMode::TaskManagement | InteractionMode::StationStaffing => MANAGEMENT,
         InteractionMode::GameOver => GAME_OVER,
         InteractionMode::Normal => match mode {
             GameMode::Title => TITLE,
@@ -807,6 +811,24 @@ pub fn footer_control_lines(
             line.push_str(token);
         }
         line
+    }
+
+    if matches!(
+        interaction,
+        InteractionMode::TaskManagement | InteractionMode::StationStaffing
+    ) {
+        let cancel = match interaction {
+            InteractionMode::TaskManagement => "c/Esc:cancel",
+            InteractionMode::StationStaffing => "e/Esc:cancel",
+            _ => unreachable!("management footer branch requires a management interaction"),
+        };
+        return FooterControlLines {
+            contextual: pack(
+                &["1-9:select".into(), "Enter:confirm".into(), cancel.into()],
+                width as usize,
+            ),
+            global: String::new(),
+        };
     }
 
     let inventory = screen_id == "inventory";

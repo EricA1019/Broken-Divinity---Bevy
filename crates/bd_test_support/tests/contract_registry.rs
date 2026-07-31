@@ -332,6 +332,24 @@ fn seeded_registry_maps_current_foundation_contract_batches() {
     let registry =
         ContractRegistry::load(&registry_path).expect("seeded Foundation registry should load");
     let known_tests = [
+        "bd_tui::lib::ui_development_contract_tests::visual_observation_detects_glyph_foreground_modifier_and_geometry_changes",
+        "bd_tui::lib::ui_development_contract_tests::identical_fixture_has_identical_canvas_and_resolved_styles",
+        "bd_tui::lib::ui_development_contract_tests::supported_outpost_panel_rectangles_never_overlap",
+        "bd_tui::lib::ui_development_contract_tests::outpost_map_is_the_largest_interactive_panel_at_supported_profiles",
+        "bd_tui::lib::ui_development_contract_tests::offscreen_assignment_names_target_and_distance_at_supported_profiles",
+        "bd_tui::lib::ui_development_contract_tests::valid_and_invalid_build_previews_differ_without_color",
+        "bd_tui::lib::ui_development_contract_tests::unaffordable_build_selection_explains_the_exact_shortage",
+        "bd_tui::lib::ui_development_contract_tests::task_management_exposes_survivor_task_and_confirm_stages",
+        "bd_tui::lib::ui_development_contract_tests::station_staffing_exposes_survivor_station_recipe_and_confirm_stages",
+        "bd_tui::lib::ui_development_contract_tests::blocked_worker_has_a_distinct_resolved_style_from_working_worker",
+        "bd_tui::lib::ui_development_contract_tests::decisive_warning_survives_routine_log_overflow",
+        "bd_tui::lib::ui_development_contract_tests::rendered_dungeon_denials_explain_attack_pickup_and_extraction",
+        "bd_tui::lib::ui_development_contract_tests::dungeon_status_distinguishes_carried_loot_and_extraction_readiness",
+        "bd_tui::lib::ui_development_contract_tests::title_without_save_explains_why_load_is_unavailable",
+        "bd_tui::lib::ui_development_contract_tests::closed_management_modal_leaves_the_same_canvas_as_a_clean_overview",
+        "bd_tui::lib::ui_development_contract_tests::resize_round_trip_returns_to_the_original_canvas_and_styles",
+        "bd_app::phase6_input::assigned_worker_row_names_target_and_numeric_distance",
+        "bd_tui::lib::tests::assigned_offscreen_target_has_a_directional_edge_indicator",
         "bd_tui::lib::tests::outpost_80x24_viewport_keeps_player_visible_at_far_shelter_edge",
         "bd_tui::lib::tests::outpost_60x20_viewport_keeps_player_visible_at_far_shelter_edge",
         "bd_tui::lib::tests::compact_viewport_projects_resource_next_to_far_edge_player",
@@ -365,6 +383,12 @@ fn seeded_registry_maps_current_foundation_contract_batches() {
         "bd_app::survivor_work_contract::save_load_preserves_the_next_deterministic_worker_step",
         "bd_app::survivor_work_contract::load_does_not_immediately_move_or_produce_for_assigned_worker",
         "bd_app::persistence::save_load_active_dungeon_preserves_foundation_fingerprint_and_scope_counts",
+        "bd_app::persistence_checkpoint_matrix::every_projection_round_trips_the_full_fingerprint_through_checkpoint",
+        "bd_app::persistence_checkpoint_matrix::every_projection_round_trips_the_full_fingerprint_through_manual_slot",
+        "bd_app::persistence_checkpoint_matrix::matrix_projections_are_pairwise_distinct_durable_states",
+        "bd_app::press_repeat_release_policy::only_physical_press_mutates_exactly_once_for_every_foundation_control",
+        "bd_app::press_repeat_release_policy::physical_repeat_never_mutates_any_foundation_control",
+        "bd_app::press_repeat_release_policy::physical_release_never_mutates_any_foundation_control",
         "bd_app::phase6_input::first_outpost_move_key_moves_once_without_opening_or_creating_build_state",
         "bd_app::phase6_input::c_opens_paused_task_management_with_task_identity",
         "bd_app::phase6_input::e_opens_paused_station_staffing_with_station_identity",
@@ -446,6 +470,22 @@ fn seeded_registry_maps_current_foundation_contract_batches() {
         "bd_app::foundation_actions::valid_fixed_dungeon_movement_changes_one_cardinal_tile",
         "bd_app::foundation_actions::fixed_dungeon_wall_movement_is_typed_and_atomic",
         "bd_app::foundation_actions::extraction_away_from_fixed_exit_is_typed_and_atomic",
+        "bd_app::application_tests::missing_title_load_is_atomic_visible_and_recoverable_by_new_game",
+        "bd_app::application_tests::corrupt_title_load_is_atomic_visible_and_recoverable_by_new_game",
+        "bd_app::application_tests::quit_key_emits_exactly_one_application_exit",
+        "bd_app::phase6_input::task_confirmation_emits_one_named_target_and_activity_result",
+        "bd_app::phase6_input::station_confirmation_emits_one_named_station_and_activity_result",
+        "bd_tui::input_help::every_advertised_control_resolves_to_its_declared_command_in_context",
+        "bd_tui::lib::tests::management_modal_and_footer_controls_agree_at_supported_profiles",
+        "bd_app::phase6_input::zero_supplies_overview_exposes_a_reachable_gathering_recovery_path",
+        "bd_tui::lib::tests::day_summary_keeps_authoritative_deltas_visible_at_supported_profiles",
+        "bd_tui::lib::screens::tests::every_shelter_position_projects_inside_supported_viewports",
+        "bd_tui::lib::screens::tests::viewport_pan_preserves_relative_world_positions",
+        "bd_app::phase6_input::production_keys_complete_the_fixed_dungeon_loop_with_named_checkpoints",
+        "bd_app::phase6_input::production_keys_complete_defeat_title_and_shelter_restart",
+        "bd_app::phase6_input::colony_checkpoint_round_trip_preserves_the_visible_projection",
+        "bd_app::phase6_input::tactical_checkpoint_round_trip_preserves_the_visible_projection",
+        "bd_tui::lib::tests::blocked_worker_target_and_reason_fit_supported_profiles",
     ];
     let context = RegistryValidationContext::new(
         project_root()
@@ -464,8 +504,8 @@ fn seeded_registry_maps_current_foundation_contract_batches() {
     );
     assert_eq!(
         registry.contracts.len(),
-        59,
-        "the registry must own every contract in the current visual, worker, management, build, spatial, and dungeon batches"
+        88,
+        "the registry must own every contract in the current visual, worker, management, shell, persistence, build, spatial, and dungeon batches"
     );
     assert_eq!(
         registry
@@ -475,8 +515,8 @@ fn seeded_registry_maps_current_foundation_contract_batches() {
                 contract.id.starts_with("VISUAL-") && contract.status == "GreenUnreviewed"
             })
             .count(),
-        17,
-        "all seventeen registered visual contracts are green but still require review evidence"
+        35,
+        "thirty-five registered visual contracts are green but still require review evidence"
     );
     assert_eq!(
         registry
@@ -485,7 +525,7 @@ fn seeded_registry_maps_current_foundation_contract_batches() {
             .filter(|contract| contract.status == "Red")
             .count(),
         0,
-        "the seeded Foundation registry must have no unresolved red contracts"
+        "the implemented Foundation contract registry must contain no unresolved red contracts"
     );
     assert_eq!(
         registry
@@ -505,7 +545,7 @@ fn seeded_registry_maps_current_foundation_contract_batches() {
                 contract.id.starts_with("DUNGEON-") && contract.status == "GreenUnreviewed"
             })
             .count(),
-        2,
-        "the new fixed-dungeon movement and extraction guards are green but unreviewed"
+        4,
+        "the fixed-dungeon guards and production-key workflows are green but unreviewed"
     );
 }

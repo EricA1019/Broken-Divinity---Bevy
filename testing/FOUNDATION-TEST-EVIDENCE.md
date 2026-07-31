@@ -582,3 +582,194 @@ Validation:
 All 59 required registry contracts are now automated-green and recorded as
 `GreenUnreviewed`. Visual contracts are not `Accepted`: unresolved style and
 real-PTY cells remain open in `testing/VISUAL-ACCEPTANCE-MATRIX.md`.
+
+## Intensive Foundation development-guide pass — 2026-07-27
+
+This pass changed tests and testing governance only. It did not repair the
+production behavior exposed by the new red contracts.
+
+### Scope and contract inventory
+
+- Read the current GDD, locked decisions, Kernel boundaries, authoritative
+  testing standard, requirement map, visual matrix, registry, and existing
+  suite before authoring tests.
+- Added 16 tests and 14 independently owned Foundation contracts.
+- Registry total: 73 required contracts.
+- Contract status: 69 `GreenUnreviewed`, 4 `Red`, 0 `Accepted`, and no hidden
+  deferred or ignored required contract.
+- Every new primary includes Given/When/Then, forbidden-mutation, evidence-layer,
+  stable case-ID, and contract-ID diagnostics.
+
+The added automated coverage owns:
+
+- missing and corrupt Title-load atomicity, classified feedback, and New Game
+  recovery through physical F9/Enter input;
+- exactly one application-exit event from one physical quit input;
+- an advertised-control routing matrix for Title, Outpost, Tactical, Build, and
+  Game Over;
+- exact management confirmation results for direct gathering and station
+  staffing;
+- zero-Supplies denial and reachable gathering recovery guidance;
+- full production-key fixed-dungeon extraction and defeat/restart workflows;
+- player-visible save/load equivalence for colony and Tactical checkpoints;
+- every shelter coordinate under both production-derived viewport sizes and
+  relative-geometry preservation while panning;
+- blocked-worker target/reason/progress fit at 80x24 and 60x20;
+- modal/footer agreement and complete daily-delta visibility at both supported
+  profiles.
+
+### Validation
+
+- `cargo fmt --all -- --check`: pass.
+- `cargo check --workspace --all-targets --locked`: pass.
+- `cargo clippy --workspace --all-targets --locked -- -D warnings`: pass.
+- `git diff --check`: pass.
+- Contract-registry validation: 24 passed, including the seeded 73-contract
+  inventory.
+- Workspace inventory: 619 listed.
+- Full `cargo test --workspace --locked --no-fail-fast`: 615 passed, 4 failed,
+  0 ignored.
+- All pre-existing tests pass. The only failures are the four newly registered
+  red primaries below.
+
+| Contract | Exact failure | Implementation direction |
+|---|---|---|
+| `INPUT-MGMT-007` | `Task set to Gather:Supplies for survivor.` omits Survivor 2, human task label, Water target, and EnRoute | Build the result from the confirmed named survivor, data-owned task/source labels, and derived worker activity; emit once |
+| `INPUT-MGMT-008` | `Survivor 2 assigned to station.` omits Stove and EnRoute | Build the result from the confirmed station identity and derived worker activity; emit once |
+| `VISUAL-MGMT-002` | Management modal shows confirm/cancel while the footer advertises normal Travel/Move/Build controls | Project one explicit management interaction state into footer guidance at both profiles |
+| `VISUAL-COLONY-STATE-002` | The Log clips after Supplies, hiding Materials, Plants, Faith, and Food | Give authoritative day results a wrapping or dedicated presentation that retains every delta at 80x24 and 60x20 |
+
+The suite is intentionally red. Deleting, weakening, ignoring, or
+reclassifying these tests is not a valid implementation. The next production
+batch should repair the four contracts in the order above, run each focused
+owner after its change, then rerun the no-fail-fast workspace suite and update
+the registry/matrices from observed evidence only.
+
+## Intensive Foundation guide-contract closure — 2026-07-27
+
+The four red contracts above were repaired without deleting, ignoring,
+weakening, or reclassifying their primary tests.
+
+- Task and station assignment mutation now attach one transient feedback
+  request to the named survivor. A separate post-movement system emits the
+  decisive result only after authoritative `WorkerActivity` derivation, so the
+  message names the survivor, data-owned assignment label, physical target, and
+  actual activity exactly once.
+- Task and station management are explicit interaction modes. The footer uses
+  the same active mode as the modal and displays only `1-9:select`,
+  `Enter:confirm`, and the correct `c/e/Esc:cancel` control.
+- `DailySummary` owns one DRY structured display representation. The ordinary
+  log retains its causal one-line result, while the Outpost party panel renders
+  six complete Day-result lines so no authoritative delta depends on the
+  two-row Log width.
+- The latest structured Day result is part of `StatsViewModel` and the
+  persistence visible-projection fingerprint.
+
+Validation:
+
+- assignment-feedback owners: 2 passed;
+- complete `phase6_input`: 44 passed;
+- complete `bd_tui --lib`: 63 passed;
+- complete `input_help`: 23 passed;
+- `cargo test --workspace --locked --no-fail-fast`: 619 passed, 0 failed,
+  0 ignored;
+- strict workspace Clippy: pass;
+- canonical development gate: 10/10 steps passed;
+- gate inventory: 619 listed, 619 passed, 0 failed, 0 ignored;
+- registry: 73 required, 73 `GreenUnreviewed`, 0 red, no duplicate primary
+  owners.
+
+These automated contracts are green, not owner-accepted. The visual matrix
+still requires its listed resolved-style and real-PTY review cells before any
+affected visual contract can become `Accepted`.
+
+## Foundation UI development red baseline — 2026-07-28
+
+Authority: GDD player loop, Minimum colony foundation, Minimum dungeon
+foundation, D-18 through D-20, and
+`docs/FOUNDATION-UI-IMPROVEMENT-PLAN.md`.
+
+This pass changed tests, registry ownership, and evidence only. It did not
+implement the UI behavior exposed by the new red contracts.
+
+### Added coverage
+
+- 17 tests:
+  - 16 focused Ratatui semantic/canvas/style/geometry tests;
+  - 1 production-input worker-projection workflow.
+- 13 independently owned required contracts:
+  - 2 `GreenUnreviewed` observation/cleanup contracts;
+  - 11 intentional `Red` implementation targets.
+- Registry total: 86 required contracts.
+- No new ignored or deferred required test.
+
+The new tests prove or expose:
+
+- glyph, foreground, modifier, geometry, and deterministic-render observation;
+- non-overlapping panel geometry and map-area hierarchy;
+- off-screen target identity and distance;
+- target distance in the authoritative worker row;
+- color-independent valid/invalid placement presentation;
+- exact unaffordable-build shortage;
+- explicit task and staffing workflow stages;
+- blocked-worker resolved style;
+- decisive-result retention under routine-log pressure;
+- rendered dungeon action denials, carried loot, and extraction readiness;
+- title Load availability;
+- modal-close cleanup and deterministic supported-profile resize round trip.
+
+### Validation
+
+- `cargo fmt --all`: pass.
+- Contract-registry validation: 24 passed.
+- Registry: 86 required; 75 `GreenUnreviewed`; 11 `Red`.
+- Workspace inventory: 636 listed.
+- Full `cargo test --workspace --locked --no-fail-fast`: 625 passed, 11
+  failed, 0 ignored.
+- Every failure is a newly registered primary. All 619 tests from the prior
+  baseline still pass.
+
+| Contract | Confirmed failure |
+|---|---|
+| `VISUAL-LAYOUT-001` | At 80x24 the map owns 308 cells while the Party panel owns 630 |
+| `VISUAL-VIEWPORT-005` | Off-screen target renders only a direction arrow, with no name or distance |
+| `VISUAL-COLONY-WORK-006` | Worker row names Water but omits the current 16-tile distance |
+| `VISUAL-BUILD-005` | Valid and invalid previews use the same glyph and modifier |
+| `VISUAL-BUILD-006` | Unaffordable Workshop is red but does not state the three-Supplies shortage |
+| `VISUAL-MGMT-003` | Task modal has no Survivor → Task → Confirm stage indicator |
+| `VISUAL-MGMT-004` | Staffing modal has no Survivor → Station → Recipe → Confirm stage indicator |
+| `VISUAL-LANGUAGE-004` | Working and Blocked workers both resolve to the same green Ally style |
+| `VISUAL-FEEDBACK-001` | Routine movement immediately buries a decisive build rejection |
+| `VISUAL-DUNGEON-001` | Dungeon status says Stored loot and omits extraction readiness |
+| `VISUAL-SHELL-001` | Title advertises Load when no save exists without explaining availability |
+
+The suite is intentionally red. Do not delete, weaken, ignore, or reclassify
+these contracts to restore aggregate green. Implement them one at a time in
+the phase order owned by the UI improvement plan.
+
+## Foundation UI implementation evidence — 2026-07-28
+
+The 11 UI development contracts above were implemented without deleting,
+ignoring, or weakening their primary tests. Their registry status is now
+`GreenUnreviewed`; visual owner acceptance remains separate.
+
+- The shelter map is the largest interactive panel at both supported profiles,
+  while panel-overlap geometry remains green.
+- Off-screen assignments and survivor rows expose target identity and numeric
+  Manhattan distance.
+- Invalid placement uses a data-driven danger token and distinct `!` glyph;
+  unaffordable selection reports the exact Supplies shortage.
+- Task and station management display their complete workflow stages.
+- Blocked workers resolve to a danger style distinct from working workers.
+- The newest warning remains visible when routine log rows overflow.
+- Tactical stats project carried transient loot and extraction readiness from
+  authoritative ECS state.
+- Title Load availability is projected from the real manual save slot and is
+  updated after a successful save.
+
+Validation:
+
+- `cargo fmt --all -- --check`: pass.
+- `cargo test -p bd_tui --lib`: 79 passed, 0 failed, 0 ignored.
+- `cargo test -p bd_app --bin bd`: 25 passed, 0 failed, 0 ignored.
+- `cargo test --workspace`: pass, including 636 tests and 0 ignored.

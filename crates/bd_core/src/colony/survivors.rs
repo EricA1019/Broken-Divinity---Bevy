@@ -80,6 +80,16 @@ pub enum WorkerActivity {
     Defending,
 }
 
+/// One accepted management assignment awaiting its decisive player-facing result.
+///
+/// Assignment mutation and worker-activity derivation occur in separate
+/// systems. Keeping this transient marker on the survivor lets feedback report
+/// the authoritative derived activity instead of guessing during mutation.
+#[derive(Component, Debug, Clone, PartialEq, Eq)]
+pub(crate) struct PendingAssignmentFeedback {
+    pub(crate) assignment_label: String,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum WorkerBlockedReason {
     MissingTarget,
@@ -260,21 +270,52 @@ pub fn process_station_assignments(
         }
         commands
             .entity(msg.survivor)
-            .insert(SurvivorTask::AssignedTo(station_index))
+            .insert((
+                SurvivorTask::AssignedTo(station_index),
+                PendingAssignmentFeedback {
+                    assignment_label: targets
+                        .names
+                        .get(msg.station)
+                        .map_or_else(|_| "Unknown station".into(), |name| name.0.clone()),
+                },
+            ))
             .remove::<(
                 crate::colony::logistics::LogisticsJob,
                 crate::colony::logistics::Cargo,
                 crate::colony::resources::DirectGatherProgress,
             )>();
-        let survivor_name = targets
-            .names
-            .get(msg.survivor)
-            .map(|n| n.0.as_str())
-            .unwrap_or("Survivor");
+    }
+}
+
+pub(crate) fn report_assignment_feedback(
+    mut commands: Commands,
+    assignments: Query<(
+        Entity,
+        &crate::components::Name,
+        &WorkerActivity,
+        &PendingAssignmentFeedback,
+    )>,
+    mut game_log: ResMut<crate::gamelog::GameLog>,
+) {
+    for (entity, survivor, activity, feedback) in assignments.iter() {
+        let (target, state) = match activity {
+            WorkerActivity::Idle => ("none", "Idle"),
+            WorkerActivity::EnRoute { target, .. } => (target.as_str(), "EnRoute"),
+            WorkerActivity::Working { target, .. } => (target.as_str(), "Working"),
+            WorkerActivity::Blocked { target, .. } => (target.as_str(), "Blocked"),
+            WorkerActivity::Resting => ("shelter", "Resting"),
+            WorkerActivity::Defending => ("shelter", "Defending"),
+        };
         game_log.push(
-            format!("{} assigned to station.", survivor_name),
+            format!(
+                "{} assigned to {} at {} — {}.",
+                survivor.0, feedback.assignment_label, target, state
+            ),
             crate::gamelog::LogLevel::Info,
         );
+        commands
+            .entity(entity)
+            .remove::<PendingAssignmentFeedback>();
     }
 }
 

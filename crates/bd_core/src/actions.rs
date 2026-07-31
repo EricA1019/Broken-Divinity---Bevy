@@ -1319,16 +1319,18 @@ pub(crate) fn resolve_action_effects(
                                 cargo,
                             );
                         }
-                        commands.entity(target).insert(new_task).remove::<(
+                        let mut target_commands = commands.entity(target);
+                        target_commands.insert(new_task).remove::<(
                             crate::colony::logistics::LogisticsJob,
                             crate::colony::logistics::Cargo,
                             crate::colony::stations::AutoConstructing,
                             crate::colony::resources::DirectGatherProgress,
                         )>();
                         if player_flag.is_some() {
-                            game_log.push(
-                                format!("Task set to {} for survivor.", task),
-                                LogLevel::Info,
+                            target_commands.insert(
+                                crate::colony::survivors::PendingAssignmentFeedback {
+                                    assignment_label: def.label.clone(),
+                                },
                             );
                         }
                     }

@@ -4,7 +4,7 @@ use bevy_app::App;
 use bevy_ecs::{
     prelude::*,
     query::With,
-    system::{Query, Res, ResMut},
+    system::{Query, Res, ResMut, SystemParam},
 };
 use serde::{Deserialize, Serialize};
 
@@ -30,15 +30,24 @@ pub struct StatsViewModel {
     pub materials: i32,
     pub wild_plants: i32,
     pub stored_items: Vec<(String, u32)>,
+    pub carried_loot: u32,
+    pub extraction_ready: bool,
+    pub save_available: bool,
     pub run_outcome: bd_core::session::RunOutcome,
     pub extracted_loot: u32,
     pub day: u64,
     pub party_names: Vec<String>,
     pub station_status: Vec<String>,
     pub next_day_forecast: String,
+    pub latest_daily_summary: Vec<String>,
     pub management: Option<ManagementMenuVm>,
     /// Compact faction standings: (label, value, status_text).
     pub faction_standings: Vec<(String, i32, String)>,
+}
+
+#[derive(Resource, Debug, Clone, Copy, Default)]
+pub struct SaveAvailability {
+    pub manual_slot: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -92,6 +101,8 @@ pub struct MapViewModel {
     pub visuals: Vec<MapVisualVm>,
     /// Physical targets of active survivor assignments.
     pub assigned_targets: Vec<Position>,
+    /// Display identity for active assignment targets.
+    pub assigned_target_details: Vec<AssignedTargetVm>,
     /// Build ghost cursor position and glyph for outpost map rendering.
     pub build_ghost: Option<(Position, char)>,
     /// Typed production-domain reason why the current preview cannot be built.
@@ -107,6 +118,13 @@ pub struct MapVisualVm {
     pub position: Position,
     pub token: crate::visual::VisualToken,
     pub glyph: Option<char>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AssignedTargetVm {
+    pub position: Position,
+    pub label: String,
+    pub survivor: String,
 }
 
 #[derive(Debug, Clone)]
@@ -161,6 +179,7 @@ pub struct EventViewModel {
 
 pub(crate) fn register_view_models(app: &mut App) {
     app.insert_resource(StatsViewModel::default());
+    app.init_resource::<SaveAvailability>();
     app.insert_resource(LogViewModel::default());
     app.insert_resource(ActionListViewModel::default());
     app.insert_resource(MapViewModel::default());
@@ -187,6 +206,7 @@ pub(crate) fn register_view_models(app: &mut App) {
 type SurvivorPartyItem<'a> = (
     Entity,
     &'a Name,
+    &'a Position,
     &'a bd_core::colony::survivors::SurvivorTask,
     Option<&'a Pools>,
     Option<&'a bd_core::spatial::EntityScope>,
@@ -215,24 +235,47 @@ fn content_resource_label(content: &bd_core::content::FoundationContent, id: &st
         )
 }
 
-fn activity_label(activity: Option<&bd_core::colony::survivors::WorkerActivity>) -> String {
+fn activity_label(
+    activity: Option<&bd_core::colony::survivors::WorkerActivity>,
+    worker_position: Position,
+) -> String {
+    let distance_to = |target: Position| {
+        (target.x - worker_position.x).unsigned_abs()
+            + (target.y - worker_position.y).unsigned_abs()
+    };
     activity.map_or_else(
         || "Assigned".into(),
         |activity| match activity {
             bd_core::colony::survivors::WorkerActivity::Idle => "Idle".into(),
-            bd_core::colony::survivors::WorkerActivity::EnRoute { target, .. } => {
-                format!("EnRoute {target}")
+            bd_core::colony::survivors::WorkerActivity::EnRoute {
+                target,
+                target_position,
+                ..
+            } => {
+                format!("EnRoute {target} · {} tiles", distance_to(*target_position))
             }
             bd_core::colony::survivors::WorkerActivity::Working { target, .. } => {
                 format!("Working {target}")
             }
-            bd_core::colony::survivors::WorkerActivity::Blocked { target, reason, .. } => {
+            bd_core::colony::survivors::WorkerActivity::Blocked {
+                target,
+                target_position,
+                reason,
+            } => {
                 let reason = reason.to_string();
                 let mut characters = reason.chars();
                 let readable_reason = characters.next().map_or_else(String::new, |first| {
                     first.to_uppercase().collect::<String>() + characters.as_str()
                 });
-                format!("Blocked {target}: {readable_reason}")
+                target_position.map_or_else(
+                    || format!("Blocked {target}: {readable_reason}"),
+                    |target_position| {
+                        format!(
+                            "Blocked {target} · {} tiles: {readable_reason}",
+                            distance_to(target_position)
+                        )
+                    },
+                )
             }
             bd_core::colony::survivors::WorkerActivity::Resting => "Resting".into(),
             bd_core::colony::survivors::WorkerActivity::Defending => "Defending".into(),
@@ -240,49 +283,95 @@ fn activity_label(activity: Option<&bd_core::colony::survivors::WorkerActivity>)
     )
 }
 
-fn build_stats_vm(
-    player_pools: Query<&Pools, With<Player>>,
-    mut vm: ResMut<StatsViewModel>,
-    colony_res: Res<bd_core::colony::production::ColonyResources>,
-    colony_storage: Res<bd_core::colony::production::ColonyStorage>,
-    game_time: Res<bd_core::time::GameTime>,
-    last_completed: Res<bd_core::session::LastCompletedRun>,
-    faction_rep: Option<Res<bd_core::factions::FactionReputation>>,
-) {
-    if let Ok(pools) = player_pools.single() {
+#[derive(SystemParam)]
+struct StatsProjectionInputs<'w, 's> {
+    player: Query<'w, 's, (Entity, &'static Pools, &'static Position), With<Player>>,
+    carried_items: Query<
+        'w,
+        's,
+        (
+            &'static ContainedIn,
+            Option<&'static bd_core::spatial::EntityScope>,
+        ),
+        With<Item>,
+    >,
+    exits: Query<
+        'w,
+        's,
+        (
+            &'static Position,
+            Option<&'static bd_core::spatial::EntityScope>,
+        ),
+        With<ExitTile>,
+    >,
+    colony_res: Res<'w, bd_core::colony::production::ColonyResources>,
+    colony_storage: Res<'w, bd_core::colony::production::ColonyStorage>,
+    game_time: Res<'w, bd_core::time::GameTime>,
+    last_completed: Res<'w, bd_core::session::LastCompletedRun>,
+    faction_rep: Option<Res<'w, bd_core::factions::FactionReputation>>,
+    mode: Option<Res<'w, bd_core::spatial::GameMode>>,
+    save_availability: Option<Res<'w, SaveAvailability>>,
+}
+
+fn build_stats_vm(inputs: StatsProjectionInputs, mut vm: ResMut<StatsViewModel>) {
+    let mode = inputs.mode.as_deref().copied().unwrap_or_default();
+    if let Ok((player_entity, pools, player_position)) = inputs.player.single() {
         vm.hp_current = pools.get(PoolKind::Health).map_or(0, |p| p.current);
         vm.hp_max = pools.get(PoolKind::Health).map_or(0, |p| p.max);
         vm.ap_current = pools.get(PoolKind::ActionPoints).map_or(0, |p| p.current);
         vm.ap_max = pools.get(PoolKind::ActionPoints).map_or(0, |p| p.max);
+        vm.carried_loot = inputs
+            .carried_items
+            .iter()
+            .filter(|(contained, scope)| {
+                contained.0 == player_entity
+                    && matches!(scope, Some(bd_core::spatial::EntityScope::DungeonTransient))
+            })
+            .count() as u32;
+        vm.extraction_ready = mode == bd_core::spatial::GameMode::Tactical
+            && inputs.exits.iter().any(|(position, scope)| {
+                bd_core::spatial::entity_is_active(scope, mode, true) && position == player_position
+            });
+    } else {
+        vm.carried_loot = 0;
+        vm.extraction_ready = false;
     }
-    vm.supplies = colony_res
+    vm.save_available = inputs
+        .save_availability
+        .is_some_and(|availability| availability.manual_slot);
+    vm.supplies = inputs
+        .colony_res
         .pools
         .get(PoolKind::Supplies)
         .map_or(0, |p| p.current);
-    vm.faith = colony_res
+    vm.faith = inputs
+        .colony_res
         .pools
         .get(PoolKind::Faith)
         .map_or(0, |p| p.current);
-    vm.materials = colony_res
+    vm.materials = inputs
+        .colony_res
         .pools
         .get(PoolKind::Materials)
         .map_or(0, |p| p.current);
-    vm.wild_plants = colony_res
+    vm.wild_plants = inputs
+        .colony_res
         .pools
         .get(PoolKind::WildPlants)
         .map_or(0, |p| p.current);
-    vm.stored_items = colony_storage
+    vm.stored_items = inputs
+        .colony_storage
         .items
         .iter()
         .map(|(id, count)| (id.clone(), *count))
         .collect::<Vec<_>>();
-    vm.day = game_time.day;
-    vm.run_outcome = last_completed.outcome;
-    vm.extracted_loot = last_completed.extracted_loot;
+    vm.day = inputs.game_time.day;
+    vm.run_outcome = inputs.last_completed.outcome;
+    vm.extracted_loot = inputs.last_completed.extracted_loot;
 
     // P17-D: Faction standings
     vm.faction_standings.clear();
-    let Some(faction_rep) = faction_rep else {
+    let Some(faction_rep) = inputs.faction_rep else {
         return;
     };
     for faction in bd_core::factions::ALL_FACTIONS {
@@ -344,6 +433,7 @@ fn build_party_vm(
     >,
     work_nodes: Query<(&Position, &bd_core::components::ResourceNode)>,
     colony_resources: Res<bd_core::colony::production::ColonyResources>,
+    latest_daily_summary: Res<bd_core::colony::production::LatestDailySummary>,
     station_catalog: Res<bd_core::colony::stations::StationCatalog>,
     management: Res<crate::ManagementMenuState>,
     foundation_content: Option<Res<bd_core::content::FoundationContent>>,
@@ -357,7 +447,7 @@ fn build_party_vm(
 ) {
     let mut active_survivors: Vec<_> = survivors
         .iter()
-        .filter(|(_, _, _, _, scope, _, _)| scope_active(*scope, *mode))
+        .filter(|(_, _, _, _, _, scope, _, _)| scope_active(*scope, *mode))
         .collect::<Vec<_>>();
     active_survivors.sort_by(|left, right| left.1.0.cmp(&right.1.0));
     let mut active_stations: Vec<_> = stations
@@ -370,9 +460,9 @@ fn build_party_vm(
     vm.party_names = active_survivors
         .iter()
         .map(
-            |(entity, name, task, pools, _, activity, direct_progress)| {
+            |(entity, name, position, task, pools, _, activity, direct_progress)| {
                 let task = if let Ok((job, cargo, activity)) = logistics.get(*entity) {
-                    let activity = activity_label(activity);
+                    let activity = activity_label(activity, **position);
                     let recipe = foundation_content.as_ref().and_then(|content| {
                         content
                             .colony_recipes
@@ -436,7 +526,7 @@ fn build_party_vm(
                                 definition.map_or(0, |definition| definition.output_amount);
                             let work_state = activity.map_or_else(
                                 || format!("Assigned {source}"),
-                                |_| activity_label(*activity),
+                                |_| activity_label(*activity, **position),
                             );
                             format!(
                                 "Gather {} | {} | {}/{} → {} {}",
@@ -476,14 +566,14 @@ fn build_party_vm(
                 .map_or_else(|| "Unknown effect".into(), |entry| entry.effect_label());
             let worker = active_survivors
                 .iter()
-                .find(|(_, _, task, _, _, _, _)| {
+                .find(|(_, _, _, task, _, _, _, _)| {
                     matches!(
                         task,
                         bd_core::colony::survivors::SurvivorTask::AssignedTo(bits)
                             if *bits == entity.to_bits()
                     )
                 })
-                .map_or("Unstaffed", |(_, name, _, _, _, _, _)| name.0.as_str());
+                .map_or("Unstaffed", |(_, name, _, _, _, _, _, _)| name.0.as_str());
             format!("{} — {} — {}", name.0, effect, worker)
         })
         .collect();
@@ -547,25 +637,26 @@ fn build_party_vm(
         &work_nodes,
         &station_catalog,
     );
-    let next_worker = active_survivors
-        .iter()
-        .find_map(|(_, _, task, _, _, _, direct_progress)| {
-            let bd_core::colony::survivors::SurvivorTask::Gathering(kind) = task else {
-                return None;
-            };
-            let definition = foundation_content.as_ref().and_then(|content| {
-                bd_core::colony::resources::direct_gather_definition(content, *kind)
-            })?;
-            let completed = direct_progress
-                .filter(|progress| progress.definition_id == definition.id)
-                .map_or(0, |progress| progress.work_completed);
-            Some(format!(
-                "{} +{} after {} work",
-                pool_label(*kind),
-                definition.output_amount,
-                definition.work_turns.saturating_sub(completed)
-            ))
-        });
+    let next_worker =
+        active_survivors
+            .iter()
+            .find_map(|(_, _, _, task, _, _, _, direct_progress)| {
+                let bd_core::colony::survivors::SurvivorTask::Gathering(kind) = task else {
+                    return None;
+                };
+                let definition = foundation_content.as_ref().and_then(|content| {
+                    bd_core::colony::resources::direct_gather_definition(content, *kind)
+                })?;
+                let completed = direct_progress
+                    .filter(|progress| progress.definition_id == definition.id)
+                    .map_or(0, |progress| progress.work_completed);
+                Some(format!(
+                    "{} +{} after {} work",
+                    pool_label(*kind),
+                    definition.output_amount,
+                    definition.work_turns.saturating_sub(completed)
+                ))
+            });
     vm.next_day_forecast = format!(
         "Next worker: {} | Next day: Sup -{}food {:+}stn={:+}→{} M{:+} P{:+} F{:+}",
         next_worker.as_deref().unwrap_or("no direct completion"),
@@ -576,6 +667,10 @@ fn build_party_vm(
         forecast.materials_net,
         forecast.plants_net,
         forecast.faith_net,
+    );
+    vm.latest_daily_summary = latest_daily_summary.0.as_ref().map_or_else(
+        Vec::new,
+        bd_core::colony::production::DailySummary::display_lines,
     );
 
     vm.management = management.active.then(|| {
@@ -638,14 +733,14 @@ fn build_party_vm(
                         .map_or_else(|| "Unknown effect".into(), |entry| entry.effect_label());
                     let worker = active_survivors
                         .iter()
-                        .find(|(_, _, task, _, _, _, _)| {
+                        .find(|(_, _, _, task, _, _, _, _)| {
                             matches!(
                                 task,
                                 bd_core::colony::survivors::SurvivorTask::AssignedTo(bits)
                                     if *bits == entity.to_bits()
                             )
                         })
-                        .map_or("Unstaffed", |(_, name, _, _, _, _, _)| name.0.as_str());
+                        .map_or("Unstaffed", |(_, name, _, _, _, _, _, _)| name.0.as_str());
                     format!("{}. {} — {} — {}", index + 1, name.0, effect, worker)
                 })
                 .collect(),
@@ -1003,7 +1098,8 @@ fn build_map_vm(
         }
     }
     vm.assigned_targets.clear();
-    for (pos, _name, task, activity, scope) in survivors.iter() {
+    vm.assigned_target_details.clear();
+    for (pos, name, task, activity, scope) in survivors.iter() {
         if !scope_active(scope, *mode) {
             continue;
         }
@@ -1047,25 +1143,51 @@ fn build_map_vm(
             token,
             glyph: None,
         });
-        let target_position = match activity {
+        let target_detail = match activity {
             Some(bd_core::colony::survivors::WorkerActivity::EnRoute {
-                target_position, ..
+                target,
+                target_position,
+                ..
             })
             | Some(bd_core::colony::survivors::WorkerActivity::Working {
-                target_position, ..
-            }) => Some(*target_position),
+                target,
+                target_position,
+            }) => Some((*target_position, target.clone())),
             Some(bd_core::colony::survivors::WorkerActivity::Blocked {
-                target_position, ..
-            }) => *target_position,
+                target,
+                target_position,
+                ..
+            }) => target_position.map(|position| (position, target.clone())),
             _ => None,
         };
-        if let Some(target_position) = target_position {
+        if let Some((target_position, target_label)) = target_detail {
             vm.assigned_targets.push(target_position);
+            vm.assigned_target_details.push(AssignedTargetVm {
+                position: target_position,
+                label: target_label,
+                survivor: name.map_or_else(|| "Survivor".into(), |name| name.0.clone()),
+            });
         }
     }
     vm.assigned_targets
         .sort_by_key(|position| (position.y, position.x));
     vm.assigned_targets.dedup();
+    vm.assigned_target_details.sort_by(|left, right| {
+        (
+            left.position.y,
+            left.position.x,
+            left.label.as_str(),
+            left.survivor.as_str(),
+        )
+            .cmp(&(
+                right.position.y,
+                right.position.x,
+                right.label.as_str(),
+                right.survivor.as_str(),
+            ))
+    });
+    vm.assigned_target_details
+        .dedup_by(|left, right| left.position == right.position && left.label == right.label);
     let staffed = survivors
         .iter()
         .filter_map(|(_, _, task, _, scope)| {

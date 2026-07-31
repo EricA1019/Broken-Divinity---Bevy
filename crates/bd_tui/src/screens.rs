@@ -114,6 +114,7 @@ pub struct WidgetRenderContext<'a> {
     pub help: &'a HelpViewModel,
     pub symbols: &'a SymbolRegistry,
     pub theme: &'a ThemeRegistry,
+    pub mode: bd_core::spatial::GameMode,
 }
 
 /// A registered widget knows its view-model dependency and how to render.
@@ -287,14 +288,12 @@ pub fn default_screen_registry() -> ScreenRegistry {
         panels: vec![
             PanelDefinition {
                 id: "outpost_party".into(),
-                layout: PanelLayout::Left { width_pct: 38 },
+                layout: PanelLayout::Left { width_pct: 24 },
                 view_model: "ContainerViewModel".into(),
             },
             PanelDefinition {
                 id: "stats".into(),
-                layout: PanelLayout::Right {
-                    width_pct: STATS_PANEL_WIDTH_PCT,
-                },
+                layout: PanelLayout::Right { width_pct: 20 },
                 view_model: "StatsViewModel".into(),
             },
             PanelDefinition {
@@ -304,7 +303,7 @@ pub fn default_screen_registry() -> ScreenRegistry {
             },
             PanelDefinition {
                 id: "actions".into(),
-                layout: PanelLayout::Bottom { height_pct: 30 },
+                layout: PanelLayout::Bottom { height_pct: 20 },
                 view_model: "ActionListViewModel".into(),
             },
             PanelDefinition {
@@ -401,10 +400,10 @@ pub fn compact_screen_definition(definition: &ScreenDefinition) -> ScreenDefinit
         "outpost" => {
             for panel in &mut compact.panels {
                 match panel.id.as_str() {
-                    "outpost_party" => panel.layout = PanelLayout::Left { width_pct: 40 },
-                    "stats" => panel.layout = PanelLayout::Right { width_pct: 23 },
-                    "actions" => panel.layout = PanelLayout::Bottom { height_pct: 30 },
-                    "log" => panel.layout = PanelLayout::Bottom { height_pct: 20 },
+                    "outpost_party" => panel.layout = PanelLayout::Left { width_pct: 25 },
+                    "stats" => panel.layout = PanelLayout::Right { width_pct: 20 },
+                    "actions" => panel.layout = PanelLayout::Bottom { height_pct: 24 },
+                    "log" => panel.layout = PanelLayout::Bottom { height_pct: 18 },
                     _ => {}
                 }
             }
@@ -507,6 +506,12 @@ fn render_title_splash_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderC
             style_muted,
         ),
     ];
+    if !ctx.stats.save_available {
+        text.push(ratatui::text::Line::styled(
+            "Load unavailable — No save",
+            ratatui::style::Style::default().fg(ratatui::style::Color::Yellow),
+        ));
+    }
     if let Some(entry) = ctx
         .log
         .entries
@@ -785,15 +790,35 @@ impl MapViewport {
 }
 
 fn render_map_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
+    let inner_width = area.width.saturating_sub(2);
+    let inner_height = area.height.saturating_sub(2);
+    let viewport = MapViewport::follow_active_focus(ctx.map, inner_width, inner_height);
+    let offscreen_detail = ctx
+        .map
+        .assigned_target_details
+        .iter()
+        .find(|target| viewport.project(target.position).is_none());
+    let title = offscreen_detail.map_or_else(
+        || " Map ".to_owned(),
+        |target| {
+            let direction = viewport
+                .edge_indicator(target.position)
+                .map_or('?', |(_, _, direction)| direction);
+            let distance = ctx.map.player_pos.map_or(0, |player| {
+                (target.position.x - player.x).unsigned_abs()
+                    + (target.position.y - player.y).unsigned_abs()
+            });
+            format!(" {direction} {} · {distance} tiles ", target.label)
+        },
+    );
     let block = ratatui::widgets::Block::default()
-        .title(" Map ")
+        .title(title)
         .borders(ratatui::widgets::Borders::ALL)
         .style(ratatui::style::Style::default().fg(ratatui::style::Color::Gray));
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let viewport = MapViewport::follow_active_focus(ctx.map, inner.width, inner.height);
     let w = viewport.width;
     let h = viewport.height;
     let mut grid = RenderCellGrid::new(w, h, VisualToken::Floor, ctx.symbols, ctx.theme);
@@ -845,7 +870,11 @@ fn render_map_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
     // P2-C: Render build ghost cursor on shelter map
     if let Some((pos, glyph)) = &ctx.map.build_ghost {
         if let Some((x, y)) = viewport.project(*pos) {
-            grid.set_glyph(x, y, *glyph, VisualToken::Selection, ctx.symbols, ctx.theme);
+            if ctx.map.build_ghost_denial.is_some() {
+                grid.set(x, y, VisualToken::InvalidSelection, ctx.symbols, ctx.theme);
+            } else {
+                grid.set_glyph(x, y, *glyph, VisualToken::Selection, ctx.symbols, ctx.theme);
+            }
         }
     }
 
@@ -866,7 +895,16 @@ fn render_map_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
 
 pub fn render_build_overlay(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
     if let Some(menu) = &ctx.stats.management {
+        let stages = match menu.kind {
+            super::view_models::ManagementMenuKind::TaskAssignment => {
+                "1 Survivor  >  2 Task  >  3 Confirm"
+            }
+            super::view_models::ManagementMenuKind::StationStaffing => {
+                "1 Survivor  >  2 Station  >  3 Recipe  >  4 Confirm"
+            }
+        };
         let mut lines = vec![
+            ratatui::text::Line::styled(stages, ratatui::style::Style::default().fg(ACCENT_COLOR)),
             ratatui::text::Line::styled(
                 menu.resources.clone(),
                 ratatui::style::Style::default().fg(ratatui::style::Color::Yellow),
@@ -965,8 +1003,11 @@ pub fn render_build_overlay(frame: &mut Frame, area: Rect, ctx: &WidgetRenderCon
                 })
                 .0
         });
-        let height =
-            (menu.options.len() + selected_effect_rows + 5).min(area.height as usize) as u16;
+        let shortage_rows = menu.options.get(menu.selected).map_or(0, |(_, cost, _)| {
+            usize::from(menu.available_supplies < *cost)
+        });
+        let height = (menu.options.len() + selected_effect_rows + shortage_rows + 5)
+            .min(area.height as usize) as u16;
         let modal = Rect {
             x: area.x + area.width.saturating_sub(width) / 2,
             y: area.y + area.height.saturating_sub(height) / 2,
@@ -1002,11 +1043,20 @@ pub fn render_build_overlay(frame: &mut Frame, area: Rect, ctx: &WidgetRenderCon
                 ratatui::style::Style::default().fg(color),
             ));
         }
-        if let Some((_, _, effect)) = menu.options.get(menu.selected) {
+        if let Some((_, cost, effect)) = menu.options.get(menu.selected) {
             lines.push(ratatui::text::Line::styled(
                 format!("Effect: {effect}"),
                 ratatui::style::Style::default().fg(ACCENT_COLOR),
             ));
+            if menu.available_supplies < *cost {
+                lines.push(ratatui::text::Line::styled(
+                    format!(
+                        "Unavailable: Need {} more Supplies",
+                        cost - menu.available_supplies
+                    ),
+                    ratatui::style::Style::default().fg(ratatui::style::Color::Red),
+                ));
+            }
         }
         let numeric_choices = menu.options.len().min(9);
         lines.push(ratatui::text::Line::styled(
@@ -1220,6 +1270,29 @@ fn render_stats_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext)
         ));
     }
 
+    if ctx.mode == bd_core::spatial::GameMode::Tactical {
+        text.push(ratatui::text::Line::styled(
+            if compact_stats {
+                format!("Carry:{}", ctx.stats.carried_loot)
+            } else {
+                format!("Carried loot: {}", ctx.stats.carried_loot)
+            },
+            ratatui::style::Style::default().fg(ratatui::style::Color::Cyan),
+        ));
+        text.push(ratatui::text::Line::styled(
+            if ctx.stats.extraction_ready {
+                "Extraction: Ready"
+            } else {
+                "Extraction: Reach exit"
+            },
+            ratatui::style::Style::default().fg(if ctx.stats.extraction_ready {
+                ratatui::style::Color::Green
+            } else {
+                MUTED_COLOR
+            }),
+        ));
+    }
+
     let para = ratatui::widgets::Paragraph::new(text);
     frame.render_widget(para, inner);
 }
@@ -1235,11 +1308,30 @@ fn render_log_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
 
     let visible_rows = inner.height as usize;
     let first_visible = ctx.log.entries.len().saturating_sub(visible_rows);
-    let lines: Vec<ratatui::text::Line> = ctx
+    let mut visible = ctx
         .log
         .entries
         .iter()
         .skip(first_visible)
+        .collect::<Vec<_>>();
+    if visible_rows > 0
+        && !visible
+            .iter()
+            .any(|entry| entry.level == bd_core::gamelog::LogLevel::Warn)
+        && let Some(warning) = ctx
+            .log
+            .entries
+            .iter()
+            .rev()
+            .find(|entry| entry.level == bd_core::gamelog::LogLevel::Warn)
+    {
+        if visible.len() == visible_rows {
+            visible.remove(0);
+        }
+        visible.insert(0, warning);
+    }
+    let lines: Vec<ratatui::text::Line> = visible
+        .into_iter()
         .map(|entry| {
             let style = match entry.level {
                 bd_core::gamelog::LogLevel::Info => {
@@ -1475,23 +1567,30 @@ fn render_outpost_party_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRender
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let lines: Vec<ratatui::text::Line> = if ctx.stats.party_names.is_empty() {
-        vec![ratatui::text::Line::styled(
+    let mut lines = Vec::new();
+    if !ctx.stats.latest_daily_summary.is_empty() {
+        lines.extend(ctx.stats.latest_daily_summary.iter().map(|summary_line| {
+            ratatui::text::Line::styled(
+                summary_line.clone(),
+                ratatui::style::Style::default()
+                    .fg(ratatui::style::Color::Yellow)
+                    .add_modifier(ratatui::style::Modifier::BOLD),
+            )
+        }));
+        lines.push(ratatui::text::Line::from(""));
+    }
+    if ctx.stats.party_names.is_empty() {
+        lines.push(ratatui::text::Line::styled(
             " (empty)",
             ratatui::style::Style::default().fg(MUTED_COLOR),
-        )]
+        ));
     } else {
-        let mut lines: Vec<_> = ctx
-            .stats
-            .party_names
-            .iter()
-            .map(|name| {
-                ratatui::text::Line::styled(
-                    format!(" {}", name),
-                    ratatui::style::Style::default().fg(ratatui::style::Color::White),
-                )
-            })
-            .collect();
+        lines.extend(ctx.stats.party_names.iter().map(|name| {
+            ratatui::text::Line::styled(
+                format!(" {}", name),
+                ratatui::style::Style::default().fg(ratatui::style::Color::White),
+            )
+        }));
         lines.extend(ctx.stats.station_status.iter().map(|status| {
             ratatui::text::Line::styled(
                 format!(" {status}"),
@@ -1502,8 +1601,7 @@ fn render_outpost_party_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRender
             format!(" {}", ctx.stats.next_day_forecast),
             ratatui::style::Style::default().fg(ratatui::style::Color::Yellow),
         ));
-        lines
-    };
+    }
 
     let para = ratatui::widgets::Paragraph::new(lines).wrap(ratatui::widgets::Wrap { trim: false });
     frame.render_widget(para, inner);
@@ -1647,6 +1745,113 @@ fn render_event_choices_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRender
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn supported_outpost_map_sizes() -> [(u16, u16); 2] {
+        [(80, 24), (60, 20)].map(|(width, height)| {
+            let definition = default_screen_registry()
+                .get("outpost")
+                .expect("outpost screen must exist")
+                .clone();
+            let definition = if crate::commands::terminal_layout(width, height)
+                == crate::commands::TerminalLayout::Compact
+            {
+                compact_screen_definition(&definition)
+            } else {
+                definition
+            };
+            let content = Rect::new(0, 0, width, height.saturating_sub(3));
+            let map_rect = compute_panel_rects(&definition, content)
+                .into_iter()
+                .find_map(|(id, rect)| (id == "map").then_some(rect))
+                .expect("outpost screen must include a map panel");
+            (
+                map_rect.width.saturating_sub(2),
+                map_rect.height.saturating_sub(2),
+            )
+        })
+    }
+
+    #[test]
+    fn every_shelter_position_projects_inside_supported_viewports() {
+        // Contract: VISUAL-VIEWPORT-003
+        // Given: every legal shelter coordinate at each supported map size.
+        // When: the production follow-focus viewport is calculated.
+        // Then: the player coordinate projects inside the visible map.
+        // Must not change: no edge or corner coordinate may disappear.
+        // Evidence layers: projection and buffer layout.
+        for (viewport_width, viewport_height) in supported_outpost_map_sizes() {
+            for y in 0..30 {
+                for x in 0..40 {
+                    let position = bd_core::components::Position { x, y };
+                    let map = MapViewModel {
+                        width: 40,
+                        height: 30,
+                        player_pos: Some(position),
+                        ..Default::default()
+                    };
+                    let viewport =
+                        MapViewport::follow_active_focus(&map, viewport_width, viewport_height);
+                    assert!(
+                        viewport.project(position).is_some(),
+                        "contract=VISUAL-VIEWPORT-003 case={viewport_width}x{viewport_height} \
+                         fixture=shelter-all-positions player={position:?} \
+                         origin=({}, {})",
+                        viewport.origin_x,
+                        viewport.origin_y
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn viewport_pan_preserves_relative_world_positions() {
+        // Contract: VISUAL-VIEWPORT-004
+        // Given: fixed world-coordinate pairs under edge and center focus cases.
+        // When: the production viewport pans and projects both coordinates.
+        // Then: screen-space deltas equal world-space deltas.
+        // Must not change: panning cannot distort relative geometry.
+        // Evidence layers: projection and buffer layout.
+        for (viewport_width, viewport_height) in supported_outpost_map_sizes() {
+            for focus in [
+                bd_core::components::Position { x: 1, y: 1 },
+                bd_core::components::Position { x: 20, y: 15 },
+                bd_core::components::Position { x: 38, y: 28 },
+            ] {
+                let map = MapViewModel {
+                    width: 40,
+                    height: 30,
+                    player_pos: Some(focus),
+                    ..Default::default()
+                };
+                let viewport =
+                    MapViewport::follow_active_focus(&map, viewport_width, viewport_height);
+                let first = bd_core::components::Position {
+                    x: viewport.origin_x + 1,
+                    y: viewport.origin_y + 1,
+                };
+                let second = bd_core::components::Position {
+                    x: (first.x + 3).min(39),
+                    y: (first.y + 2).min(29),
+                };
+                let first_projected = viewport
+                    .project(first)
+                    .expect("first comparison point must be visible");
+                let second_projected = viewport
+                    .project(second)
+                    .expect("second comparison point must be visible");
+                assert_eq!(
+                    (
+                        i32::from(second_projected.0) - i32::from(first_projected.0),
+                        i32::from(second_projected.1) - i32::from(first_projected.1),
+                    ),
+                    (second.x - first.x, second.y - first.y),
+                    "contract=VISUAL-VIEWPORT-004 case={viewport_width}x{viewport_height} \
+                     focus={focus:?} changed relative world geometry"
+                );
+            }
+        }
+    }
 
     #[test]
     fn game_over_splash_defers_to_the_complete_contextual_controls() {

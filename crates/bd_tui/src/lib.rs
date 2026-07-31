@@ -11,6 +11,9 @@ pub mod theme;
 pub mod view_models;
 pub mod visual;
 
+#[cfg(test)]
+mod ui_development_contract_tests;
+
 use std::{
     collections::hash_map::DefaultHasher,
     fmt::Debug,
@@ -1279,6 +1282,29 @@ fn scope_is_active(
     scope.is_none_or(|scope| scope.is_active(mode))
 }
 
+fn frame_interaction(
+    mode: bd_core::spatial::GameMode,
+    build_active: bool,
+    management: Option<view_models::ManagementMenuKind>,
+) -> commands::InteractionMode {
+    if mode == bd_core::spatial::GameMode::GameOver {
+        commands::InteractionMode::GameOver
+    } else if let Some(kind) = management {
+        match kind {
+            view_models::ManagementMenuKind::TaskAssignment => {
+                commands::InteractionMode::TaskManagement
+            }
+            view_models::ManagementMenuKind::StationStaffing => {
+                commands::InteractionMode::StationStaffing
+            }
+        }
+    } else if build_active {
+        commands::InteractionMode::Build
+    } else {
+        commands::InteractionMode::Normal
+    }
+}
+
 /// Draw the full TUI layout driven by the current screen definition.
 #[allow(clippy::too_many_arguments)]
 fn draw_ui(
@@ -1315,13 +1341,11 @@ fn draw_ui(
         }
     };
 
-    let interaction = if *runtime.mode == bd_core::spatial::GameMode::GameOver {
-        commands::InteractionMode::GameOver
-    } else if runtime.build.is_active() {
-        commands::InteractionMode::Build
-    } else {
-        commands::InteractionMode::Normal
-    };
+    let interaction = frame_interaction(
+        *runtime.mode,
+        runtime.build.is_active(),
+        stats_vm.management.as_ref().map(|menu| menu.kind),
+    );
     let frame_data = UiFrameData {
         definition: def,
         widgets: &widget_reg,
@@ -1510,6 +1534,7 @@ fn render_ui_frame(frame: &mut ratatui::Frame, data: &UiFrameData<'_>) {
         help: data.help,
         symbols: data.symbols,
         theme: data.theme,
+        mode: data.mode,
     };
 
     const FOOTER_HEIGHT: u16 = 3;
@@ -1910,13 +1935,11 @@ mod tests {
         let theme = ThemeRegistry::phase5_defaults();
         let bindings = commands::CommandBindings::default();
         let definition = screens.get(screen).expect("screen fixture must exist");
-        let interaction = if map.build_menu.is_some() || map.build_ghost.is_some() {
-            commands::InteractionMode::Build
-        } else if mode == GameMode::GameOver {
-            commands::InteractionMode::GameOver
-        } else {
-            commands::InteractionMode::Normal
-        };
+        let interaction = frame_interaction(
+            mode,
+            map.build_menu.is_some() || map.build_ghost.is_some(),
+            stats.management.as_ref().map(|menu| menu.kind),
+        );
         let data = UiFrameData {
             definition,
             widgets: &widgets,
@@ -2676,7 +2699,7 @@ mod tests {
             height: 30,
             tiles: vec![Tile::Floor; 40 * 30],
             player_pos: Some(Position { x: 1, y: 1 }),
-            assigned_targets: vec![Position { x: 30, y: 1 }],
+            assigned_targets: vec![Position { x: 1, y: 29 }],
             ..Default::default()
         };
 
@@ -2690,9 +2713,9 @@ mod tests {
                 &ContainerViewModel::default(),
             );
             assert_eq!(
-                output.chars().filter(|character| *character == '→').count(),
+                output.chars().filter(|character| *character == '↓').count(),
                 1,
-                "{width}x{height} must keep the assigned eastward target discoverable:\n{output}"
+                "{width}x{height} must keep the assigned southward target discoverable:\n{output}"
             );
         }
     }
@@ -2918,6 +2941,161 @@ mod tests {
             "compact staffing clipped a wrapped station status:\n{output}"
         );
         assert!(output.contains("e/Esc:cancel"), "{output}");
+    }
+
+    #[test]
+    fn management_modal_and_footer_controls_agree_at_supported_profiles() {
+        // Contract: VISUAL-MGMT-002
+        // Given: either paused management modal at a supported terminal profile.
+        // When: the complete screen buffer is rendered.
+        // Then: modal and footer advertise confirm/cancel as one active state.
+        // Must not change: unavailable normal-gameplay controls remain hidden.
+        // Evidence layers: projection, buffer layout, input state machine, PTY.
+        for (width, height) in [(80, 24), (60, 20)] {
+            for (kind, cancel_key) in [
+                (view_models::ManagementMenuKind::TaskAssignment, "c"),
+                (view_models::ManagementMenuKind::StationStaffing, "e"),
+            ] {
+                let stats = StatsViewModel {
+                    management: Some(view_models::ManagementMenuVm {
+                        kind,
+                        survivors: vec!["Mara — Idle".into()],
+                        tasks: vec!["1. Gather Supplies".into()],
+                        selected_survivor: Some(0),
+                        selected_task: Some(0),
+                        resources: "Sup 0".into(),
+                        forecast: "Next worker: Supplies +1 in 3 turns".into(),
+                    }),
+                    ..Default::default()
+                };
+                let output = render_screen_with_state(
+                    "outpost",
+                    width,
+                    height,
+                    GameMode::Outpost,
+                    &shelter_map(),
+                    &ContainerViewModel::default(),
+                    stats,
+                    LogViewModel::default(),
+                );
+                let lines = output.lines().collect::<Vec<_>>();
+                let footer = lines[lines.len().saturating_sub(3)..].join(" ");
+                for required in ["Enter:confirm", &format!("{cancel_key}/Esc:cancel")] {
+                    assert!(
+                        footer.contains(required),
+                        "contract=VISUAL-MGMT-002 case={kind:?}-{width}x{height} \
+                         footer omits modal control `{required}`; footer={footer:?}\n{output}"
+                    );
+                }
+                for forbidden in ["Travel:", "Build:", "Move:"] {
+                    assert!(
+                        !footer.contains(forbidden),
+                        "contract=VISUAL-MGMT-002 case={kind:?}-{width}x{height} \
+                         footer advertises unavailable gameplay control `{forbidden}`; \
+                         footer={footer:?}"
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn blocked_worker_target_and_reason_fit_supported_profiles() {
+        for (width, height) in [(80, 24), (60, 20)] {
+            let output = render_screen_with_state(
+                "outpost",
+                width,
+                height,
+                GameMode::Outpost,
+                &shelter_map(),
+                &ContainerViewModel::default(),
+                StatsViewModel {
+                    party_names: vec![
+                        "Survivor 1 — Gather Supplies | Blocked Water: No route | 0/3 → 1 Supplies"
+                            .into(),
+                    ],
+                    ..Default::default()
+                },
+                LogViewModel::default(),
+            );
+            let semantic_text = output
+                .chars()
+                .map(|character| {
+                    if matches!(character, '│' | '┌' | '┐' | '└' | '┘' | '─') {
+                        ' '
+                    } else {
+                        character
+                    }
+                })
+                .collect::<String>()
+                .split_whitespace()
+                .collect::<Vec<_>>()
+                .join(" ");
+            for required in [
+                "Survivor", "Gather", "Supplies", "Blocked", "Water:", "No", "route", "0/3",
+            ] {
+                assert!(
+                    semantic_text.contains(required),
+                    "contract=VISUAL-COLONY-WORK-005 case={width}x{height} \
+                     missing blocked-worker detail `{required}`:\n{output}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn day_summary_keeps_authoritative_deltas_visible_at_supported_profiles() {
+        // Contract: VISUAL-COLONY-STATE-002
+        // Given: one completed-day result containing every Foundation delta.
+        // When: the Outpost buffer renders at either supported profile.
+        // Then: Supplies, Materials, Plants, Faith, and Food remain visible.
+        // Must not change: truncation cannot remove a decisive resource result.
+        // Evidence layers: projection, buffer layout, PTY.
+        let summary = [
+            "Day 2:",
+            "Supplies 5→2 (-3);",
+            "Materials 4→5 (+1);",
+            "Plants 2→2 (+0);",
+            "Faith 0→0 (+0);",
+            "Food -3.",
+        ];
+        for (width, height) in [(80, 24), (60, 20)] {
+            let output = render_screen_with_state(
+                "outpost",
+                width,
+                height,
+                GameMode::Outpost,
+                &shelter_map(),
+                &ContainerViewModel::default(),
+                StatsViewModel {
+                    latest_daily_summary: summary.iter().map(|line| (*line).into()).collect(),
+                    ..Default::default()
+                },
+                LogViewModel::default(),
+            );
+            let semantic_text = output.split_whitespace().collect::<Vec<_>>().join(" ");
+            for required in [
+                "Day 2:",
+                "Supplies",
+                "5→2",
+                "(-3);",
+                "Materials",
+                "4→5",
+                "(+1);",
+                "Plants",
+                "2→2",
+                "(+0);",
+                "Faith",
+                "0→0",
+                "Food -3.",
+            ] {
+                assert!(
+                    semantic_text.contains(required),
+                    "contract=VISUAL-COLONY-STATE-002 case={width}x{height} \
+                     missing daily delta `{required}`:\n{output}"
+                );
+            }
+        }
     }
 
     #[test]

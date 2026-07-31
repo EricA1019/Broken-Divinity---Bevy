@@ -6,7 +6,7 @@
     SymbolDef(visual_token: WorkerIdle, glyph: 'i', fallback_glyph: 'i', layer: 9, style_token: Ally, priority: 9),
     SymbolDef(visual_token: WorkerEnRoute, glyph: 'e', fallback_glyph: 'e', layer: 9, style_token: Ally, priority: 9),
     SymbolDef(visual_token: WorkerWorking, glyph: '*', fallback_glyph: '*', layer: 9, style_token: Ally, priority: 9),
-    SymbolDef(visual_token: WorkerBlocked, glyph: 'x', fallback_glyph: 'x', layer: 9, style_token: Ally, priority: 9),
+    SymbolDef(visual_token: WorkerBlocked, glyph: 'x', fallback_glyph: 'x', layer: 9, style_token: Danger, priority: 9),
     SymbolDef(visual_token: WorkerResting, glyph: 'r', fallback_glyph: 'r', layer: 9, style_token: Ally, priority: 9),
     SymbolDef(visual_token: WorkerDefending, glyph: 'd', fallback_glyph: 'd', layer: 9, style_token: Ally, priority: 9),
     SymbolDef(visual_token: Floor, glyph: '.', fallback_glyph: ' ', layer: 0, style_token: Terrain, priority: 0),
@@ -22,5 +22,6 @@
     SymbolDef(visual_token: TargetIndicator, glyph: '→', fallback_glyph: '^', layer: 8, style_token: Selection, priority: 9),
     SymbolDef(visual_token: Exit, glyph: '>', fallback_glyph: '>', layer: 0, style_token: Exit, priority: 5),
     SymbolDef(visual_token: Selection, glyph: 'X', fallback_glyph: ' ', layer: 100, style_token: Selection, priority: 100),
+    SymbolDef(visual_token: InvalidSelection, glyph: '!', fallback_glyph: '!', layer: 100, style_token: Danger, priority: 100),
     SymbolDef(visual_token: Fog, glyph: ' ', fallback_glyph: ' ', layer: 50, style_token: Muted, priority: 50),
 ]

@@ -22,6 +22,48 @@ fn configured_binding_emits_expected_command() {
 }
 
 #[test]
+fn every_advertised_control_resolves_to_its_declared_command_in_context() {
+    // Contract: INPUT-GUIDANCE-001
+    // Given: the default bindings in every player-facing interaction context.
+    // When: each advertised control is resolved through production routing.
+    // Then: it resolves to the exact command declared by guidance.
+    // Must not change: no context may advertise an unbound or shadowed command.
+    // Evidence layers: input state machine and projection.
+    let bindings = CommandBindings::default();
+    let contexts = [
+        ("title", GameMode::Title, InteractionMode::Normal),
+        ("colony", GameMode::Outpost, InteractionMode::Normal),
+        ("dungeon", GameMode::Tactical, InteractionMode::Normal),
+        ("build", GameMode::Outpost, InteractionMode::Build),
+        ("game-over", GameMode::GameOver, InteractionMode::GameOver),
+    ];
+
+    for (case_id, mode, interaction) in contexts {
+        let help = help_entries(&bindings, mode, interaction);
+        assert!(
+            !help.is_empty(),
+            "contract=INPUT-GUIDANCE-001 case={case_id} expected advertised controls"
+        );
+        for entry in help {
+            let key = bindings.key_for(entry.command).unwrap_or_else(|| {
+                panic!(
+                    "contract=INPUT-GUIDANCE-001 case={case_id} command={:?} \
+                     advertised as key={} but has no configured binding",
+                    entry.command, entry.key
+                )
+            });
+            assert_eq!(
+                bindings.command_for_key_in(key, mode, interaction),
+                Some(entry.command),
+                "contract=INPUT-GUIDANCE-001 case={case_id} key={key:?} \
+                 advertised command={:?} resolves differently",
+                entry.command
+            );
+        }
+    }
+}
+
+#[test]
 fn help_uses_configured_binding() {
     let mut bindings = CommandBindings::default();
     bindings.bind(UiCommand::Attack, KeyCode::Char('x'));

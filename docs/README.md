@@ -2,7 +2,7 @@
 
 **Status:** Active navigation authority
 
-**Updated:** 2026-07-27
+**Updated:** 2026-07-28
 
 Read this file before using any other Broken Divinity document.
 
@@ -17,10 +17,11 @@ Read this file before using any other Broken Divinity document.
 7. [AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md](AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md) — active testing policy, evidence, metrics, and suite-migration authority.
 8. [FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md](FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md) — active Foundation behavior and colony UX implementation authority.
 9. [FOUNDATION-BASIC-COLONY-LOOP-PLAN.md](FOUNDATION-BASIC-COLONY-LOOP-PLAN.md) — owner-approved D-20 basic colony-loop implementation and evidence plan.
-10. [FOUNDATION-MVP-CORRECTION-PLAN.md](FOUNDATION-MVP-CORRECTION-PLAN.md) — completed Foundation correction and acceptance record.
-11. [FOUNDATION-STABILIZATION-PLAN.md](FOUNDATION-STABILIZATION-PLAN.md) — completed stabilization execution record.
-12. [FOUNDATION-RECOVERY-PLAN.md](FOUNDATION-RECOVERY-PLAN.md) — completed Foundation execution record and prior evidence.
-13. [DOCUMENT-INVENTORY.md](DOCUMENT-INVENTORY.md) — classification and ownership of all project documentation.
+10. [FOUNDATION-UI-IMPROVEMENT-PLAN.md](FOUNDATION-UI-IMPROVEMENT-PLAN.md) — Foundation Ratatui improvement sequence and UI phase gates.
+11. [FOUNDATION-MVP-CORRECTION-PLAN.md](FOUNDATION-MVP-CORRECTION-PLAN.md) — completed Foundation correction and acceptance record.
+12. [FOUNDATION-STABILIZATION-PLAN.md](FOUNDATION-STABILIZATION-PLAN.md) — completed stabilization execution record.
+13. [FOUNDATION-RECOVERY-PLAN.md](FOUNDATION-RECOVERY-PLAN.md) — completed Foundation execution record and prior evidence.
+14. [DOCUMENT-INVENTORY.md](DOCUMENT-INVENTORY.md) — classification and ownership of all project documentation.
 
 Code, tests, content, reference documents, and archived plans are evidence.
 They do not override the authority order.
@@ -43,6 +44,9 @@ order. These are coordinated authorities with non-overlapping roles.
 `FOUNDATION-BASIC-COLONY-LOOP-PLAN.md` defines the active test-first D-20
 colony vertical slice. Its Phase C0 defaults were owner approved and recorded
 on 2026-07-27.
+`FOUNDATION-UI-IMPROVEMENT-PLAN.md` defines the test-first execution order for
+improving existing Foundation presentation. It does not authorize gameplay
+expansion, and implementation has not started.
 `FOUNDATION-MVP-CORRECTION-PLAN.md` remains the completed correction record;
 its unaffected simulation, persistence, economy, and dungeon evidence is
 preserved. The stabilization and recovery plans remain earlier chronological
@@ -91,6 +95,8 @@ Deferred:
   authority.
 - Foundation Basic Colony Loop Plan as the owner-approved D-20 colony-loop
   execution plan.
+- Foundation UI Improvement Plan as the active presentation implementation
+  sequence; implementation is pending.
 - Foundation MVP Correction Plan as completed acceptance evidence.
 - Foundation Stabilization Plan as completed evidence.
 - Foundation Recovery Plan as completed evidence.
@@ -122,11 +128,13 @@ Foundation Recovery Phase 0.
 7. `FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md`.
 8. `FOUNDATION-BASIC-COLONY-LOOP-PLAN.md` when working on the active D-20
    colony vertical slice.
-9. `FOUNDATION-MVP-CORRECTION-PLAN.md` for completed correction and acceptance evidence.
-10. `FOUNDATION-STABILIZATION-PLAN.md` for completed stabilization evidence.
-11. `FOUNDATION-RECOVERY-PLAN.md` for completed Foundation evidence.
-12. `DOCUMENT-INVENTORY.md` when consulting any other document.
-13. Current code and tests.
+9. `FOUNDATION-UI-IMPROVEMENT-PLAN.md` when working on Foundation
+   presentation or interaction polish.
+10. `FOUNDATION-MVP-CORRECTION-PLAN.md` for completed correction and acceptance evidence.
+11. `FOUNDATION-STABILIZATION-PLAN.md` for completed stabilization evidence.
+12. `FOUNDATION-RECOVERY-PLAN.md` for completed Foundation evidence.
+13. `DOCUMENT-INVENTORY.md` when consulting any other document.
+14. Current code and tests.
 
 ## Stop rule
 

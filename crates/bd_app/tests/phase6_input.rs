@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use bd_core::{
     colony::{
@@ -9,6 +9,7 @@ use bd_core::{
     components::{Name, Player, Position, ResourceNode, ResourceNodeType, Tile},
     direction::Direction,
     map::SmokeMap,
+    pathfinding::{AStarPathfinder, Pathfinder},
     session::RunSession,
     signals::{ActionIntent, PoolKind},
     spatial::{FOUNDATION_DUNGEON_ID, GameMode, OutpostState, TransitionIntent},
@@ -322,6 +323,229 @@ fn action_ids(app: &App) -> Vec<String> {
         .collect()
 }
 
+#[derive(Debug, PartialEq, Eq)]
+struct VisibleStatsProjection {
+    hp: (i32, i32),
+    ap: (i32, i32),
+    supplies: i32,
+    faith: i32,
+    materials: i32,
+    wild_plants: i32,
+    day: u64,
+    run_outcome: String,
+    extracted_loot: u32,
+    party_names: Vec<String>,
+    station_status: Vec<String>,
+    latest_daily_summary: Vec<String>,
+    stored_items: Vec<(String, u32)>,
+    faction_standings: Vec<(String, i32, String)>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+struct VisibleProjection {
+    mode: GameMode,
+    screen: String,
+    stats: VisibleStatsProjection,
+    map_size: (i32, i32),
+    player_position: Option<Position>,
+    visuals: Vec<(Position, String, Option<char>)>,
+    assigned_targets: Vec<Position>,
+    actions: Vec<(String, String, bool, Option<String>)>,
+    log: Vec<(String, String)>,
+}
+
+fn visible_projection(app: &App) -> VisibleProjection {
+    let stats = app
+        .world()
+        .resource::<bd_tui::view_models::StatsViewModel>();
+    let map = app.world().resource::<bd_tui::view_models::MapViewModel>();
+    let mut visuals = map
+        .visuals
+        .iter()
+        .map(|visual| (visual.position, format!("{:?}", visual.token), visual.glyph))
+        .collect::<Vec<_>>();
+    visuals.sort_by(|left, right| {
+        (left.0.y, left.0.x, &left.1, left.2).cmp(&(right.0.y, right.0.x, &right.1, right.2))
+    });
+    let mut assigned_targets = map.assigned_targets.clone();
+    assigned_targets.sort_by_key(|position| (position.y, position.x));
+    let actions = app
+        .world()
+        .resource::<bd_tui::view_models::ActionListViewModel>()
+        .actions
+        .iter()
+        .map(|action| {
+            (
+                action.label.clone(),
+                action.key_hint.clone(),
+                action.enabled,
+                action.denial_reason.clone(),
+            )
+        })
+        .collect();
+    let log = app
+        .world()
+        .resource::<bd_tui::view_models::LogViewModel>()
+        .entries
+        .iter()
+        .map(|entry| (entry.message.clone(), format!("{:?}", entry.level)))
+        .collect();
+
+    VisibleProjection {
+        mode: *app.world().resource::<GameMode>(),
+        screen: app
+            .world()
+            .resource::<bd_tui::screens::ScreenState>()
+            .current
+            .clone(),
+        stats: VisibleStatsProjection {
+            hp: (stats.hp_current, stats.hp_max),
+            ap: (stats.ap_current, stats.ap_max),
+            supplies: stats.supplies,
+            faith: stats.faith,
+            materials: stats.materials,
+            wild_plants: stats.wild_plants,
+            day: stats.day,
+            run_outcome: format!("{:?}", stats.run_outcome),
+            extracted_loot: stats.extracted_loot,
+            party_names: stats.party_names.clone(),
+            station_status: stats.station_status.clone(),
+            latest_daily_summary: stats.latest_daily_summary.clone(),
+            stored_items: stats.stored_items.clone(),
+            faction_standings: stats.faction_standings.clone(),
+        },
+        map_size: (map.width, map.height),
+        player_position: map.player_pos,
+        visuals,
+        assigned_targets,
+        actions,
+        log,
+    }
+}
+
+fn round_trip_world(app: &mut App, case_id: &str) {
+    let session = app.world().resource::<RunSession>().clone();
+    let save_dir = std::env::temp_dir().join(format!(
+        "bd-visible-projection-{case_id}-{}",
+        std::process::id()
+    ));
+    let path = bd_core::save::save_world(app.world_mut(), session.seed, session.turn, &save_dir)
+        .unwrap_or_else(|error| {
+            panic!("contract=PERSIST-PROJECTION-001 case={case_id} checkpoint=save error={error}")
+        });
+    let snapshot = bd_core::save::load_snapshot(&path).unwrap_or_else(|error| {
+        panic!("contract=PERSIST-PROJECTION-001 case={case_id} checkpoint=load error={error}")
+    });
+    bd_core::save::restore_snapshot_into(app.world_mut(), &snapshot, &HashMap::new())
+        .unwrap_or_else(|error| {
+            panic!(
+                "contract=PERSIST-PROJECTION-001 case={case_id} checkpoint=restore error={error}"
+            )
+        });
+    app.update();
+    let _ = std::fs::remove_file(path);
+    let _ = std::fs::remove_dir(save_dir);
+}
+
+fn key_for_step(from: Position, to: Position) -> KeyCode {
+    match (to.x - from.x, to.y - from.y) {
+        (0, -1) => KeyCode::Char('w'),
+        (0, 1) => KeyCode::Char('s'),
+        (-1, 0) => KeyCode::Char('a'),
+        (1, 0) => KeyCode::Char('d'),
+        delta => panic!("workflow path produced non-cardinal step {delta:?}"),
+    }
+}
+
+fn submit_tactical_key(app: &mut App, key: KeyCode) {
+    send_physical_key(app, key);
+    app.update();
+    app.update();
+}
+
+fn hostile_with_position(app: &mut App) -> Option<(Entity, Position)> {
+    let mut query = app
+        .world_mut()
+        .query_filtered::<(Entity, &Position, &bd_core::pools::Pools), (
+            With<bd_core::relationships::FactionMember>,
+            bevy_ecs::query::Without<Player>,
+        )>();
+    query
+        .iter(app.world())
+        .find_map(|(entity, position, pools)| {
+            pools
+                .get(PoolKind::Health)
+                .is_some_and(|health| health.current > health.min)
+                .then_some((entity, *position))
+        })
+}
+
+fn loose_item_with_position(app: &mut App) -> Option<(Entity, Position)> {
+    let mut query = app.world_mut().query_filtered::<(Entity, &Position), (
+        With<bd_core::inventory::Item>,
+        bevy_ecs::query::Without<bd_core::relationships::ContainedIn>,
+    )>();
+    query
+        .iter(app.world())
+        .next()
+        .map(|(entity, position)| (entity, *position))
+}
+
+fn move_player_to_with_physical_keys(
+    app: &mut App,
+    target: Position,
+    case_id: &str,
+    avoid_hostile: bool,
+) {
+    for step in 0..64 {
+        let actor = player(app);
+        let current = *app
+            .world()
+            .get::<Position>(actor)
+            .expect("workflow player must have a position");
+        if current == target {
+            return;
+        }
+        let blocked = if avoid_hostile {
+            hostile_with_position(app)
+                .map(|(_, position)| HashSet::from([position]))
+                .unwrap_or_default()
+        } else {
+            HashSet::new()
+        };
+        let path = AStarPathfinder
+            .find_path(
+                app.world().resource::<SmokeMap>(),
+                current,
+                target,
+                &blocked,
+            )
+            .unwrap_or_else(|| {
+                panic!(
+                    "contract=DUNGEON-WORKFLOW-001 case={case_id} step={step} \
+                     no physical-key route from {current:?} to {target:?}"
+                )
+            });
+        let next = path.get(1).copied().unwrap_or_else(|| {
+            panic!(
+                "contract=DUNGEON-WORKFLOW-001 case={case_id} step={step} \
+                 route contained no next tile"
+            )
+        });
+        submit_tactical_key(app, key_for_step(current, next));
+        assert_eq!(
+            *app.world().resource::<GameMode>(),
+            GameMode::Tactical,
+            "contract=DUNGEON-WORKFLOW-001 case={case_id} step={step} \
+             player left Tactical before reaching the checkpoint"
+        );
+    }
+    panic!(
+        "contract=DUNGEON-WORKFLOW-001 case={case_id} \
+         target {target:?} was not reached within 64 physical-key steps"
+    );
+}
+
 #[test]
 fn first_outpost_move_key_moves_once_without_opening_or_creating_build_state() {
     let mut app = outpost_runtime();
@@ -535,6 +759,300 @@ fn fixed_dungeon_loot_is_projected_as_a_visible_item() {
                 && visual.token == bd_tui::visual::VisualToken::Item
         }),
         "the fixed-dungeon potion must be visible before the player steps onto it"
+    );
+}
+
+#[test]
+fn colony_checkpoint_round_trip_preserves_the_visible_projection() {
+    // Contract: PERSIST-PROJECTION-001
+    // Given: a named colony worker has an active gathering assignment.
+    // When: production persistence saves and restores the world.
+    // Then: every stable player-visible projection is identical.
+    // Must not change: screen, stats, map geometry, actions, and log.
+    // Evidence layers: projection, state diff, persistence, workflow.
+    let mut app = outpost_runtime();
+    let selected_name = "Survivor 2";
+
+    send_physical_key(&mut app, KeyCode::Char('c'));
+    app.update();
+    let survivor_key = named_survivor_menu_key(&app, selected_name);
+    send_physical_key(&mut app, survivor_key);
+    app.update();
+    let task_key = management_choice_key(&app, "Gather Supplies");
+    send_physical_key(&mut app, task_key);
+    app.update();
+    send_physical_key(&mut app, KeyCode::Enter);
+    app.update();
+    app.update();
+
+    let before = visible_projection(&app);
+    round_trip_world(&mut app, "colony-assigned-worker");
+    let after = visible_projection(&app);
+
+    assert_eq!(
+        after, before,
+        "contract=PERSIST-PROJECTION-001 case=colony-assigned-worker \
+         checkpoint=restored visible projection diverged"
+    );
+}
+
+#[test]
+fn tactical_checkpoint_round_trip_preserves_the_visible_projection() {
+    let mut app = outpost_runtime();
+    send_physical_key(&mut app, KeyCode::Char('t'));
+    app.update();
+    app.update();
+    app.update();
+    submit_tactical_key(&mut app, KeyCode::Char('.'));
+
+    let before = visible_projection(&app);
+    round_trip_world(&mut app, "tactical-after-enemy-phase");
+    let after = visible_projection(&app);
+
+    assert_eq!(
+        after, before,
+        "contract=PERSIST-PROJECTION-001 case=tactical-after-enemy-phase \
+         checkpoint=restored visible projection diverged"
+    );
+}
+
+#[test]
+fn production_keys_complete_the_fixed_dungeon_loop_with_named_checkpoints() {
+    // Contract: DUNGEON-WORKFLOW-001
+    // Given: a fresh Foundation shelter with the entry cost available.
+    // When: only production keys drive entry, loot, combat, exit, and extraction.
+    // Then: the run extracts and credits exactly one carried potion.
+    // Must not change: fixed checkpoints, paid cost, and one-credit semantics.
+    // Evidence layers: input state machine, domain, projection, state diff, workflow.
+    let mut app = outpost_runtime();
+    let supplies_before = colony_supplies(&app);
+
+    send_physical_key(&mut app, KeyCode::Char('t'));
+    app.update();
+    app.update();
+    app.update();
+    assert_eq!(
+        *app.world().resource::<GameMode>(),
+        GameMode::Tactical,
+        "contract=DUNGEON-WORKFLOW-001 checkpoint=paid-entry expected Tactical"
+    );
+    assert_eq!(
+        colony_supplies(&app),
+        supplies_before - 2,
+        "contract=DUNGEON-WORKFLOW-001 checkpoint=paid-entry wrong colony cost"
+    );
+    let initial_map = app.world().resource::<bd_tui::view_models::MapViewModel>();
+    for token in [
+        bd_tui::visual::VisualToken::Player,
+        bd_tui::visual::VisualToken::Enemy,
+        bd_tui::visual::VisualToken::Item,
+        bd_tui::visual::VisualToken::Exit,
+    ] {
+        assert!(
+            initial_map
+                .visuals
+                .iter()
+                .any(|visual| visual.token == token),
+            "contract=DUNGEON-WORKFLOW-001 checkpoint=visible-arrival \
+             missing {token:?}; visuals={:?}",
+            initial_map.visuals
+        );
+    }
+
+    let (_, item_position) =
+        loose_item_with_position(&mut app).expect("fixed dungeon must contain loose loot");
+    move_player_to_with_physical_keys(&mut app, item_position, "loot-detour", true);
+    submit_tactical_key(&mut app, KeyCode::Char('p'));
+    assert!(
+        loose_item_with_position(&mut app).is_none(),
+        "contract=DUNGEON-WORKFLOW-001 checkpoint=pickup loose item remained on map"
+    );
+
+    for combat_action in 0..64 {
+        let Some((_, hostile_position)) = hostile_with_position(&mut app) else {
+            break;
+        };
+        let player_position = {
+            let actor = player(&mut app);
+            *app.world()
+                .get::<Position>(actor)
+                .expect("workflow player must have a position")
+        };
+        let distance = (player_position.x - hostile_position.x).abs()
+            + (player_position.y - hostile_position.y).abs();
+        if distance > 1 {
+            let candidates = [
+                Position {
+                    x: hostile_position.x + 1,
+                    y: hostile_position.y,
+                },
+                Position {
+                    x: hostile_position.x - 1,
+                    y: hostile_position.y,
+                },
+                Position {
+                    x: hostile_position.x,
+                    y: hostile_position.y + 1,
+                },
+                Position {
+                    x: hostile_position.x,
+                    y: hostile_position.y - 1,
+                },
+            ];
+            let next = candidates
+                .into_iter()
+                .filter(|candidate| {
+                    app.world()
+                        .resource::<SmokeMap>()
+                        .is_walkable(candidate.x, candidate.y)
+                })
+                .filter_map(|candidate| {
+                    AStarPathfinder
+                        .find_path(
+                            app.world().resource::<SmokeMap>(),
+                            player_position,
+                            candidate,
+                            &HashSet::from([hostile_position]),
+                        )
+                        .and_then(|path| path.get(1).copied().map(|next| (path.len(), next)))
+                })
+                .min_by_key(|(length, _)| *length)
+                .map(|(_, next)| next)
+                .unwrap_or_else(|| {
+                    panic!(
+                        "contract=DUNGEON-WORKFLOW-001 checkpoint=encounter \
+                         action={combat_action} no route to hostile"
+                    )
+                });
+            submit_tactical_key(&mut app, key_for_step(player_position, next));
+            continue;
+        }
+        submit_tactical_key(&mut app, KeyCode::Char('f'));
+    }
+    assert!(
+        hostile_with_position(&mut app).is_none(),
+        "contract=DUNGEON-WORKFLOW-001 checkpoint=combat hostile survived 64 physical actions"
+    );
+
+    let exit = app
+        .world_mut()
+        .query_filtered::<&Position, With<bd_core::components::ExitTile>>()
+        .iter(app.world())
+        .copied()
+        .next()
+        .expect("fixed dungeon must contain an exit");
+    move_player_to_with_physical_keys(&mut app, exit, "reach-exit", false);
+    submit_tactical_key(&mut app, KeyCode::Char('r'));
+    app.update();
+
+    assert_eq!(
+        *app.world().resource::<GameMode>(),
+        GameMode::Outpost,
+        "contract=DUNGEON-WORKFLOW-001 checkpoint=extraction expected Outpost"
+    );
+    assert_eq!(
+        app.world().resource::<RunSession>().outcome,
+        bd_core::session::RunOutcome::Extracted,
+        "contract=DUNGEON-WORKFLOW-001 checkpoint=extraction outcome was not retained"
+    );
+    assert_eq!(
+        app.world()
+            .resource::<bd_core::colony::production::ColonyStorage>()
+            .count("item.healing_potion"),
+        1,
+        "contract=DUNGEON-WORKFLOW-001 checkpoint=colony-result loot was not applied exactly once"
+    );
+}
+
+#[test]
+fn production_keys_complete_defeat_title_and_shelter_restart() {
+    // Contract: DUNGEON-WORKFLOW-002
+    // Given: a fresh Foundation shelter and fixed dungeon.
+    // When: production keys wait for defeat, restart, and begin a new run.
+    // Then: one clean shelter player returns with defeat history retained.
+    // Must not change: defeat cannot award unextracted loot.
+    // Evidence layers: input state machine, domain, state diff, workflow.
+    let mut app = outpost_runtime();
+    send_physical_key(&mut app, KeyCode::Char('t'));
+    app.update();
+    app.update();
+    app.update();
+    assert_eq!(
+        *app.world().resource::<GameMode>(),
+        GameMode::Tactical,
+        "contract=DUNGEON-WORKFLOW-002 checkpoint=entry expected Tactical"
+    );
+
+    for turn in 0..64 {
+        if *app.world().resource::<GameMode>() == GameMode::GameOver {
+            break;
+        }
+        submit_tactical_key(&mut app, KeyCode::Char('.'));
+        assert!(
+            matches!(
+                *app.world().resource::<GameMode>(),
+                GameMode::Tactical | GameMode::GameOver
+            ),
+            "contract=DUNGEON-WORKFLOW-002 checkpoint=defeat turn={turn} \
+             entered an illegal mode"
+        );
+    }
+    assert_eq!(
+        *app.world().resource::<GameMode>(),
+        GameMode::GameOver,
+        "contract=DUNGEON-WORKFLOW-002 checkpoint=defeat player survived 64 waits"
+    );
+    assert_eq!(
+        app.world().resource::<RunSession>().outcome,
+        bd_core::session::RunOutcome::Defeated
+    );
+    assert_eq!(
+        app.world()
+            .resource::<bd_core::colony::production::ColonyStorage>()
+            .count("item.healing_potion"),
+        0,
+        "contract=DUNGEON-WORKFLOW-002 checkpoint=defeat awarded unextracted loot"
+    );
+
+    app.update();
+    send_physical_key(&mut app, KeyCode::Char('r'));
+    app.update();
+    app.update();
+    assert_eq!(
+        *app.world().resource::<GameMode>(),
+        GameMode::Title,
+        "contract=DUNGEON-WORKFLOW-002 checkpoint=restart-key expected Title"
+    );
+    send_physical_key(&mut app, KeyCode::Enter);
+    app.update();
+    app.update();
+
+    assert_eq!(
+        *app.world().resource::<GameMode>(),
+        GameMode::Outpost,
+        "contract=DUNGEON-WORKFLOW-002 checkpoint=new-run expected Outpost"
+    );
+    let actor = player(&mut app);
+    assert_eq!(
+        app.world().get::<Position>(actor),
+        Some(&bd_core::colony::shelter::SHELTER_RETURN_SPAWN),
+        "contract=DUNGEON-WORKFLOW-002 checkpoint=new-run wrong shelter spawn"
+    );
+    let player_count = app
+        .world_mut()
+        .query_filtered::<Entity, With<Player>>()
+        .iter(app.world())
+        .count();
+    assert_eq!(
+        player_count, 1,
+        "contract=DUNGEON-WORKFLOW-002 checkpoint=new-run expected one player"
+    );
+    assert_eq!(
+        app.world()
+            .resource::<bd_core::session::LastCompletedRun>()
+            .outcome,
+        bd_core::session::RunOutcome::Defeated,
+        "contract=DUNGEON-WORKFLOW-002 checkpoint=new-run lost defeat history"
     );
 }
 
@@ -1167,6 +1685,164 @@ fn station_staffing_confirmation_changes_only_the_named_survivor_relationship() 
 }
 
 #[test]
+fn task_confirmation_emits_one_named_target_and_activity_result() {
+    // Contract: INPUT-MGMT-007
+    // Given: Survivor 2 is selected for direct Supplies gathering.
+    // When: the player confirms the paused management transaction.
+    // Then: one result names survivor, task, Water target, and EnRoute activity.
+    // Must not change: confirmation cannot emit duplicate decisive results.
+    // Evidence layers: input state machine, projection, state diff, workflow.
+    let mut app = outpost_runtime();
+    let selected_name = "Survivor 2";
+    let log_count_before = app
+        .world()
+        .resource::<bd_core::gamelog::GameLog>()
+        .iter()
+        .count();
+
+    send_physical_key(&mut app, KeyCode::Char('c'));
+    app.update();
+    let survivor_key = named_survivor_menu_key(&app, selected_name);
+    send_physical_key(&mut app, survivor_key);
+    app.update();
+    let task_key = management_choice_key(&app, "Gather Supplies");
+    send_physical_key(&mut app, task_key);
+    app.update();
+    send_physical_key(&mut app, KeyCode::Enter);
+    app.update();
+    app.update();
+
+    let log = app.world().resource::<bd_core::gamelog::GameLog>();
+    let new_messages = log
+        .iter()
+        .take(log.iter().count().saturating_sub(log_count_before))
+        .map(|entry| entry.message.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        new_messages.len(),
+        1,
+        "contract=INPUT-MGMT-007 case=direct-gather-confirm \
+         expected exactly one decisive assignment result; actual={new_messages:?}"
+    );
+    let result = &new_messages[0];
+    for required in [selected_name, "Gather Supplies", "Water", "EnRoute"] {
+        assert!(
+            result.contains(required),
+            "contract=INPUT-MGMT-007 case=direct-gather-confirm \
+             missing semantic field `{required}`; result={result:?}"
+        );
+    }
+}
+
+#[test]
+fn station_confirmation_emits_one_named_station_and_activity_result() {
+    // Contract: INPUT-MGMT-008
+    // Given: Survivor 2 and the built Stove are selected for staffing.
+    // When: the player confirms the paused management transaction.
+    // Then: one result names survivor, Stove, and EnRoute activity.
+    // Must not change: confirmation cannot emit duplicate decisive results.
+    // Evidence layers: input state machine, projection, state diff, workflow.
+    let mut app = outpost_runtime();
+    build_station(&mut app, StationType::Stove, Direction::East);
+    let selected_name = "Survivor 2";
+    let log_count_before = app
+        .world()
+        .resource::<bd_core::gamelog::GameLog>()
+        .iter()
+        .count();
+
+    send_physical_key(&mut app, KeyCode::Char('e'));
+    app.update();
+    let survivor_key = named_survivor_menu_key(&app, selected_name);
+    send_physical_key(&mut app, survivor_key);
+    app.update();
+    let station_key = management_choice_key(&app, "Stove");
+    send_physical_key(&mut app, station_key);
+    app.update();
+    send_physical_key(&mut app, KeyCode::Enter);
+    app.update();
+    app.update();
+
+    let log = app.world().resource::<bd_core::gamelog::GameLog>();
+    let new_messages = log
+        .iter()
+        .take(log.iter().count().saturating_sub(log_count_before))
+        .map(|entry| entry.message.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        new_messages.len(),
+        1,
+        "contract=INPUT-MGMT-008 case=station-confirm \
+         expected exactly one decisive staffing result; actual={new_messages:?}"
+    );
+    let result = &new_messages[0];
+    for required in [selected_name, "Stove", "EnRoute"] {
+        assert!(
+            result.contains(required),
+            "contract=INPUT-MGMT-008 case=station-confirm \
+             missing semantic field `{required}`; result={result:?}"
+        );
+    }
+}
+
+#[test]
+fn zero_supplies_overview_exposes_a_reachable_gathering_recovery_path() {
+    // Contract: VISUAL-COLONY-STATE-001
+    // Given: the colony has zero Supplies.
+    // When: the overview and advertised task workflow are inspected.
+    // Then: Travel explains its cost and Gather Supplies is reachable.
+    // Must not change: unaffordable Travel cannot appear enabled.
+    // Evidence layers: projection, input state machine, workflow.
+    let mut app = outpost_runtime();
+    app.world_mut()
+        .resource_mut::<ColonyResources>()
+        .pools
+        .get_mut(PoolKind::Supplies)
+        .expect("Foundation Supplies pool must exist")
+        .current = 0;
+    app.update();
+
+    let actions = &app
+        .world()
+        .resource::<bd_tui::view_models::ActionListViewModel>()
+        .actions;
+    let travel = actions
+        .iter()
+        .find(|action| action.label == "Travel")
+        .expect("zero-Supplies overview must keep dungeon entry discoverable");
+    assert!(
+        !travel.enabled && travel.denial_reason.as_deref() == Some("Need 2 Supplies"),
+        "contract=VISUAL-COLONY-STATE-001 case=zero-supplies \
+         expected a truthful travel denial; actual={travel:?}"
+    );
+    assert!(
+        actions
+            .iter()
+            .any(|action| action.label == "Assign task" && action.enabled),
+        "contract=VISUAL-COLONY-STATE-001 case=zero-supplies \
+         expected enabled Assign Tasks recovery action; actions={actions:?}"
+    );
+
+    send_physical_key(&mut app, KeyCode::Char('c'));
+    app.update();
+    let management = app
+        .world()
+        .resource::<bd_tui::view_models::StatsViewModel>()
+        .management
+        .as_ref()
+        .expect("the advertised recovery action must open task management");
+    assert!(
+        management
+            .tasks
+            .iter()
+            .any(|task| task.contains("Gather Supplies")),
+        "contract=VISUAL-COLONY-STATE-001 case=zero-supplies \
+         task management did not expose Gather Supplies; tasks={:?}",
+        management.tasks
+    );
+}
+
+#[test]
 fn processing_assignment_selects_named_survivor_station_and_recipe_while_paused() {
     let mut app = outpost_runtime();
     let selected_name = "Survivor 2";
@@ -1710,5 +2386,74 @@ fn staffed_and_unstaffed_station_have_distinct_ascii_projection() {
     assert_ne!(
         staffed, unstaffed,
         "staffing the Stove leaves the same `{staffed}` ASCII projection"
+    );
+}
+
+#[test]
+fn assigned_worker_row_names_target_and_numeric_distance() {
+    // Contract: VISUAL-COLONY-WORK-006
+    // Given: a named survivor receives a direct-gather assignment while away
+    // from the matching fixture.
+    // When: the production colony projection is rebuilt.
+    // Then: the row names the target and its current numeric tile distance.
+    // Must not change: assignment remains paused and does not move the worker.
+    let mut app = outpost_runtime();
+    let survivor = named_survivor(&mut app, "Survivor 1");
+    let position_before = *app
+        .world()
+        .get::<Position>(survivor)
+        .expect("named survivor must have a position");
+    let water_position = {
+        let mut nodes = app.world_mut().query::<(
+            &ResourceNode,
+            &Position,
+            Option<&bd_core::spatial::EntityScope>,
+        )>();
+        nodes
+            .iter(app.world())
+            .find_map(|(node, position, scope)| {
+                (node.kind == ResourceNodeType::WaterSource
+                    && scope.is_some_and(|scope| scope.is_active(GameMode::Outpost)))
+                .then_some(*position)
+            })
+            .expect("Foundation shelter must contain a Water Source")
+    };
+    let expected_distance = (water_position.x - position_before.x).unsigned_abs()
+        + (water_position.y - position_before.y).unsigned_abs();
+
+    send_physical_key(&mut app, KeyCode::Char('c'));
+    app.update();
+    let survivor_key = named_survivor_menu_key(&app, "Survivor 1");
+    send_physical_key(&mut app, survivor_key);
+    app.update();
+    let gather_key = management_choice_key(&app, "Gather Supplies");
+    send_physical_key(&mut app, gather_key);
+    app.update();
+    send_physical_key(&mut app, KeyCode::Enter);
+    app.update();
+    app.update();
+
+    assert_eq!(
+        app.world()
+            .get::<Position>(survivor)
+            .copied()
+            .expect("assigned survivor must retain a position"),
+        position_before,
+        "contract=VISUAL-COLONY-WORK-006 assignment moved the survivor during paused UI"
+    );
+    let row = app
+        .world()
+        .resource::<bd_tui::view_models::StatsViewModel>()
+        .party_names
+        .iter()
+        .find(|entry| entry.starts_with("Survivor 1"))
+        .cloned()
+        .expect("assigned survivor must remain visible");
+    let distance_text = format!("{expected_distance} tiles");
+    assert!(
+        row.contains("Water") && row.contains(&distance_text),
+        "contract=VISUAL-COLONY-WORK-006 fixture=assigned-water-target \
+         expected target `Water` and distance `{distance_text}`; \
+         survivor={position_before:?}, target={water_position:?}, actual={row:?}"
     );
 }

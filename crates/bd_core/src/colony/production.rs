@@ -55,6 +55,43 @@ pub struct DailySummary {
     pub starved_survivors: u32,
 }
 
+impl DailySummary {
+    pub fn display_lines(&self) -> Vec<String> {
+        vec![
+            format!("Day {}:", self.day),
+            format!(
+                "Supplies {}→{} ({:+});",
+                self.supplies_before,
+                self.supplies_after,
+                self.supplies_after - self.supplies_before
+            ),
+            format!(
+                "Materials {}→{} ({:+});",
+                self.materials_before,
+                self.materials_after,
+                self.materials_after - self.materials_before
+            ),
+            format!(
+                "Plants {}→{} ({:+});",
+                self.wild_plants_before,
+                self.wild_plants_after,
+                self.wild_plants_after - self.wild_plants_before
+            ),
+            format!(
+                "Faith {}→{} ({:+});",
+                self.faith_before,
+                self.faith_after,
+                self.faith_after - self.faith_before
+            ),
+            format!("Food -{}.", self.food_consumed),
+        ]
+    }
+
+    pub fn display_line(&self) -> String {
+        self.display_lines().join(" ")
+    }
+}
+
 #[derive(Resource, Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct LatestDailySummary(pub Option<DailySummary>);
 
@@ -386,26 +423,7 @@ pub(crate) fn finalize_daily_cycle(
     summary.materials_after = resource_value(&resources, PoolKind::Materials);
     summary.wild_plants_after = resource_value(&resources, PoolKind::WildPlants);
     summary.faith_after = resource_value(&resources, PoolKind::Faith);
-    game_log.push(
-        format!(
-            "Day {}: Supplies {}→{} ({:+}); Materials {}→{} ({:+}); Plants {}→{} ({:+}); Faith {}→{} ({:+}); Food -{}.",
-            summary.day,
-            summary.supplies_before,
-            summary.supplies_after,
-            summary.supplies_after - summary.supplies_before,
-            summary.materials_before,
-            summary.materials_after,
-            summary.materials_after - summary.materials_before,
-            summary.wild_plants_before,
-            summary.wild_plants_after,
-            summary.wild_plants_after - summary.wild_plants_before,
-            summary.faith_before,
-            summary.faith_after,
-            summary.faith_after - summary.faith_before,
-            summary.food_consumed
-        ),
-        LogLevel::Info,
-    );
+    game_log.push(summary.display_line(), LogLevel::Info);
     latest.0 = Some(summary.clone());
     summaries.write(summary);
 }

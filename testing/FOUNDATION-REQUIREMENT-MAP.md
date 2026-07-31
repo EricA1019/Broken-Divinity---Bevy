@@ -30,9 +30,9 @@ Status meanings:
 | Requirement piece | Primary evidence | Status | Missing proof |
 |---|---|---|---|
 | New Game reaches Outpost with one player authority | `foundation_scenario::clean_launch_reaches_colony`; `bd_app::tests::application_startup_has_exactly_one_player_authority` | Green | Production-key/title transition remains supporting evidence rather than the primary owner |
-| Title Load does not start a new run | `input_help::title_load_binding_requests_load_instead_of_starting_a_new_run` | Partial | Full application state diff after F9 on Title |
-| Missing/corrupt save feedback is recoverable | `bd_app::tests::persistence_errors_are_classified_without_internal_diagnostics` | Partial | Rendered Title feedback plus successful subsequent New Game |
-| Quit requests one shutdown | `phase6_input::lifecycle_controls_are_not_starved_by_buffered_gameplay` | Partial | Exactly one production application exit and terminal cleanup |
+| Title Load does not start a new run | `application_tests::missing_title_load_is_atomic_visible_and_recoverable_by_new_game`; corrupt-save counterpart | Green | Physical F9 preserves the title run for both missing and corrupt slots |
+| Missing/corrupt save feedback is recoverable | `application_tests` missing/corrupt load contracts; `bd_tui::lib::tests::title_displays_persistence_failures_at_both_supported_profiles` | Green unreviewed | Application recovery and both supported buffers pass; real-PTY failure review remains open |
+| Quit requests one shutdown | `application_tests::quit_key_emits_exactly_one_application_exit` | Partial | Exactly one production exit passes; alternate-screen/cursor restoration remains the manual PTY gate |
 | Alternate screen is restored | real PTY gate | Manual | Recorded PTY evidence at both profiles |
 | Cursor is restored | real PTY gate | Manual | Recorded PTY evidence at both profiles |
 | Stable idle UI does not redraw | `runtime_control::idle_unchanged_ui_does_not_draw_again` | Green | None at the invalidation layer |
@@ -43,14 +43,14 @@ Status meanings:
 | Requirement piece | Primary evidence | Status | Missing proof |
 |---|---|---|---|
 | Configured bindings drive Help, footer, and action projection | `input_help::configured_binding_emits_expected_command`; related binding tests | Green | None at the semantic command layer |
-| Every advertised Foundation control works in its advertised mode | several `input_help` and `phase6_input` tests | Partial | One table-driven production-key matrix for all advertised controls |
+| Every advertised Foundation control works in its advertised mode | `input_help::every_advertised_control_resolves_to_its_declared_command_in_context`; focused production workflows | Partial | All guidance routes exactly; a table-driven end-effect matrix for every command remains open |
 | Unadvertised controls do not mutate gameplay | `input_help::foundation_controls_do_not_advertise_redundant_z_command` | Partial | Production-key state diff for unbound keys in each mode |
-| Press/Repeat/Release policy is explicit | `phase6_input::build_interaction_is_a_paused_press_only_state_machine` | Partial | Normal movement, management, Help, persistence, and lifecycle cases |
+| Press/Repeat/Release policy is explicit | `press_repeat_release_policy::only_physical_press_mutates_exactly_once_for_every_foundation_control`; `phase6_input::build_interaction_is_a_paused_press_only_state_machine` | Green | Repeat and Release are inert and Press acts exactly once for movement, wait, rest, management, Help, Inventory, and quit; F5/F9 persistence remains the app-boundary PTY gate |
 | Buffered input preserves order | `phase6_input::buffered_semantic_commands_resolve_in_input_order` | Green | None for the bounded gameplay queue |
 | Queue overflow is bounded and visible | `phase6_input::buffered_input_is_bounded_and_reports_one_overflow_warning` | Green | None for the current capacity |
 | First Outpost movement key cannot enter Build | `phase6_input::first_outpost_move_key_moves_once_without_opening_or_creating_build_state` | Green unreviewed | Production-key state diff is exact; final PTY observation remains supporting evidence |
 | Modal input never leaks | `phase6_input::management_cancel_is_atomic_and_discards_modal_gameplay_input` | Green | Same-batch routing predicts modal ownership and discards uncommitted input |
-| Footer, Help, action panel, configuration, and runtime agree | `input_help` target | Partial | A generated all-command consistency matrix |
+| Footer, Help, action panel, configuration, and runtime agree | `input_help::every_advertised_control_resolves_to_its_declared_command_in_context`; configured-binding projection tests | Green | Every advertised command has one configured key and resolves to itself in Title, Outpost, Tactical, Build, and Game Over |
 
 ## 3. Build workflow
 
@@ -81,14 +81,14 @@ Status meanings:
 | Confirmation changes only the intended relationship | `station_staffing_confirmation_changes_only_the_named_survivor_relationship` | Green | Equivalent task-assignment state-diff contract |
 | Cancellation is atomic and does not leak input | `management_cancel_is_atomic_and_discards_modal_gameplay_input` | Green | None |
 | Assignment does not immediately move workers | `survivor_work_contract::new_assignment_does_not_move_during_paused_confirmation` | Green | None |
-| Feedback names survivor, target, and resulting activity | no primary contract | Open | Exact one-message result for task and station confirmation |
-| Modal/footer controls agree at both profiles | no primary contract | Open | Rendered `c`, `e`, Enter, and Escape agreement |
+| Feedback names survivor, target, and resulting activity | `task_confirmation_emits_one_named_target_and_activity_result`; station counterpart | Green | One post-derivation result names the survivor, human assignment, physical target, and authoritative activity |
+| Modal/footer controls agree at both profiles | `bd_tui::lib::tests::management_modal_and_footer_controls_agree_at_supported_profiles` | Green unreviewed | Both buffers show selection/confirm/cancel only; final PTY review remains |
 
 ## 5. Viewport and visual language
 
 | Requirement piece | Primary evidence | Status | Missing proof |
 |---|---|---|---|
-| Player remains visible at supported profiles | far-edge viewport tests | Partial | Every shelter position and all four clamp edges |
+| Player remains visible at supported profiles | far-edge buffer tests; `screens::tests::every_shelter_position_projects_inside_supported_viewports` | Green unreviewed | Every coordinate projects and rendered edge cases pass; exact-one-player all-position canvas proof and PTY review remain |
 | Build cursor remains visible at supported profiles | `bd_tui::lib::tests::distant_build_preview_drives_the_viewport_at_both_supported_profiles` | Green unreviewed | Final PTY observation remains required |
 | Every layer uses one viewport transform | far-edge tests plus `map_projection_uses_one_semantic_visual_list` | Green unreviewed | One semantic visual list and one viewport projection path are implemented; full layer-by-layer snapshot review remains |
 | Assigned off-screen targets remain discoverable | `bd_tui::lib::tests::assigned_offscreen_target_has_a_directional_edge_indicator` | Green unreviewed | Direction is proven at both profiles; target-name/distance aggregation remains a later polish gap |
@@ -146,9 +146,10 @@ Status meanings:
 | Tactical and Outpost day boundaries agree | tactical day-boundary tests | Green | Exact normalized state equality would strengthen this |
 | Food, station output, mood, and summary run once | `colony_day_cycle` and `mvp_correction` matrices | Green | Direct worker output is intentionally owned by accepted Outpost ticks, not this transaction |
 | Summary equals authoritative delta | `colony_day_cycle::daily_summary_matches_resource_delta` | Green | Physical activity fields remain absent |
+| Authoritative daily deltas remain visible | `bd_tui::lib::tests::day_summary_keeps_authoritative_deltas_visible_at_supported_profiles` | Green unreviewed | A structured Day result preserves all five deltas at both profiles; final PTY review remains |
 | Next-day forecast excludes direct worker output | `mvp_correction::next_day_forecast_excludes_direct_worker_tick_output` | Green | None |
 | Next worker completion and next-day upkeep are distinct | `phase6_input::colony_projection_separates_next_worker_result_from_next_day_upkeep` | Green unreviewed | Real-PTY visual review remains open |
-| Zero-Supplies recovery is reachable | `zero_supplies_recovers_after_three_worker_ticks_without_waiting_for_day_end`; shelter target reachability | Green unreviewed | Real-PTY recovery-guidance review remains open |
+| Zero-Supplies recovery is reachable | direct-gather recovery tests; `phase6_input::zero_supplies_overview_exposes_a_reachable_gathering_recovery_path` | Green unreviewed | Domain recovery and semantic guidance pass; complete rendered-scene and real-PTY review remain open |
 | Storage rejects before payment | `mvp_correction::disabled_storage_rejection_is_atomic` | Green | None |
 | Station catalog owns costs/effects/availability | catalog and loader tests | Green | Presentation still drops placement details |
 
@@ -166,31 +167,31 @@ Status meanings:
 | Enemy phase occurs once | tactical input and fatal-action tests | Partial | Exact one-response state-diff per accepted tactical action |
 | Invalid attacks are atomic | progression and core action tests | Partial | Integrated no-target/out-of-range player-path matrix |
 | Pickup is explicit and positional | `foundation_actions::pickup_resolves_through_action_pipeline`; rejected pickup atomicity | Green | Rendered pickup feedback |
-| Extraction requires exit and explicit action | premature extraction test plus canonical extraction | Green | Production-key workflow and rendered affordance |
+| Extraction requires exit and explicit action | premature extraction test; `production_keys_complete_the_fixed_dungeon_loop_with_named_checkpoints` | Green | Production keys reach the exit and explicitly extract |
 | Extracted loot applies once | `foundation_scenario::canonical_extraction_applies_loot_once` | Green | None |
 | Colony state survives the run | `canonical_colony_state_survives_round_trip`; entity-scope tests | Green | Full normalized fingerprint |
 | Defeat grants no loot | `canonical_defeat_awards_no_loot` | Green | None |
 | Restart uses shelter return spawn | `mvp_correction::defeat_restart_uses_the_same_shelter_return_spawn` | Green | None |
-| Full dungeon path is playable through production keys | no complete primary workflow | Open | One checkpointed key-and-render path plus defeat/restart path |
+| Full dungeon path is playable through production keys | `production_keys_complete_the_fixed_dungeon_loop_with_named_checkpoints`; `production_keys_complete_defeat_title_and_shelter_restart` | Green unreviewed | Extraction and defeat/restart paths pass with named state/visibility checkpoints; complete scene-style and PTY review remain |
 
 ## 9. Persistence
 
 | Requirement piece | Primary evidence | Status | Missing proof |
 |---|---|---|---|
-| Clean Outpost round trip | canonical and persistence tests | Partial | Full normalized fingerprint |
+| Clean Outpost round trip | `persistence_checkpoint_matrix` colony-idle projection; canonical persistence tests | Green | Full normalized fingerprint through checkpoint and manual-slot paths |
 | Built station round trip | station catalog identity test | Partial | Position, cost state, effect, and visual equality together |
 | Assigned worker round trip | colony assignment persistence test | Partial | Stable relationship identity rather than count |
 | EnRoute checkpoint | deterministic next worker step test | Partial | Typed activity and projection equality |
-| Working checkpoint | no primary contract | Open | Physical Working state is not implemented |
+| Working checkpoint | `persistence_checkpoint_matrix::every_projection_round_trips_the_full_fingerprint_through_checkpoint` (colony-working projection) | Green | Two-of-three direct-gather progress, Working activity, and durable task survive both checkpoint and manual-slot restore |
 | Before/after day boundary checkpoints | `save_before_day_boundary...`; `save_after_day_boundary...` | Green | Fingerprint equality |
 | Active dungeon checkpoint | `persistence::save_load_active_dungeon_preserves_foundation_fingerprint_and_scope_counts` | Green | Durable player, colony, worker-activity, resource, and entity-scope state survives the checkpoint |
-| Carrying loot checkpoint | core save inventory tests and dungeon fixture | Partial | Foundation-level explicit checkpoint |
-| Extracted checkpoint | post-extraction no-reapply test | Green | Full fingerprint |
-| Game Over checkpoint | defeat outcome test | Green | Rendered outcome equality |
-| Failed load is atomic | `load_rejects_missing_relationship_reference` | Green | Corrupt-file application-boundary case |
+| Carrying loot checkpoint | `persistence_checkpoint_matrix` dungeon-carrying-loot projection | Green | Player inventory survives checkpoint and manual-slot restore in a fresh runtime |
+| Extracted checkpoint | post-extraction no-reapply test; `persistence_checkpoint_matrix` extracted projection | Green | Full fingerprint through checkpoint and manual-slot paths |
+| Game Over checkpoint | defeat outcome test; `persistence_checkpoint_matrix` game-over projection | Green | Full fingerprint and rendered outcome equality |
+| Failed load is atomic | missing/corrupt title-load application contracts; `load_rejects_missing_relationship_reference` | Green | Missing slot, corrupt file, and corrupt relationship all preserve live state |
 | Deterministic next action survives load | RNG and same-snapshot tests | Green | Worker and visual continuation remain partial |
 | Entity-independent Foundation fingerprint | `test_harness_contract` target | Green | Stable names/catalog identities/positions replace raw entity bits; transient build state is excluded |
-| Save/load preserves projected visual state | no primary contract | Open | Semantic/canvas/style equality at applicable checkpoints |
+| Save/load preserves projected visual state | `phase6_input::colony_checkpoint_round_trip_preserves_the_visible_projection`; Tactical counterpart | Partial | Stable screen/stats/map/actions/log projection equality passes; canvas and resolved-style equality remain open |
 
 ## 10. Progression, factions, and data-driven content
 
@@ -231,16 +232,20 @@ The following missing contracts are the highest-value additions after the
 current red implementation batch. They are ordered by how much false
 confidence they currently permit:
 
-1. normalized Foundation fingerprint and detailed diff;
-2. complete persistence checkpoint matrix using that fingerprint;
-3. production-key fixed-dungeon workflow with named checkpoints;
-4. semantic/canvas/style/geometry visual observation infrastructure;
-5. worker activity projection and worker-state visual transitions;
-6. all-position viewport and all-layer transform matrices;
-7. rendered management controls, selected details, feedback, and modal/footer
-   agreement at 80x24 and 60x20;
-8. all-advertised-control runtime matrix;
-9. real PTY lifecycle, repeat, resize, and restoration evidence.
+1. complete persistence checkpoint matrix using the normalized fingerprint,
+   including Working, carrying-loot, extracted, and Game Over projections —
+   closed by `PERSIST-MATRIX-001` (`persistence_checkpoint_matrix`);
+2. PTY completion for the now-green semantic/canvas/style/geometry visual
+   observation infrastructure;
+3. close `VISUAL-COLONY-WORK-006` and `VISUAL-LANGUAGE-004` for target
+   distance and blocked-worker style;
+4. exact-one-player and all-layer canvas matrices across every shelter position;
+5. management selection-navigation and result-transition style/PTY evidence;
+6. all-advertised-control end-effect matrix and explicit Press/Repeat/Release
+   policy beyond Build — Outpost controls closed by `INPUT-POLICY-001`;
+   combat-mode controls (attack, guard, extract, pickup) remain;
+7. content-invalid diagnostic matrix with exact file and record ownership;
+8. real PTY lifecycle, repeat, resize, and restoration evidence.
 
 Do not replace these with a single broad “MVP scenario passes” test. Each item
 must retain discrete atomic owners, with the broad scenario serving only as
@@ -277,3 +282,25 @@ workflow evidence.
 | Worker result and day upkeep are distinct | `colony_projection_separates_next_worker_result_from_next_day_upkeep` | Green unreviewed | Real-PTY visual review remains open |
 | Nonzero raw stockpiles are visible | `nonzero_raw_stockpile_is_projected_with_a_human_label` | Green unreviewed | Real-PTY visual review remains open |
 | Blocked direct gathering names target and reason | `blocked_direct_gatherer_projects_target_and_actionable_reason` | Green unreviewed | Real-PTY visual review remains open |
+
+## 15. Foundation UI improvement contracts
+
+| Requirement piece | Primary evidence | Status | Required implementation |
+|---|---|---|---|
+| Visual observations detect glyph/style/geometry changes | `visual_observation_detects_glyph_foreground_modifier_and_geometry_changes` | Green unreviewed | PTY and owner review |
+| Same-state rendering is deterministic | `identical_fixture_has_identical_canvas_and_resolved_styles` | Green unreviewed | PTY review |
+| Shelter panels never overlap | `supported_outpost_panel_rectangles_never_overlap` | Green unreviewed | Continue through layout changes |
+| Shelter map owns primary interactive area | `outpost_map_is_the_largest_interactive_panel_at_supported_profiles` | Green unreviewed | Automated layout passes at both profiles; PTY/owner review remains open |
+| Off-screen target exposes direction/name/distance | `offscreen_assignment_names_target_and_distance_at_supported_profiles` | Green unreviewed | Automated projection passes; PTY/owner review remains open |
+| Worker row exposes numeric target distance | `assigned_worker_row_names_target_and_numeric_distance` | Green unreviewed | Automated projection passes; PTY/owner review remains open |
+| Valid/invalid previews differ without color | `valid_and_invalid_build_previews_differ_without_color` | Green unreviewed | InvalidSelection semantic token passes; PTY/owner review remains open |
+| Unaffordable build explains exact shortage | `unaffordable_build_selection_explains_the_exact_shortage` | Green unreviewed | Automated shortage projection passes; PTY/owner review remains open |
+| Task workflow exposes three stages | `task_management_exposes_survivor_task_and_confirm_stages` | Green unreviewed | Automated stage projection passes; PTY/owner review remains open |
+| Staffing workflow exposes four stages | `station_staffing_exposes_survivor_station_recipe_and_confirm_stages` | Green unreviewed | Automated stage projection passes; PTY/owner review remains open |
+| Blocked worker style differs from working | `blocked_worker_has_a_distinct_resolved_style_from_working_worker` | Green unreviewed | Danger-style blocked token passes; PTY/owner review remains open |
+| Decisive warning survives routine overflow | `decisive_warning_survives_routine_log_overflow` | Green unreviewed | Automated overflow separation passes; PTY/owner review remains open |
+| Dungeon denials render completely | `rendered_dungeon_denials_explain_attack_pickup_and_extraction` | Green unreviewed | PTY review |
+| Dungeon status exposes carried loot/readiness | `dungeon_status_distinguishes_carried_loot_and_extraction_readiness` | Green unreviewed | Automated dungeon status projection passes; PTY/owner review remains open |
+| Title explains unavailable Load | `title_without_save_explains_why_load_is_unavailable` | Green unreviewed | Automated title availability passes; PTY/owner review remains open |
+| Closing management leaves no stale cells | `closed_management_modal_leaves_the_same_canvas_as_a_clean_overview` | Green unreviewed | PTY review |
+| Supported-profile resize is deterministic | `resize_round_trip_returns_to_the_original_canvas_and_styles` | Green unreviewed | Real resize/PTY lifecycle evidence |

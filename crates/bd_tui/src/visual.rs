@@ -31,6 +31,7 @@ pub enum VisualToken {
     TargetIndicator,
     Exit,
     Selection,
+    InvalidSelection,
     Fog,
     Water,
 }
@@ -119,6 +120,7 @@ impl SymbolRegistry {
             VisualToken::TargetIndicator,
             VisualToken::Exit,
             VisualToken::Selection,
+            VisualToken::InvalidSelection,
             VisualToken::Fog,
         ];
         for token in &all_tokens {
@@ -185,7 +187,7 @@ impl SymbolRegistry {
                 glyph: 'x',
                 fallback_glyph: 'x',
                 layer: 9,
-                style_token: StyleToken::Ally,
+                style_token: StyleToken::Danger,
                 priority: 9,
             },
             SymbolDef {
@@ -306,6 +308,14 @@ impl SymbolRegistry {
                 fallback_glyph: ' ',
                 layer: 100,
                 style_token: StyleToken::Selection,
+                priority: 100,
+            },
+            SymbolDef {
+                visual_token: VisualToken::InvalidSelection,
+                glyph: '!',
+                fallback_glyph: '!',
+                layer: 100,
+                style_token: StyleToken::Danger,
                 priority: 100,
             },
             SymbolDef {
