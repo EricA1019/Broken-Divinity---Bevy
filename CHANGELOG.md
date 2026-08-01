@@ -37,6 +37,35 @@ All notable changes to Broken Divinity are documented here.
 #### Tests
 - 642 automated tests green across the workspace gate
 
+## [Unreleased] — 2026-07-25/30
+
+### Foundation Recovery and Colony Production Loop
+
+#### Added
+- Canonical Foundation acceptance harness with reproducible evidence totals
+- Foundation entity-scope enforcement (run-persistent vs dungeon-transient)
+  with an exact-one-player authority
+- Complete Foundation persistence: manual slot, version/content guards, and
+  atomic temp-file replacement
+- Unified Foundation action pipeline with typed denial evidence and signal
+  trace
+- Exact-once colony day cycle and unified terminal commands/guidance
+- Data-driven Foundation content startup with runtime action-link validation
+- Foundational colony production loop: station-backed gather/carry/refine
+  logistics over a data-defined pilot recipe chain
+- Direct gathering with a data-defined three-tick work rule and an explicit
+  zero-Supplies recovery path
+
+#### Changed
+- Project authority made repository-local: the repository `GDD.md`,
+  `Kernel.md`, and the locked decisions are the sole current references
+- Progression and faction semantics enforced: representative virtue hooks and
+  two data-driven placeholder factions
+
+#### Tests
+- Machine-readable contract registry (`testing/foundation-contracts.ron`)
+  owns one primary test per required Foundation contract
+
 ## [Unreleased] — 2026-07-23/24
 
 ### Colony Overhaul (Phases 0-2)

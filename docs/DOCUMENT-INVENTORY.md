@@ -2,7 +2,7 @@
 
 **Status:** Active documentation authority map
 
-**Inventoried:** 2026-07-28
+**Inventoried:** 2026-08-01
 
 **Active testing-governance plan:** [AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md](AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md).
 
@@ -58,6 +58,27 @@ has an implemented Foundation effect.
 | `docs/DOCUMENT-INVENTORY.md` | Active | Documentation classification and ownership map |
 
 No other file may claim product or implementation authority.
+
+## Root-level repository files
+
+| Path | Classification | Notes |
+|---|---|---|
+| `README.md` | Active | Repository quick start and current status |
+| `CHANGELOG.md` | Active | Release and change record |
+| `AGENTS.md` | Active | Repository development contract |
+| `GDD.md` | Active | Sole product design authority (repository-local) |
+| `Kernel.md` | Active | Technical architecture authority |
+| `Kernel-direction.md` | Active | Technical appendix subordinate to `Kernel.md` |
+| `KNOWN_ISSUES.md` | Historical | Self-marked historical snapshot; must not direct current work |
+| `UX_PLAYTEST_REPORT.md` | Historical | 2026-05-15; describes the superseded windowed Bevy build, not the current terminal kernel |
+| `PROTOTYPE_ANALYSIS_REPORT.md` | Historical | Superseded prototype-era analysis |
+| `PLAN-2026-05-26-ALPHA-READINESS.md` | Historical | Superseded alpha-readiness plan |
+| `results.json`, `detailed_analysis.json` | Historical | Prototype-era measurement artifacts |
+| `testing.log` | Historical | 2026-07-09 log artifact |
+
+> The workspace root also contains an older `GDD.md` copy (297 lines) that
+> differs from the repository-local `GDD.md` (335 lines). The repository-local
+> copy is the authority; the root copy is stale and must not guide development.
 
 ## Project-level design reference library
 
