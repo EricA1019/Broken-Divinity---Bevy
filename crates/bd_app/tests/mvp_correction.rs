@@ -75,7 +75,7 @@ fn place_gatherers_at_source(
         gatherers,
         "insufficient source work tiles"
     );
-    for (name, position) in ["Survivor 1", "Survivor 2", "Survivor 3"]
+    for (name, position) in ["Mara", "Iven", "Tala"]
         .into_iter()
         .take(gatherers)
         .zip(work_tiles)
@@ -181,7 +181,7 @@ fn next_day_forecast_excludes_direct_worker_tick_output() {
     driver.fixture_set_colony_resource(PoolKind::Supplies, 5);
     place_gatherers_at_source(&mut driver, ResourceNodeType::WaterSource, 1);
     let survivor = driver
-        .survivor_by_name("Survivor 1")
+        .survivor_by_name("Mara")
         .expect("stable Supplies gatherer must exist");
     let player = driver.player().expect("Foundation player must exist");
     driver
@@ -231,16 +231,16 @@ fn every_buildable_station_catalog_entry_has_an_implemented_effect() {
 fn management_targets_a_named_survivor_and_task() {
     let mut driver = colony_driver(206);
     let selected = driver
-        .survivor_by_name("Survivor 2")
+        .survivor_by_name("Iven")
         .expect("selected survivor must exist");
     let untouched = driver
-        .survivor_by_name("Survivor 1")
+        .survivor_by_name("Mara")
         .expect("untouched survivor must exist");
     let player = driver.player().unwrap();
 
     driver
         .submit_action_and_advance_result_frame(
-            "assign Survivor 2 to Supplies",
+            "assign Iven to Supplies",
             player,
             "ability.gather_supplies",
             None,
@@ -292,7 +292,7 @@ fn staffing_targets_a_named_survivor_and_station() {
         )
         .unwrap();
     let survivor = driver
-        .survivor_by_name("Survivor 2")
+        .survivor_by_name("Iven")
         .expect("selected survivor must exist");
     let selected_station = driver
         .station_by_type(StationType::Altar)
@@ -334,10 +334,10 @@ fn bed_restores_only_its_assigned_worker_by_the_catalog_amount() {
         )
         .unwrap();
     let survivor = driver
-        .survivor_by_name("Survivor 2")
+        .survivor_by_name("Iven")
         .expect("Bed worker must exist");
     let untouched = driver
-        .survivor_by_name("Survivor 1")
+        .survivor_by_name("Mara")
         .expect("untouched survivor must exist");
     let bed = driver.station_by_type(StationType::Bed).unwrap();
     driver.fixture_complete_construction(bed);
@@ -393,7 +393,7 @@ fn each_catalog_station_effect_applies_once_when_staffed() {
             )
             .unwrap();
         let survivor = driver
-            .survivor_by_name("Survivor 1")
+            .survivor_by_name("Mara")
             .expect("station worker must exist");
         let station = driver.station_by_type(station_type).unwrap();
         driver.fixture_complete_construction(station);

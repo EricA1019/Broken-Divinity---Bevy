@@ -773,3 +773,736 @@ Validation:
 - `cargo test -p bd_tui --lib`: 79 passed, 0 failed, 0 ignored.
 - `cargo test -p bd_app --bin bd`: 25 passed, 0 failed, 0 ignored.
 - `cargo test --workspace`: pass, including 636 tests and 0 ignored.
+
+## Shared semantic TUI theme and chrome — 2026-08-01
+
+Authority: Kernel Goal 5, the UI plan's DRY/registry ownership rules, and UI1-A.
+
+- Added `VISUAL-THEME-001` as `GreenUnreviewed`; no visual contract was
+  promoted to `Accepted` without separate owner review.
+- Added semantic UI roles for text, muted, accent, positive, warning,
+  informational, danger, key hints, panel chrome, and modal chrome to the
+  existing `StyleToken`/`ThemeRegistry` authority and shipped theme content.
+- Added one reusable chrome module for standard, modal, and danger panels.
+- Migrated colony, dungeon, inventory, help, title, game-over, event, footer,
+  and terminal-error renderers away from renderer-owned Ratatui colors.
+- Supported-profile buffer evidence confirms neutral panel borders with
+  emphasized theme-owned titles at 80x24 and 60x20.
+- Real PTY review passed clean title-to-Outpost rendering and terminal/cursor
+  restoration at 80x24 and 60x20 using isolated XDG roots.
+
+Red evidence:
+
+- `tui_renderers_delegate_terminal_colors_to_the_theme_layer` failed on the
+  pre-change renderer, identifying every raw `Color::` choice in `screens.rs`.
+
+Green evidence:
+
+- `bd_tui --lib`: 83 passed, 0 failed, 0 ignored.
+- `bd_tui --test input_help`: 23 passed, 0 failed, 0 ignored.
+- Contract-registry target: 24 passed, 0 failed, 0 ignored.
+- Canonical gate: 10/10 steps passed.
+- Gate inventory: 646 listed, 646 passed, 0 failed, 0 ignored.
+- Registry: 89 required, 89 `GreenUnreviewed`, 0 red.
+- Formatting, compilation, strict Clippy, content validation, ignored-test
+  allowlist, contract metrics, and whitespace checks passed.
+
+GDD drift review: presentation became more coherent without changing colony
+simulation, dungeon behavior, balance, content scope, input semantics, or any
+deferred Product P2 system.
+
+## Cinder Rite visual identity red baseline — 2026-08-01
+
+Authority: Kernel Goal 5 and the owner-approved acceptance target in
+`docs/FOUNDATION-UI-STYLE-MOCKUPS.md`.
+
+This batch changes tests, contract ownership, and evidence only. It does not
+implement the selected theme or frame behavior.
+
+- Added `VISUAL-IDENTITY-001` as one `FoundationRequired` red contract.
+- Primary evidence:
+  `selected_cinder_rite_identity_frames_colony_and_reusable_screens`.
+- Profiles: 80x24 and 60x20.
+- Representative reuse cases: Outpost, Combat, and Inventory.
+- Registry target: 90 required contracts; 89 `GreenUnreviewed`; 1 `Red`.
+- No required test is ignored or deferred.
+
+The gate is intentionally exact about:
+
+- the owner-selected semantic Cinder Rite colors;
+- bold lit-copper title hierarchy;
+- warm-bone body hierarchy on colony and combat canvases;
+- at least one substantial closed double-line Ruined Reliquary frame per
+  representative screen and supported profile.
+
+The gate intentionally does not own:
+
+- screen prose or punctuation;
+- exact panel counts, coordinates, or percentages;
+- map glyphs or gameplay state;
+- a full-buffer snapshot.
+
+Focused red evidence:
+
+```text
+cargo +stable test -p bd_tui --lib \
+  selected_cinder_rite_identity_frames_colony_and_reusable_screens -- --nocapture
+```
+
+Result: 0 passed, 1 failed, 0 ignored. The failure names each unresolved legacy
+ANSI role and reports one compact visual crop per screen/profile showing the
+current single-line frame. Compilation succeeds.
+
+Neighboring green evidence:
+
+- reusable chrome semantics: 2 passed, 0 failed, 0 ignored;
+- shared Outpost chrome projection: 1 passed, 0 failed, 0 ignored;
+- seeded registry ownership: 1 passed, 0 failed, 0 ignored.
+
+Aggregate evidence:
+
+- full workspace with `--no-fail-fast`: 646 passed, 1 failed, 0 ignored;
+- independent inventory: 647 tests listed;
+- canonical gate: 8 steps passed and 3 failed;
+- the workspace-test failure is `VISUAL-IDENTITY-001`;
+- the contract-metrics mismatch is derivative: the canonical workspace command
+  stops before the final 23-test `input_help` target after the intentional
+  `bd_tui` library failure, so it observes 623 passed and 1 failed rather than
+  all 647 outcomes.
+
+The suite is intentionally red. Do not delete, ignore, loosen, or reclassify
+`VISUAL-IDENTITY-001` to restore aggregate green. Implement the shared theme and
+chrome target, then rerun buffer and real-PTY evidence before changing its
+status to `GreenUnreviewed`.
+
+## Cinder Rite observer-integrity strengthening — 2026-08-01
+
+Authority: Section 6.6 of the authoritative testing standard and
+`VISUAL-IDENTITY-001`.
+
+This batch strengthens test evidence only; it does not change production
+rendering.
+
+- Replaced corner-presence frame detection with a universal assertion over the
+  final composed terminal perimeter.
+- The primary test now verifies all four corners, every horizontal segment,
+  every vertical segment or explicitly allowed side junction, and the primary
+  B3 foreground on every structural cell.
+- Frame diagnostics report the total violation count, the first twelve exact
+  coordinate/glyph/style failures, and a top-and-bottom visual crop.
+- Warm-bone body evidence is restricted to non-map regions so terrain sharing
+  the same resolved RGB value cannot create a false green.
+- Added
+  `closed_double_frame_observer_rejects_single_cell_breaks` as registered
+  supporting evidence. Its valid control passes, while independent one-cell
+  glyph, resolved-style, and geometry mutations are rejected at their exact
+  coordinates.
+
+Focused evidence:
+
+- observer-integrity support: 1 passed, 0 failed, 0 ignored;
+- primary identity contract: 0 passed, 1 failed, 0 ignored;
+- all six Outpost, Combat, and Inventory cases at 80x24 and 60x20 report the
+  disconnected or overwritten terminal perimeter;
+- both Combat profiles additionally report zero non-map warm-bone body cells.
+
+Neighboring and aggregate evidence:
+
+- `bd_tui --lib`: 84 passed, 1 failed, 0 ignored;
+- contract registry: 24 passed, 0 failed, 0 ignored;
+- independent inventory: 648 tests listed;
+- canonical gate: 8 steps passed and 3 failed;
+- canonical observed outcomes before the downstream target skipped by Cargo:
+  624 passed, 1 failed, 0 ignored.
+
+The contract remains accurately `Red`. Production work must create a real
+continuous outer frame that survives final composition and a semantic Combat
+body hierarchy before this test or its evidence status changes.
+
+## Cinder Rite workflow and implementation-guidance strengthening — 2026-08-01
+
+Authority: Section 6.6 of the authoritative testing standard,
+`VISUAL-IDENTITY-001`, and the forbidden-regression policy.
+
+This batch changes test and evidence code only; it does not change production
+rendering.
+
+- Extended the primary contract from normal screens to the complete final
+  buffers for normal Outpost, Build Selection, Build Placement, Combat, and
+  Inventory at 80x24 and 60x20.
+- Added shared-primitive evidence requiring major modal chrome to use the
+  Cinder Rite double rule. The top-edge observer accepts semantic title cells,
+  so it owns structure and resolved style without locking title copy.
+- Added explicit preservation evidence for the complete established
+  `Turn: 0 | Day: 3 | Broken Divinity Kernel v0.1.0` footer status. This is a
+  named forbidden regression rather than incidental prose.
+- Restricted warm-bone body evidence to semantic content inside the gameplay
+  content area and outside the map and footer.
+- Added implementation comments for smaller renderer agents: one reusable
+  shell owns the perimeter and inner rectangle; overlays must compose inside
+  that rectangle; the footer retains status, contextual controls, and global
+  controls; palette and chrome stay theme-owned; no screen-name branches,
+  one-off coordinates, or weakened observers may restore green.
+- Diagnostics identify state, screen, profile, exact perimeter coordinates,
+  missing status, and a bounded visual crop. They do not own general screen
+  copy, panel count, exact panel rectangles, terrain glyphs, or gameplay state.
+
+Focused red evidence:
+
+- primary identity contract: 0 passed, 1 failed, 0 ignored;
+- shared major-modal primitive: 39 structural/style violations, bounded to the
+  first twelve in diagnostics;
+- compact Build Selection: 16 outer-rail violations at 60x20;
+- Build Placement: 10 outer-rail violations at both 80x24 and 60x20;
+- required status footer: absent in all ten workflow/profile cases;
+- normal Outpost, Combat, and Inventory retain continuous outer perimeters.
+
+Real-PTY discovery evidence at 80x24 and 60x20 confirmed the same production
+behavior before strengthening: normal frames render, compact Build Selection
+and both Build Placement profiles overwrite the side rails, status text is
+absent, and terminal/cursor restoration is clean.
+
+Aggregate evidence:
+
+- `bd_tui --lib`: 84 passed, 1 failed, 0 ignored;
+- contract registry: 24 passed, 0 failed, 0 ignored;
+- independent inventory: 648 tests listed;
+- canonical gate: 8 steps passed and 3 failed;
+- canonical observed outcomes: 624 passed, 1 failed, 0 ignored;
+- the 23 unobserved outcomes are the downstream `input_help` target skipped by
+  Cargo after the intentional library failure; they are not additional failing
+  tests;
+- formatting, compilation, contract registry, ignored-test allowlist, strict
+  Clippy, content validation, and whitespace checks pass.
+
+`VISUAL-IDENTITY-001` remains intentionally and accurately `Red`. Green now
+requires reusable production composition that satisfies every normal and build
+workflow case while preserving the status footer, followed by buffer and PTY
+verification. Do not delete guidance, cases, or assertions to change status.
+
+## Recent UI contract-structure audit — 2026-08-02
+
+Authority: Sections 6.2, 6.5, and 6.6 of the authoritative testing standard;
+`VISUAL-BUILD-001`, `VISUAL-THEME-001`, and `VISUAL-IDENTITY-001`.
+
+This batch changes tests and evidence only. Production rendering is unchanged.
+
+- `compact_build_selection_shows_complete_selected_effect` now carries the
+  complete contract record and diagnostic fields. Its observer locates the
+  titled modal in the final buffer and reads only the inner semantic region,
+  independent of approved border glyphs. It still requires the complete
+  selected station label, cost, and long effect at 60x20.
+- The previous focused failure was reproduced before repair: 0 passed, 1
+  failed. The rendered effect was complete; an incomplete single-line glyph
+  strip list caused the false failure against double-line chrome.
+- `tui_renderers_delegate_terminal_colors_to_the_theme_layer` now scans the
+  shared chrome source it claimed to own and reports precondition/action plus
+  forbidden-regression context.
+- `outpost_panels_render_shared_chrome_at_supported_profiles` no longer assumes
+  title text begins at `x + 2`; it finds a nonblank emphasized title cell on the
+  owned top edge at each profile.
+- `closed_double_frame_observer_rejects_single_cell_breaks` now records its
+  full Given/When/Then boundary and complete diagnostic context while retaining
+  independent glyph, style, and geometry mutations.
+- `selected_cinder_rite_identity_frames_colony_and_reusable_screens` now states
+  only the status footer as its executable forbidden regression and labels
+  panel count, internal coordinates, map glyphs, gameplay state, and general
+  copy as unowned rather than implying unexecuted assertions.
+
+Focused and neighboring evidence:
+
+- the five audited UI tests each pass independently;
+- `bd_tui --lib`: 85 passed, 0 failed, 0 ignored;
+- contract registry: 24 passed, 0 failed, 0 ignored;
+- canonical gate: 10 steps passed, 0 failed;
+- canonical inventory: 648 listed, 648 passed, 0 failed, 0 ignored;
+- formatting, compilation, strict Clippy, content validation, ignored-test
+  allowlist, contract metrics, and whitespace checks pass.
+
+Partial current PTY evidence at 80x24 and 60x20 confirms Outpost and Build
+Selection chrome, status, outer rails, and clean alternate-screen/cursor
+restoration; compact Build Placement also passed. Complete placement/profile
+PTY coverage and owner/DRY review remain open, so `VISUAL-IDENTITY-001` is
+`GreenUnreviewed`, not `Accepted` or `ReviewedGreen`.
+
+## Cinder Rite panel, meter, and ribbon correction — 2026-08-02
+
+Authority: the owner-reviewed B3 direction in
+`docs/FOUNDATION-UI-STYLE-MOCKUPS.md`, Kernel Goal 5, UI plan Sections 5 and 8,
+and `VISUAL-THEME-001` / `VISUAL-IDENTITY-001`.
+
+Owner review found that the previous green implementation changed the palette
+and terminal perimeter but left ordinary panels and bars on the preceding
+presentation. Both contracts were returned to `Red` before production work.
+The strengthened final-buffer tests reproduced these specific gaps:
+
+- generic major-panel double boxes and headings without the Reliquary marker;
+- plain HP/AP numbers without responsive ASCII tracks;
+- the previous status/control footer without mode or command ribbons; and
+- no reusable observer proving complete inner-panel structure or meter style.
+
+Shared `bd_tui::chrome` primitives now own ordinary single-rule panel framing,
+major double-rule modal framing, responsive exact-value ASCII meters, the
+mode/day/turn/version ribbon, and styled command-key chips. Outpost, Combat,
+Inventory, title, game-over, build, and management composition consume those
+primitives. A production-source scan finds no renderer-owned `Block` or
+`BorderType` construction outside the shared chrome owner.
+
+The first green buffer pass used `HP 8/10`. Real 60x20 PTY evidence then exposed
+that the live `HP 30/30` value removed the compact track. The identity fixture
+was strengthened to the live-sized `24/30` partial case, the named compact Stats
+allocation was widened while retaining the map as the largest panel, and the
+final PTY rerun showed `HP30/30[##]` and `AP3/3[##]`. During that rerun, the
+meter observer itself was corrected to use terminal-cell indices instead of
+UTF-8 byte offsets after the leading Unicode border exposed a false failure.
+
+Evidence after correction:
+
+- focused panel, meter-observer, and identity tests pass;
+- `bd_tui --lib`: 86 passed, 0 failed, 0 ignored;
+- complete `bd_tui` target: 109 passed, 0 failed, 0 ignored;
+- contract registry: 24 passed, 0 failed, 0 ignored;
+- canonical gate: 10 steps passed, 0 failed;
+- canonical inventory: 649 listed, 649 passed, 0 failed, 0 ignored;
+- 80x24 and 60x20 real PTY runs confirm normal Outpost, Build Selection,
+  responsive live-sized meters, mode/command ribbons, modal cancellation,
+  alternate-screen restoration, and cursor restoration.
+
+`VISUAL-THEME-001` and `VISUAL-IDENTITY-001` are `GreenUnreviewed`. Complete
+Build Placement coverage at every profile and owner review of the corrected
+visual result remain open, so this is not `Accepted` or `ReviewedGreen`.
+
+## Provisions and contextual colony interaction red handoff — 2026-08-02
+
+Authority: GDD Shelter and Minimum Colony Foundation; D-18 through D-22;
+UI plan Section 17; authoritative testing standard Sections 5 through 7.
+
+This batch adds planning, tests, registry records, and evidence only. It does
+not implement UI or gameplay behavior. Three atomic contracts prevent one
+partial visual fix from standing in for the complete upgrade:
+
+- `VISUAL-ECON-002` owns an exact shared Supplies gauge, text pressure state,
+  and visible next-day delta/result at 80x24 and 60x20 while preserving HP/AP;
+- `COLONY-PROXIMITY-001` owns accepted-movement entry into station/node range,
+  one deduplicated named `NEARBY` Chronicle fact, semantic Interact
+  availability, and forbidden colony mutations;
+- `VISUAL-CONTEXT-001` owns final Context presentation for station, node, and
+  colonist targets, station/node Chronicle feedback, and visibly disabled
+  `Set Production — Coming later`.
+
+Focused red evidence:
+
+- `provisions_show_stock_pressure_and_dawn_outlook_at_supported_profiles`:
+  0 passed, 1 failed, 0 ignored. The first low/80x24 case reports no semantic
+  `SUP 10 [...]` gauge; the final buffer shows flat `Sup:10`.
+- `entering_adjacent_range_emits_one_deduplicated_nearby_hint`: 0 passed,
+  1 failed, 0 ignored. Production movement reaches the expected Water Source
+  work-adjacent tile and records `ability.move`, but emits zero `NEARBY` facts.
+- `nearby_context_presentation_serves_station_node_and_colonist_at_supported_profiles`:
+  0 passed, 1 failed, 0 ignored. The first station/80x24 case reports generic
+  `Log` instead of Chronicle; the bounded buffer also shows generic `Actions`
+  and clipped station status.
+- all three focused tests compile before failing; no setup panic, missing type,
+  hidden frame settling, or ignored test is being used as red evidence.
+- the seeded registry validation passes with exactly these three records Red.
+
+Neighboring and canonical evidence:
+
+- existing Cinder Rite identity contract: 1 passed, 0 failed, 0 ignored;
+- neighboring buffered semantic-input contract: 1 passed, 0 failed, 0 ignored;
+- canonical inventory: 652 tests listed independently;
+- canonical gate: 8 steps passed and 3 failed;
+- Cargo stopped after the intentional `COLONY-PROXIMITY-001` failure, so the
+  measured canonical prefix is 220 passed, 1 failed, 0 ignored across 221
+  observed outcomes; the two independently reproduced visual reds were not
+  reached by that aggregate run and are not being hidden or counted as passes;
+- formatting, compilation, registry validation, ignored-test allowlist,
+  strict Clippy, content validation, and whitespace checks pass.
+
+Preservation risks called out in executable assertions and guidance include
+HP/AP removal, map de-prioritization, renderer forecast parsing, glyph-derived
+identity, render-time logging, fixture/name special cases, duplicated entity
+menus, normal-world actions leaking into Context, fake enabled production,
+resource/task mutation, and test/observer weakening.
+
+The physical Interact key is deliberately not locked by these tests because
+D-20/THC-01 currently owns `e` as direct station staffing. The UI plan requires
+an explicit owner decision before the input/menu-shell contract is authored.
+
+Status is `NotComplete`: the intentional red contracts are an implementation
+handoff, not CandidateGreen, VerifiedGreen, ReviewedGreen, or acceptance.
+
+## UI9 false-green audit and reinforced red handoff — 2026-08-02
+
+The first implementation pass made all three UI9 primary tests and the
+655-test canonical inventory pass, but post-green source review rejected the
+result. The prior observers proved visible strings without proving their
+production cause or structured ownership:
+
+- the Context category matrix injected finished Chronicle and action rows, so
+  renaming the Outpost Actions panel could pass while production supplied only
+  a generic `Interact` row and no colonist adapter;
+- the Supplies test observed the right final text but did not execute its
+  prohibition against parsing forecast prose or calculating pressure inside
+  UI chrome; and
+- the proximity workflow proved one positive movement case but did not reject
+  initialization being inferred as movement from a changed position.
+
+The test skill, repository contract, and authoritative testing policy now
+require cause → structured projection → final composition evidence, executable
+false-green challenges for completion-critical invalid shortcuts, causal
+negative cases for edge-triggered behavior, and a status-alignment gate. A
+zero-failure aggregate with a required contract still marked `Red` is now
+rejected instead of being labeled `VerifiedGreen`.
+
+The strengthened primary tests compile and reproduce the actual gaps:
+
+- `VISUAL-ECON-002`: 0 passed, 1 failed, 0 ignored. The test builds the live
+  colony projection, then poisons only legacy flat Supplies/prose inputs. The
+  80x24 low case renders `SUP-777[----] [CRITICAL]` with no dawn outlook,
+  proving final rendering still reconstructs state from the forbidden seam.
+- `VISUAL-CONTEXT-001`: 0 passed, 1 failed, 0 ignored. A real adjacent Basic
+  Processing entity produces only generic `Interact`, Travel, Build, Assign
+  task, Staff station, Rest, Move, and Wait rows; no production `Inspect Basic
+  Processing`, target detail, category action set, or disabled Set Production
+  placeholder exists.
+- `COLONY-PROXIMITY-001`: 0 passed, 1 failed, 0 ignored. Building the initial
+  adjacent Water Source projection with no input increases historical NEARBY
+  facts from zero to one, proving position-difference polling mistakes
+  initialization for accepted movement.
+- the contract-report status-alignment unit matrix passes 3 of 3 cases: it
+  rejects required Red drift only for a zero-failure suite, preserves normal
+  red-first TDD while failures are observed, and accepts reviewed non-Red
+  status.
+
+Canonical red-baseline evidence lists 658 tests. Cargo reaches the strengthened
+proximity primary first and observes 220 passed, 1 failed, and 0 ignored before
+stopping; the two independently reproduced UI reds are therefore not counted
+as aggregate passes or hidden failures. The gate reports 8 steps passed and 3
+failed because workspace execution is intentionally red and the measured
+prefix cannot equal the full inventory. Formatting, all-target compilation,
+registry validation, ignored-test review, strict Clippy, content validation,
+and whitespace checks pass.
+
+The three registry records remain accurately `Red`. The current implementation
+is preserved as evidence for the next agent; no contract status is promoted.
+
+Pre-handoff validation on 2026-08-03 repaired two observer defects without
+changing production behavior. The Context fixture now begins two tiles away
+and enters range through the production `a` movement path, so a correct fix for
+silent proximity initialization cannot break the Context contract. The
+initialization negative and accepted-movement positive use separate app
+instances. Context continues to require station/node Chronicle feedback, while
+colonists require current nearby/Context projection only, matching the owner
+request. Category and status are asserted semantically rather than locking the
+`·` punctuation. All three focused tests still compile and fail at the intended
+production gaps after these corrections.
+
+## UI9 action-truth and multi-target false-green repair — 2026-08-03
+
+Post-green review confirmed real progress: the Supplies renderer now consumes
+structured authoritative gauge facts; proximity feedback is driven by an
+accepted player `EntityMoved` result rather than initialization polling; and
+station, node, and colonist Context rows now originate from the production
+nearby projection. The focused contracts and the 658-test canonical gate were
+green before this review.
+
+The review nevertheless rejected completion because the passing observers did
+not distinguish an applicable preview from a bound, reachable, executable
+action. Production advertised `Interact` as enabled while its binding was
+`unbound`, advertised `Enter` for Inspect without a Context reducer, and used
+`a` for enabled assignment previews even though `a` remained the normal-world
+Move West command. The Context projection also omitted required operational,
+renewable, and target detail; two duplicate-named targets produced identical
+Inspect labels; and simultaneous station/node entry emitted two Chronicle
+facts rather than one deterministic focused fact plus a count.
+
+The plan and testing standard now require explicit applicability,
+binding/reachability, and executable-state evidence. Before UI9-D receives an
+owner-approved binding and production reducer, Context actions are preview
+rows and must remain disabled with truthful reasons. Multi-target coverage now
+includes unlike categories for historical fact aggregation and duplicate
+display names for player-visible target disambiguation.
+
+The strengthened evidence consists of:
+
+- `COLONY-PROXIMITY-001` primary: a real accepted move enters range of a
+  station and node simultaneously, requiring one focused `NEARBY` fact with a
+  semantic count and a complete deterministic two-target current projection;
+- `VISUAL-CONTEXT-001` primary: each real category must project and finally
+  compose its required operational/renewal/target detail, not category/status
+  alone;
+- `context_detail_and_actions_follow_authoritative_target_state`: construction
+  and depleted variants must replace ordinary detail and remove inapplicable
+  assignment/production actions, preventing category-prose hardcoding;
+- `passive_context_never_advertises_unroutable_actions_as_enabled`: all UI9-C
+  previews remain disabled with truthful reasons while Interact is unbound;
+  and
+- `duplicate_named_nearby_targets_remain_distinguishable_in_context`: two
+  same-name stations retain distinct stable identities and player-visible
+  Inspect selectors at both supported profiles.
+
+`VISUAL-ECON-002` remains `GreenUnreviewed`. `COLONY-PROXIMITY-001` and
+`VISUAL-CONTEXT-001` return to `Red` until the focused failures above are
+implemented and independently reviewed. This is `NotComplete`, regardless of
+the earlier zero-exit aggregate.
+
+Validated red evidence after the repair:
+
+- the proximity primary compiles and fails with two observed `NEARBY` facts
+  (`Water Source` and `Alpha Relay`) where one focused fact plus a count is
+  required;
+- the Context primary compiles and fails because the operational Basic
+  Processing target projects only `Station · Unstaffed` and no operational
+  state;
+- the action-truth support test compiles and fails on `Interact` projected as
+  `enabled: true`, `key_hint: "unbound"`, and no denial reason;
+- the state-variant support test compiles and first fails because a
+  construction site still inherits enabled `Assign Worker` and disabled `Set
+  Production` rows from the operational-station category menu; its later
+  depleted-node case also guards the missing depletion detail;
+- the duplicate-selector support test compiles and fails on two identical
+  `Inspect Basic Processing` labels for distinct target identities;
+- `VISUAL-ECON-002` still passes independently; both complete affected test
+  targets compile with `--no-run`; contract-registry validation passes 24 of
+  24; and strict workspace Clippy passes; and
+- the canonical red baseline lists 661 tests, observes 220 passed and the
+  intended proximity failure before Cargo stops, and reports 8 gate steps
+  passed and 3 failed. The workspace and measured-total/contract-metrics steps
+  fail as expected for this red-first handoff; formatting, compilation,
+  registry, ignored-test review, inventory, Clippy, content, and whitespace
+  pass.
+
+## UI9 independently observable smaller-agent handoff — 2026-08-03
+
+The red handoff was audited with the project-agnostic
+`$authoritative-test-pipeline`. The earlier matrix tests allowed the first
+station/multi-target panic to hide later node, colonist, depleted, re-entry,
+action-truth, and final-composition cases. They are now individually named and
+registered. The duplicate-target observer no longer rewards one Inspect and
+category action set per nearby target: it requires a complete deterministic
+target projection but exactly one focused action set, followed by a visible
+focus/count/location cue in both final profiles.
+
+No production behavior was changed by this handoff repair. Both affected test
+targets compile with `--no-run`, the seeded registry validation passes, and
+every completion-critical row was run independently with `--exact`:
+
+- `COLONY-PROXIMITY-001` station entry: red because `Interact` is `unbound` but
+  enabled with no denial reason;
+- its Water Source support: independently red for the same false executable
+  state;
+- its simultaneous station/node support: red with two `NEARBY` facts where one
+  deterministic focused fact plus a semantic count is required;
+- its leave/re-enter support: green, preserving silent exit and exactly one
+  fresh fact on re-entry;
+- `VISUAL-CONTEXT-001` station, node, and colonist projection rows:
+  independently red for missing operational, renewable, and target detail;
+- construction and depleted-node state rows: independently red for inherited
+  operational actions and missing depleted detail, respectively;
+- station, node, and colonist action-truth rows: independently red because
+  unbound/borrowed-key previews are enabled without truthful denial reasons;
+- station, node, and colonist final-composition rows: independently red at the
+  first 80x24 observation for the same missing operational, renewable, and
+  target detail, proving the final screen seam is not hidden behind the
+  projection assertions; and
+- the duplicate-name row: red because two `Inspect Basic Processing` actions
+  flatten both targets into the focused Context action region.
+
+`VISUAL-ECON-002` passes independently and remains accurately
+`GreenUnreviewed`; the requirement map and visual matrix were corrected from
+stale Red wording. `COLONY-PROXIMITY-001` and `VISUAL-CONTEXT-001` remain
+accurately `Red`. UI9-D remains unauthorized pending the Section 17.2 owner
+decision.
+
+The canonical red baseline now lists 672 tests. It observes 221 passed, 3
+failed, and 0 ignored before workspace execution stops after the `bd_app`
+proximity target; all three failures are the registered intentional reds above.
+The gate reports 8 steps passed and 3 failed. Formatting, all-target
+compilation, registry validation, ignored-test review, inventory, strict
+Clippy, content validation, and whitespace pass. Workspace tests,
+listed-versus-observed totals, and contract metrics fail as required for this
+`NotComplete` red-first handoff.
+
+## Signed candidate/reviewer gate protocol — 2026-08-03
+
+The test protocol now separates implementation evidence from acceptance
+authority. A reviewer-created, SHA-256-signed RON manifest names the exact Red
+contracts and hashes protected plans, tests, observers, fixtures, authority,
+and status ledgers. Candidate mode verifies that seal before and after the
+workspace suite, requires the named contracts to remain Red, rejects any
+unlisted required Red contract, and reports only `STATUS=CandidateGreen`.
+Argument-free canonical mode remains the independent reviewer gate.
+
+Executable protocol evidence:
+
+- four `candidate_handoff` integration tests accept an unchanged signed
+  handoff and reject manifest rewriting, protected-file mutation, and omission
+  of a gate-required authority file;
+- seven `contract_report` unit tests include exact candidate-set acceptance,
+  self-promotion rejection, unlisted-Red rejection, and repeatable contract
+  arguments while preserving canonical stale-Red detection;
+- repository governance verifies the candidate manifest/digest interface,
+  mandatory protected authority/status files, exact candidate contract
+  reporting, and the `CandidateGreen`-only result; and
+- all 49 `bd_test_support` tests pass.
+
+The full canonical gate lists and passes 681 tests with 0 failed and 0 ignored;
+all 10 gate steps pass and automated status is `VerifiedGreen`. This protocol
+change does not independently accept the current UI9 production diff or
+retroactively validate status edits made before the signed handoff existed.
+Those still require the production-diff, false-green, final-profile, and owner
+reviews required for `ReviewedGreen`.
+
+## UI9-C active-state corrective red handoff — 2026-08-03
+
+The post-green audit found that the Context contract's default unstaffed,
+renewable, and idle category rows passed while the active authoritative states
+required by UI plan Section 17.3 were not observed. The test author restored
+`VISUAL-CONTEXT-001` to `Red`; no production behavior was changed in this
+corrective test batch. `COLONY-PROXIMITY-001` remains `GreenUnreviewed`: its
+station, node, simultaneous-entry, and exit/re-entry cases each pass
+independently.
+
+Eleven completion-critical cases now fail independently for their named
+missing behavior:
+
+- staffed station projection omits Mara, Refine Water, and 1/2 progress;
+- assigned Water Source projection omits Mara and 1/3 progress;
+- assigned colonist projection omits Water Source and 1/3 progress;
+- carrying colonist projection reports Idle/No target and omits Basic
+  Processing and Raw Water cargo;
+- blocked colonist projection reports generic Gathering and omits the blocker;
+- a configured `x` Interact binding with no normal-Outpost reducer route is
+  falsely enabled; and
+- five separately named final-composition cases reproduce the station, node,
+  assigned-colonist, carrying-colonist, and blocked-colonist omissions at the
+  first 80x24 observation rather than hiding them behind projection failures.
+
+The registry validation and self-protected candidate-gate governance tests
+pass. The canonical red baseline lists 692 tests and reaches 658 passed, 11
+failed, and 0 ignored before Cargo stops after the `bd_tui` library target; 23
+later listed tests are consequently unobserved. Eight gate steps pass and
+three fail (workspace tests, listed-versus-observed totals, and contract
+metrics), producing `STATUS=NotComplete` as required for the sealed red
+handoff.
+
+## UI9-C replacement observer validation — 2026-08-03
+
+Independent review withdrew the preceding eleven-red candidate handoff. Its
+active-state fixtures combined or injected states that normal production
+updates did not preserve, and final active station/node composition also
+required an old walk-by Chronicle line to survive many later worker turns.
+Those were observer defects, not implementation requirements.
+
+The replacement observers now establish their decisive states through the
+real paused management controls (`c` for direct gathering and `e` for station
+recipes) followed by normal worker ticks. The blocked case is produced by a
+real `MissingSource` logistics outcome. Geometry-only repositioning happens
+only after the decisive domain state is asserted. Ordinary station/node rows
+continue to own immediate Chronicle entry feedback; active final-composition
+rows own the current Context state after later worker history.
+
+A new adversarial shared-owner seam gives the authoritative nearby target a
+distinctive `detail` value while legacy parallel fields contain forbidden
+decoys. It fails unless final Context consumes the shared projection instead
+of independently rebuilding the same domain detail downstream.
+
+Measured independent results:
+
+- all eleven active projection/action and paired final-composition commands
+  were run separately: nine pass and two fail; the separately run shared-owner
+  seam is the third failure;
+- `staffed_station_context_includes_worker_recipe_and_progress` fails because
+  the real `ReadyToRefine 1/2` logistics job projects Basic Processing as
+  `Unstaffed` with no worker, recipe, or progress;
+- `staffed_station_recipe_progress_survives_final_composition` independently
+  fails because the final 80x24 Context remains `Station Unstaffed` while the
+  Party panel shows Mara, Refine Water, ReadyToRefine, and 1/2;
+- `final_context_consumes_the_shared_detail_projection_once` independently
+  fails because final Context shows the forbidden worker/recipe/99/99 decoys
+  and omits `Shared Detail Probe`;
+- the full `bd_tui` library target reports 111 tests: 108 passed, 3 failed,
+  0 ignored;
+- the four exact `COLONY-PROXIMITY-001` station/node/focus/re-entry workflows
+  each pass independently; and
+- `cargo test -p bd_tui --test input_help` reports 23 passed, 0 failed,
+  0 ignored.
+
+This is an intentionally red, implementation-ready baseline. The earlier
+manifest and digest remain withdrawn. The replacement handoff must use the v2
+baseline inventory, v2 manifest, and separately supplied v2 digest; no
+candidate may edit these observer or status records.
+
+## UI9-C v2 mixed-source false-green audit — 2026-08-03
+
+The v2 candidate stayed inside its exact write set and its signed candidate
+gate reported 694 listed, 694 passed, 0 failed, and 0 ignored. Independent
+production-diff review nevertheless rejected CandidateGreen because the
+shared-owner shortcut checklist had two `Yes` answers:
+
+- the Context view model parsed formatted `detail` using category and staffing
+  prefixes, dropping semantic segments and recovering presentation elsewhere;
+- the Context title independently derived `Staffed` from the poisoned legacy
+  `worker` field even though authoritative `status` and `detail` both said
+  `Unstaffed`.
+
+The original adversarial observer asserted only that `Shared Detail Probe`
+appeared and the three conspicuous decoy literals did not. That proved the
+decoy strings were hidden, but it did not observe every derivative of the
+poisoned worker field or require complete semantic-segment transport. The
+resulting final panel visibly combined `Context · Station Staffed` with an
+Unstaffed Chronicle/shared projection while the test remained green.
+
+The reviewer preserved the valid production-reachable station staffing work
+and split the deficient observer into two independently runnable cases:
+
+- `context_view_model_transports_shared_detail_without_semantic_parsing`
+  fails with expected `Station Unstaffed Operational Shared Detail Probe` and
+  actual `Operational Shared Detail Probe`, naming the stripped transport
+  segments; and
+- `final_context_consumes_the_shared_detail_projection_once` fails at 80x24
+  with expected title `Context · Station Unstaffed` and actual title
+  `Context · Station Staffed`, naming the mixed-source composition.
+
+The full `bd_tui` library target now lists 112 tests and reports 110 passed,
+2 failed, and 0 ignored. Preservation checks remain green: `phase6_input`
+49/49, `input_help` 23/23, contract registry 24/24, candidate-handoff
+governance 4/4, and repository governance 7/7. `VISUAL-CONTEXT-001` remains
+accurately `Red`. The v2 prompt, baseline, manifest, and digest are withdrawn;
+a new implementation run requires a newly sealed v3 handoff after independent
+red validation. Forward testing also found that v2 protected the older prompt
+but not its active v2 instruction file. The revised protocol requires a
+digest-free active instruction body inside the protected manifest and supplies
+the manifest digest separately, preventing that circular-hash seal gap.
+
+## UI9-C v3 scope stop and v4 handoff hardening — 2026-08-03
+
+The v3 candidate correctly repaired complete shared-detail transport and
+mixed-source title coherence. Independent reproduction reports each corrective
+row green, while the full `bd_tui` library target reports 109 passed and three
+failed final-composition rows at 60x20:
+
+- default station clips the `Coming later` Set Production reason;
+- staffed station clips `Assign Worker` and later denial content; and
+- assigned node clips the complete `Assign Gatherer` row and denial content.
+
+The signed v3 candidate gate was independently reproduced in an isolated build
+directory: 9 steps passed, 3 failed; 695 tests listed, 669 passed, 3 failed,
+0 ignored; `STATUS=NotComplete`. The fixed three-row compact renderer cannot
+retain the complete authoritative detail, required action labels, and truthful
+denial reasons through a legal `view_models.rs`-only change. V3 is withdrawn
+and its artifacts remain historical evidence.
+
+Review also found an unauthorized untracked execution-handoff document that
+the implementation report incorrectly omitted from its claimed delta. A new
+candidate-handoff governance test reproduced that false acceptance, and the
+version-2 manifest/guard now signs the baseline path and exact production write
+set and rejects Git-visible additions/untracked paths, modifications,
+deletions, or renames outside it. Candidate-handoff governance now reports 7/7.
+Implementation and reviewer reports are pasted into chat; creating a repository
+handoff/report is forbidden unless its exact path is explicitly authorized.
+
+The next reviewer-owned v4 handoff permits only the existing shared Context
+view-model owner and generic screen composition owner. UI9-D input/menu work,
+tests, fixtures, authority, evidence, and status remain protected.

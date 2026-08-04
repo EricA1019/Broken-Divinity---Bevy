@@ -51,6 +51,53 @@ fn development_gate_measures_listed_tests_independently() {
 }
 
 #[test]
+fn development_gate_separates_candidate_and_reviewer_authority() {
+    let script = read("scripts/test-gate.sh");
+
+    assert!(
+        script.contains("--candidate-manifest")
+            && script.contains("--manifest-sha256")
+            && script.contains("handoff_guard"),
+        "candidate mode must require a signed protected-file handoff manifest"
+    );
+    assert!(
+        script.contains("--candidate-contract"),
+        "candidate mode must report the exact contracts that remain author-owned Red"
+    );
+    for protected in [
+        "AGENTS.md",
+        "GDD.md",
+        "Kernel.md",
+        "docs/DECISIONS-TO-LOCK.md",
+        "Cargo.toml",
+        "scripts/test-gate.sh",
+        "testing/allowed-ignored-tests.txt",
+        "testing/foundation-contracts.ron",
+        "testing/FOUNDATION-TEST-EVIDENCE.md",
+        "testing/FOUNDATION-REQUIREMENT-MAP.md",
+        "testing/VISUAL-ACCEPTANCE-MATRIX.md",
+        "docs/AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md",
+        "crates/bd_test_support/Cargo.toml",
+        "crates/bd_test_support/src/lib.rs",
+        "crates/bd_test_support/src/contract_registry.rs",
+        "crates/bd_test_support/src/bin/handoff_guard.rs",
+        "crates/bd_test_support/src/bin/contract_report.rs",
+        "crates/bd_test_support/tests/candidate_handoff.rs",
+        "crates/bd_test_support/tests/contract_registry.rs",
+        "crates/bd_test_support/tests/repository_governance.rs",
+    ] {
+        assert!(
+            script.contains(&format!("--require-protected {protected}")),
+            "candidate mode must require the handoff manifest to protect {protected}"
+        );
+    }
+    assert!(
+        script.contains("STATUS=CandidateGreen"),
+        "implementation-agent validation must not claim VerifiedGreen"
+    );
+}
+
+#[test]
 fn continuous_integration_runs_the_canonical_gate() {
     let workflow = read(".github/workflows/ci.yml");
 

@@ -177,8 +177,8 @@ fn working_survivor(fingerprint: &FoundationFingerprint) -> &SurvivorFingerprint
     fingerprint
         .survivors
         .iter()
-        .find(|entry| entry.name == "Survivor 1")
-        .unwrap_or_else(|| panic!("{CONTRACT} fixture must fingerprint `Survivor 1`"))
+        .find(|entry| entry.name == "Mara")
+        .unwrap_or_else(|| panic!("{CONTRACT} fixture must fingerprint `Mara`"))
 }
 
 const PROJECTIONS: &[ProjectionCase] = &[
@@ -203,7 +203,7 @@ const PROJECTIONS: &[ProjectionCase] = &[
         seed: 22_004,
         build: |driver| {
             driver.fixture_set_colony_resource(PoolKind::Supplies, 5);
-            let survivor = named_survivor(driver, "Survivor 1");
+            let survivor = named_survivor(driver, "Mara");
             place_at_matching_work_tile(driver, survivor, PoolKind::Supplies);
             assign_direct_gathering(driver, survivor, PoolKind::Supplies);
             wait_once(driver, "working projection tick one");

@@ -254,6 +254,7 @@ name = "bd_tui"
 version = "0.1.0"
 dependencies = [
  "bd_core",
+ "bd_test_support",
  "bevy",
  "bevy_app",
  "bevy_ecs",

@@ -32,6 +32,11 @@ pub enum UiCommand {
     AssignTask,
     AssignStation,
     Build,
+    /// Semantic Interact availability. The physical binding is owner-locked by
+    /// Section 17.2 of the UI9 plan; input routing is deferred until that
+    /// decision is recorded. The projection exposes the enabled action while
+    /// the nearby set is non-empty.
+    Interact,
     Save,
     Load,
     Quit,
@@ -174,6 +179,11 @@ impl Default for CommandBindings {
                 (UiCommand::AssignTask, KeyCode::Char('c')),
                 (UiCommand::AssignStation, KeyCode::Char('e')),
                 (UiCommand::Build, KeyCode::Char('b')),
+                // No physical Interact binding: Section 17.2 of the UI9 plan
+                // owner-locks the interaction key. `e` stays station staffing
+                // and the projection reports the semantic action as unbound
+                // until the later input/menu-shell contract records the
+                // decision.
                 (UiCommand::Save, KeyCode::F(5)),
                 (UiCommand::Load, KeyCode::F(9)),
                 (UiCommand::Quit, KeyCode::Char('q')),
@@ -309,6 +319,7 @@ fn descriptor(command: UiCommand) -> Descriptor {
         UiCommand::Load => ("Load", "Load game"),
         UiCommand::Quit => ("Quit", "Quit"),
         UiCommand::Restart => ("Restart", "Return to title"),
+        UiCommand::Interact => ("Interact", "Inspect nearby target"),
     };
     Descriptor {
         command,

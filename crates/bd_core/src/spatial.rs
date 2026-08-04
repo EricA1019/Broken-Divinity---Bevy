@@ -606,13 +606,13 @@ pub fn initialize_outpost(
     }
 
     // Spawn a few starter survivors
-    for i in 0..3 {
-        let x = 5 + i * 5;
+    for (i, starter_name) in ["Mara", "Iven", "Tala"].into_iter().enumerate() {
+        let x = 5 + i as i32 * 5;
         let y = 5;
         let survivor = commands
             .spawn((
                 crate::components::Position { x, y },
-                crate::components::Name(format!("Survivor {}", i + 1)),
+                crate::components::Name(starter_name.to_owned()),
                 crate::colony::survivors::Survivor,
                 crate::colony::survivors::SurvivorTask::Idle,
                 crate::colony::survivors::default_survivor_pools(),

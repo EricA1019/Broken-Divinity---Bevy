@@ -26,6 +26,18 @@ impl ThemeDef {
 }
 
 fn parse_color(name: &str) -> Color {
+    let trimmed = name.trim().trim_start_matches('#');
+    if let Some(hex) = trimmed.strip_prefix("0x").or_else(|| {
+        (trimmed.len() == 6 && trimmed.chars().all(|c| c.is_ascii_hexdigit())).then_some(trimmed)
+    }) {
+        if let Ok(value) = u32::from_str_radix(hex, 16) {
+            return Color::Rgb(
+                ((value >> 16) & 0xff) as u8,
+                ((value >> 8) & 0xff) as u8,
+                (value & 0xff) as u8,
+            );
+        }
+    }
     match name.to_lowercase().as_str() {
         "white" => Color::White,
         "black" => Color::Black,
@@ -97,6 +109,19 @@ impl ThemeRegistry {
             StyleToken::Danger,
             StyleToken::Muted,
             StyleToken::Selection,
+            StyleToken::UiText,
+            StyleToken::UiMuted,
+            StyleToken::UiAccent,
+            StyleToken::UiPositive,
+            StyleToken::UiWarning,
+            StyleToken::UiInfo,
+            StyleToken::UiDanger,
+            StyleToken::UiPanelBorder,
+            StyleToken::UiPanelTitle,
+            StyleToken::UiModalBorder,
+            StyleToken::UiModalTitle,
+            StyleToken::UiKeyHint,
+            StyleToken::TitleWordmark,
         ] {
             if !self.themes.iter().any(|t| t.style_token == *token) {
                 errors.push(format!("Missing theme definition for {token:?}"));
@@ -133,7 +158,7 @@ impl ThemeRegistry {
             },
             ThemeDef {
                 style_token: StyleToken::Terrain,
-                fg: "gray".into(),
+                fg: "#dcc7b3".into(),
                 bg: None,
                 bold: false,
             },
@@ -181,8 +206,86 @@ impl ThemeRegistry {
             },
             ThemeDef {
                 style_token: StyleToken::Selection,
-                fg: "black".into(),
-                bg: Some("yellow".into()),
+                fg: "#ffe1c6".into(),
+                bg: Some("#5b2e20".into()),
+                bold: true,
+            },
+            ThemeDef {
+                style_token: StyleToken::UiText,
+                fg: "#dcc7b3".into(),
+                bg: None,
+                bold: false,
+            },
+            ThemeDef {
+                style_token: StyleToken::UiMuted,
+                fg: "#92786b".into(),
+                bg: None,
+                bold: false,
+            },
+            ThemeDef {
+                style_token: StyleToken::UiAccent,
+                fg: "#b76b4c".into(),
+                bg: None,
+                bold: false,
+            },
+            ThemeDef {
+                style_token: StyleToken::UiPositive,
+                fg: "#8d9d62".into(),
+                bg: None,
+                bold: false,
+            },
+            ThemeDef {
+                style_token: StyleToken::UiWarning,
+                fg: "#e0a13f".into(),
+                bg: None,
+                bold: false,
+            },
+            ThemeDef {
+                style_token: StyleToken::UiInfo,
+                fg: "#a68ab0".into(),
+                bg: None,
+                bold: false,
+            },
+            ThemeDef {
+                style_token: StyleToken::UiDanger,
+                fg: "#d15348".into(),
+                bg: None,
+                bold: true,
+            },
+            ThemeDef {
+                style_token: StyleToken::UiPanelBorder,
+                fg: "#714737".into(),
+                bg: None,
+                bold: false,
+            },
+            ThemeDef {
+                style_token: StyleToken::UiPanelTitle,
+                fg: "#dd8a50".into(),
+                bg: None,
+                bold: true,
+            },
+            ThemeDef {
+                style_token: StyleToken::UiModalBorder,
+                fg: "#b76b4c".into(),
+                bg: None,
+                bold: false,
+            },
+            ThemeDef {
+                style_token: StyleToken::UiModalTitle,
+                fg: "#dd8a50".into(),
+                bg: None,
+                bold: true,
+            },
+            ThemeDef {
+                style_token: StyleToken::UiKeyHint,
+                fg: "#a68ab0".into(),
+                bg: None,
+                bold: true,
+            },
+            ThemeDef {
+                style_token: StyleToken::TitleWordmark,
+                fg: "cyan".into(),
+                bg: None,
                 bold: true,
             },
         ])

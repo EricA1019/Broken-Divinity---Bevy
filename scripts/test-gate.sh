@@ -8,6 +8,35 @@ script_dir="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 repo_root="$(cd -- "${script_dir}/.." && pwd)"
 cd "${repo_root}"
 
+CANDIDATE_MANIFEST=""
+CANDIDATE_MANIFEST_SHA256=""
+while [[ "$#" -gt 0 ]]; do
+    case "$1" in
+        --candidate-manifest)
+            CANDIDATE_MANIFEST="${2:-}"
+            shift 2
+            ;;
+        --manifest-sha256)
+            CANDIDATE_MANIFEST_SHA256="${2:-}"
+            shift 2
+            ;;
+        *)
+            printf 'Unknown test-gate argument: %s\n' "$1" >&2
+            exit 2
+            ;;
+    esac
+done
+
+if [[ -n "${CANDIDATE_MANIFEST}" || -n "${CANDIDATE_MANIFEST_SHA256}" ]]; then
+    if [[ -z "${CANDIDATE_MANIFEST}" || -z "${CANDIDATE_MANIFEST_SHA256}" ]]; then
+        printf 'Candidate mode requires --candidate-manifest and --manifest-sha256 together.\n' >&2
+        exit 2
+    fi
+    GATE_MODE="candidate"
+else
+    GATE_MODE="canonical"
+fi
+
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 NC='\033[0m'
@@ -23,6 +52,51 @@ TEST_LISTED=0
 TEST_PASSED=0
 TEST_FAILED=0
 TEST_IGNORED=0
+CANDIDATE_CONTRACTS=()
+CANDIDATE_PROTECTION_ARGS=(
+    --require-protected AGENTS.md
+    --require-protected GDD.md
+    --require-protected Kernel.md
+    --require-protected docs/DECISIONS-TO-LOCK.md
+    --require-protected Cargo.toml
+    --require-protected scripts/test-gate.sh
+    --require-protected testing/allowed-ignored-tests.txt
+    --require-protected testing/foundation-contracts.ron
+    --require-protected testing/FOUNDATION-TEST-EVIDENCE.md
+    --require-protected testing/FOUNDATION-REQUIREMENT-MAP.md
+    --require-protected testing/VISUAL-ACCEPTANCE-MATRIX.md
+    --require-protected docs/AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md
+    --require-protected crates/bd_test_support/Cargo.toml
+    --require-protected crates/bd_test_support/src/lib.rs
+    --require-protected crates/bd_test_support/src/contract_registry.rs
+    --require-protected crates/bd_test_support/src/bin/handoff_guard.rs
+    --require-protected crates/bd_test_support/src/bin/contract_report.rs
+    --require-protected crates/bd_test_support/tests/candidate_handoff.rs
+    --require-protected crates/bd_test_support/tests/contract_registry.rs
+    --require-protected crates/bd_test_support/tests/repository_governance.rs
+)
+
+check_candidate_handoff() {
+    cargo run --quiet --locked -p bd_test_support --bin handoff_guard -- \
+        --root "${repo_root}" \
+        --manifest "${CANDIDATE_MANIFEST}" \
+        --manifest-sha256 "${CANDIDATE_MANIFEST_SHA256}" \
+        "${CANDIDATE_PROTECTION_ARGS[@]}"
+}
+
+load_candidate_contracts() {
+    local output
+    output="$(
+        cargo run --quiet --locked -p bd_test_support --bin handoff_guard -- \
+            --root "${repo_root}" \
+            --manifest "${CANDIDATE_MANIFEST}" \
+            --manifest-sha256 "${CANDIDATE_MANIFEST_SHA256}" \
+            "${CANDIDATE_PROTECTION_ARGS[@]}" \
+            --print-contracts
+    )" || return 1
+    mapfile -t CANDIDATE_CONTRACTS <<<"${output}"
+    [[ "${#CANDIDATE_CONTRACTS[@]}" -gt 0 ]]
+}
 
 run_step() {
     local name="$1"
@@ -106,16 +180,23 @@ run_test_step() {
 
 report_contract_metrics() {
     local output
+    local -a command
 
     printf '  [Contract metrics] ... '
-    if output="$(
-        cargo run --quiet --locked -p bd_test_support --bin contract_report -- \
-            --registry testing/foundation-contracts.ron \
-            --listed "${TEST_LISTED}" \
-            --passed "${TEST_PASSED}" \
-            --failed "${TEST_FAILED}" \
-            --ignored "${TEST_IGNORED}"
-    )"; then
+    command=(
+        cargo run --quiet --locked -p bd_test_support --bin contract_report --
+        --registry testing/foundation-contracts.ron
+        --listed "${TEST_LISTED}"
+        --passed "${TEST_PASSED}"
+        --failed "${TEST_FAILED}"
+        --ignored "${TEST_IGNORED}"
+    )
+    if [[ "${GATE_MODE}" == "candidate" ]]; then
+        for contract in "${CANDIDATE_CONTRACTS[@]}"; do
+            command+=(--candidate-contract "${contract}")
+        done
+    fi
+    if output="$("${command[@]}")"; then
         printf '%bPASS%b\n' "${GREEN}" "${NC}"
         printf '%s\n' "${output}" | sed 's/^/    /'
         PASS=$((PASS + 1))
@@ -163,6 +244,16 @@ fi
 
 printf '  [Preflight] RUST_MIN_STACK=%s\n\n' "${RUST_MIN_STACK}"
 
+if [[ "${GATE_MODE}" == "candidate" ]]; then
+    if ! load_candidate_contracts; then
+        printf '%bSTATUS=NotComplete — candidate handoff manifest is invalid or changed%b\n' \
+            "${RED}" "${NC}"
+        exit 1
+    fi
+    printf '  [Candidate handoff] protected manifest valid; contracts: %s\n\n' \
+        "${CANDIDATE_CONTRACTS[*]}"
+fi
+
 run_step "Formatting" cargo fmt --all -- --check
 run_step "Compile all targets" cargo check --workspace --all-targets --locked
 run_step \
@@ -179,6 +270,9 @@ run_step \
     "Content validation" \
     cargo run --quiet --locked -p bd_app -- --validate
 run_step "Whitespace" git diff --check
+if [[ "${GATE_MODE}" == "candidate" ]]; then
+    run_step "Handoff integrity" check_candidate_handoff
+fi
 
 echo ""
 echo "========================================="
@@ -188,9 +282,16 @@ printf '  Tests: %d listed, %d passed, %d failed, %d ignored\n' \
 echo "========================================="
 
 if [[ "${FAIL}" -gt 0 ]]; then
-    printf '%bGATE FAILED — work is not complete%b\n' "${RED}" "${NC}"
+    printf '%bSTATUS=NotComplete — %s gate failed; focused green cannot waive this result%b\n' \
+        "${RED}" "${GATE_MODE}" "${NC}"
     exit 1
 fi
 
-printf '%bAUTOMATED GATE PASSED — complete required GDD and player-facing reviews%b\n' \
+if [[ "${GATE_MODE}" == "candidate" ]]; then
+    printf '%bSTATUS=CandidateGreen — implementation gates passed; protected authority remains Red for independent review%b\n' \
+        "${GREEN}" "${NC}"
+    exit 0
+fi
+
+printf '%bSTATUS=VerifiedGreen — automated gate passed; ReviewedGreen still requires diff, GDD, evidence, and player-facing review%b\n' \
     "${GREEN}" "${NC}"

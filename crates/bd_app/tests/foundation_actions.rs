@@ -68,7 +68,7 @@ fn station_assignment_resolves_through_action_pipeline() {
         )
         .unwrap();
     let survivor = driver
-        .survivor_by_name("Survivor 1")
+        .survivor_by_name("Mara")
         .expect("stable station-assignment survivor must exist");
     let station = driver
         .station_by_type(bd_core::colony::stations::StationType::Stove)
@@ -89,7 +89,7 @@ fn survivor_task_assignment_resolves_through_action_pipeline() {
     let mut driver = colony_driver();
     let player = driver.player().unwrap();
     let survivor = driver
-        .survivor_by_name("Survivor 1")
+        .survivor_by_name("Mara")
         .expect("stable task-assignment survivor must exist");
     driver
         .submit_action_and_advance_result_frame(
@@ -210,7 +210,7 @@ fn replay_includes_pickup_and_colony_actions() {
     let mut driver = colony_driver();
     let player = driver.player().unwrap();
     let survivor = driver
-        .survivor_by_name("Survivor 1")
+        .survivor_by_name("Mara")
         .expect("stable replay survivor must exist");
     driver
         .submit_action_and_advance_result_frame(

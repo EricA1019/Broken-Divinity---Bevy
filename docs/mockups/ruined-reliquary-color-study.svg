@@ -1,0 +1,124 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1440" height="820" viewBox="0 0 1440 820" role="img" aria-labelledby="title desc">
+  <title id="title">Ruined Reliquary semantic color study</title>
+  <desc id="desc">Three color treatments of the same terminal colony panel: Reliquary Gold, Cold Choir, and the selected Cinder Rite.</desc>
+  <style>
+    .page-title { fill: #eee8dc; font: 700 28px ui-monospace, monospace; letter-spacing: 1px; }
+    .page-note, .study-note { fill: #9a958d; font: 14px ui-monospace, monospace; }
+    .study-name { fill: #eee8dc; font: 700 19px ui-monospace, monospace; }
+    .mono { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 12px; }
+    .small { font-size: 10.5px; }
+    .heading { font-weight: 700; letter-spacing: .5px; }
+    .swatch-label { fill: #aaa49a; font: 11px ui-monospace, monospace; }
+
+    .gold .canvas { fill: #0d0c0b; } .gold .surface { fill: #17140f; }
+    .gold .text { fill: #d8cfb8; } .gold .muted { fill: #837d72; }
+    .gold .border { stroke: #665536; } .gold .title-color { fill: #e0bd69; }
+    .gold .accent { fill: #caaa65; } .gold .accent-stroke { stroke: #caaa65; } .gold .positive { fill: #829c69; }
+    .gold .warning { fill: #de8439; } .gold .danger { fill: #c45a56; }
+    .gold .info { fill: #78a6a0; } .gold .selection { fill: #5a4520; }
+    .gold .selection-text { fill: #fff0c2; }
+
+    .choir .canvas { fill: #0b0e12; } .choir .surface { fill: #111820; }
+    .choir .text { fill: #cbd3d6; } .choir .muted { fill: #77838c; }
+    .choir .border { stroke: #4f626f; } .choir .title-color { fill: #afc8d2; }
+    .choir .accent { fill: #8eb2bf; } .choir .accent-stroke { stroke: #8eb2bf; } .choir .positive { fill: #829d8e; }
+    .choir .warning { fill: #c7a55b; } .choir .danger { fill: #c36269; }
+    .choir .info { fill: #69a5b4; } .choir .selection { fill: #29434f; }
+    .choir .selection-text { fill: #e8f5f8; }
+
+    .cinder .canvas { fill: #100c0b; } .cinder .surface { fill: #1b120f; }
+    .cinder .text { fill: #dcc7b3; } .cinder .muted { fill: #92786b; }
+    .cinder .border { stroke: #714737; } .cinder .title-color { fill: #dd8a50; }
+    .cinder .accent { fill: #b76b4c; } .cinder .accent-stroke { stroke: #b76b4c; } .cinder .positive { fill: #8d9d62; }
+    .cinder .warning { fill: #e0a13f; } .cinder .danger { fill: #d15348; }
+    .cinder .info { fill: #a68ab0; } .cinder .selection { fill: #5b2e20; }
+    .cinder .selection-text { fill: #ffe1c6; }
+  </style>
+
+  <rect width="1440" height="820" fill="#090909"/>
+  <text class="page-title" x="36" y="46">RUINED RELIQUARY / COLOR STUDY</text>
+  <text class="page-note" x="36" y="75">Same panel. Same semantic roles. Color changes atmosphere, never meaning.</text>
+
+  <g class="gold" transform="translate(28 96)">
+    <text class="study-name" x="8" y="15">B1 / RELIQUARY GOLD</text>
+    <text class="study-note" x="8" y="36">Bone, old gold, verdigris</text>
+    <rect class="canvas" x="0" y="52" width="420" height="560" rx="8"/>
+    <rect class="accent-stroke" x="8" y="60" width="404" height="356" rx="2" fill="none" stroke-width="1.5"/>
+    <rect class="accent-stroke" x="12" y="64" width="396" height="348" rx="1" fill="none" stroke-width="1" opacity=".65"/>
+    <text class="mono heading title-color" x="22" y="86">RUINED RELIQUARY / OUTPOST</text>
+    <text class="mono muted" x="330" y="86">D03</text>
+    <line class="border" x1="12" y1="99" x2="408" y2="99"/>
+    <text class="mono text small" x="22" y="119">SUP 05</text><text class="mono positive small" x="78" y="119">[■■■□□□□□]</text>
+    <text class="mono text small" x="170" y="119">MAT 02</text><text class="mono warning small" x="247" y="119">DAWN 7</text>
+    <text class="mono danger small heading" x="340" y="119">[LOW]</text>
+    <line class="border" x1="12" y1="133" x2="408" y2="133"/>
+    <line class="border" x1="151" y1="133" x2="151" y2="320"/><line class="border" x1="302" y1="133" x2="302" y2="320"/>
+    <text class="mono title-color heading small" x="22" y="153">SURVIVORS</text>
+    <text class="mono text" x="22" y="178">◆ MARA</text><text class="mono info small heading" x="85" y="178">TRAVEL</text>
+    <text class="mono muted small" x="29" y="197">Trees / east 6</text>
+    <text class="mono text" x="22" y="224">◇ IVEN</text><text class="mono positive small heading" x="85" y="224">WORK</text>
+    <text class="mono muted small" x="29" y="243">Stove / +3</text>
+    <text class="mono text" x="22" y="270">· TALA</text><text class="mono muted small" x="85" y="270">IDLE</text>
+    <text class="mono danger small heading" x="22" y="300">x NONE BLOCKED</text>
+    <text class="mono title-color heading small" x="164" y="153">SANCTUARY FLOOR</text>
+    <rect class="surface" x="163" y="163" width="127" height="124" rx="2"/>
+    <text class="mono muted small" x="170" y="181">###############</text><text class="mono muted small" x="170" y="199">#..W......T...#</text>
+    <text class="mono text small" x="170" y="217">#.............#</text><text class="mono accent heading" x="199" y="235">@</text>
+    <text class="mono positive heading" x="242" y="235">*</text><text class="mono info heading" x="276" y="253">&gt;</text>
+    <text class="mono muted small" x="170" y="271">###############</text>
+    <text class="mono title-color heading small" x="313" y="153">WORK RITE</text><text class="mono muted small" x="313" y="178">SURVIVOR</text>
+    <text class="mono text" x="313" y="198">Mara</text><text class="mono accent" x="344" y="219">↓</text>
+    <text class="mono muted small" x="313" y="240">STATION</text><text class="mono text" x="313" y="260">Stove</text>
+    <rect class="selection" x="311" y="275" width="86" height="22" rx="2"/><text class="mono selection-text small heading" x="319" y="290">[E] ASSIGN</text>
+    <text class="mono warning small heading" x="313" y="312">NEXT: DAWN</text>
+    <line class="border" x1="12" y1="320" x2="408" y2="320"/>
+    <text class="mono title-color heading small" x="22" y="341">CHRONICLE</text><text class="mono positive small" x="22" y="363">+ Stove labor complete.</text>
+    <text class="mono muted small" x="190" y="363">Yield waits for dawn.</text><line class="border" x1="12" y1="380" x2="408" y2="380"/>
+    <text class="mono info small" x="22" y="401">[WASD] WALK</text><text class="mono accent small" x="135" y="401">[B] BUILD</text>
+    <text class="mono accent small" x="226" y="401">[E] ASSIGN</text><text class="mono muted small" x="330" y="401">[Q] QUIT</text>
+    <text class="study-note" x="8" y="451">SEMANTIC ROLES</text>
+    <rect x="8" y="466" width="92" height="30" rx="3" fill="#d8cfb8"/><rect x="111" y="466" width="92" height="30" rx="3" fill="#837d72"/>
+    <rect x="214" y="466" width="92" height="30" rx="3" fill="#caaa65"/><rect x="317" y="466" width="92" height="30" rx="3" fill="#78a6a0"/>
+    <text class="swatch-label" x="8" y="512">TEXT</text><text class="swatch-label" x="111" y="512">MUTED</text><text class="swatch-label" x="214" y="512">ACCENT</text><text class="swatch-label" x="317" y="512">INFO</text>
+    <rect x="8" y="530" width="126" height="30" rx="3" fill="#829c69"/><rect x="147" y="530" width="126" height="30" rx="3" fill="#de8439"/><rect x="286" y="530" width="123" height="30" rx="3" fill="#c45a56"/>
+    <text class="swatch-label" x="8" y="576">POSITIVE</text><text class="swatch-label" x="147" y="576">WARNING</text><text class="swatch-label" x="286" y="576">DANGER</text>
+  </g>
+
+  <g class="choir" transform="translate(483 96)">
+    <text class="study-name" x="8" y="15">B2 / COLD CHOIR</text><text class="study-note" x="8" y="36">Steel, ash, faded liturgical blue</text>
+    <rect class="canvas" x="0" y="52" width="420" height="560" rx="8"/><rect class="accent-stroke" x="8" y="60" width="404" height="356" rx="2" fill="none" stroke-width="1.5"/><rect class="accent-stroke" x="12" y="64" width="396" height="348" rx="1" fill="none" stroke-width="1" opacity=".65"/>
+    <text class="mono heading title-color" x="22" y="86">RUINED RELIQUARY / OUTPOST</text><text class="mono muted" x="330" y="86">D03</text><line class="border" x1="12" y1="99" x2="408" y2="99"/>
+    <text class="mono text small" x="22" y="119">SUP 05</text><text class="mono positive small" x="78" y="119">[■■■□□□□□]</text><text class="mono text small" x="170" y="119">MAT 02</text><text class="mono warning small" x="247" y="119">DAWN 7</text><text class="mono danger small heading" x="340" y="119">[LOW]</text>
+    <line class="border" x1="12" y1="133" x2="408" y2="133"/><line class="border" x1="151" y1="133" x2="151" y2="320"/><line class="border" x1="302" y1="133" x2="302" y2="320"/>
+    <text class="mono title-color heading small" x="22" y="153">SURVIVORS</text><text class="mono text" x="22" y="178">◆ MARA</text><text class="mono info small heading" x="85" y="178">TRAVEL</text><text class="mono muted small" x="29" y="197">Trees / east 6</text>
+    <text class="mono text" x="22" y="224">◇ IVEN</text><text class="mono positive small heading" x="85" y="224">WORK</text><text class="mono muted small" x="29" y="243">Stove / +3</text><text class="mono text" x="22" y="270">· TALA</text><text class="mono muted small" x="85" y="270">IDLE</text><text class="mono danger small heading" x="22" y="300">x NONE BLOCKED</text>
+    <text class="mono title-color heading small" x="164" y="153">SANCTUARY FLOOR</text><rect class="surface" x="163" y="163" width="127" height="124" rx="2"/>
+    <text class="mono muted small" x="170" y="181">###############</text><text class="mono muted small" x="170" y="199">#..W......T...#</text><text class="mono text small" x="170" y="217">#.............#</text><text class="mono accent heading" x="199" y="235">@</text><text class="mono positive heading" x="242" y="235">*</text><text class="mono info heading" x="276" y="253">&gt;</text><text class="mono muted small" x="170" y="271">###############</text>
+    <text class="mono title-color heading small" x="313" y="153">WORK RITE</text><text class="mono muted small" x="313" y="178">SURVIVOR</text><text class="mono text" x="313" y="198">Mara</text><text class="mono accent" x="344" y="219">↓</text><text class="mono muted small" x="313" y="240">STATION</text><text class="mono text" x="313" y="260">Stove</text><rect class="selection" x="311" y="275" width="86" height="22" rx="2"/><text class="mono selection-text small heading" x="319" y="290">[E] ASSIGN</text><text class="mono warning small heading" x="313" y="312">NEXT: DAWN</text>
+    <line class="border" x1="12" y1="320" x2="408" y2="320"/><text class="mono title-color heading small" x="22" y="341">CHRONICLE</text><text class="mono positive small" x="22" y="363">+ Stove labor complete.</text><text class="mono muted small" x="190" y="363">Yield waits for dawn.</text><line class="border" x1="12" y1="380" x2="408" y2="380"/>
+    <text class="mono info small" x="22" y="401">[WASD] WALK</text><text class="mono accent small" x="135" y="401">[B] BUILD</text><text class="mono accent small" x="226" y="401">[E] ASSIGN</text><text class="mono muted small" x="330" y="401">[Q] QUIT</text>
+    <text class="study-note" x="8" y="451">SEMANTIC ROLES</text><rect x="8" y="466" width="92" height="30" rx="3" fill="#cbd3d6"/><rect x="111" y="466" width="92" height="30" rx="3" fill="#77838c"/><rect x="214" y="466" width="92" height="30" rx="3" fill="#8eb2bf"/><rect x="317" y="466" width="92" height="30" rx="3" fill="#69a5b4"/>
+    <text class="swatch-label" x="8" y="512">TEXT</text><text class="swatch-label" x="111" y="512">MUTED</text><text class="swatch-label" x="214" y="512">ACCENT</text><text class="swatch-label" x="317" y="512">INFO</text><rect x="8" y="530" width="126" height="30" rx="3" fill="#829d8e"/><rect x="147" y="530" width="126" height="30" rx="3" fill="#c7a55b"/><rect x="286" y="530" width="123" height="30" rx="3" fill="#c36269"/>
+    <text class="swatch-label" x="8" y="576">POSITIVE</text><text class="swatch-label" x="147" y="576">WARNING</text><text class="swatch-label" x="286" y="576">DANGER</text>
+  </g>
+
+  <g class="cinder" transform="translate(938 96)">
+    <text class="study-name" x="8" y="15">B3 / CINDER RITE / SELECTED</text><text class="study-note" x="8" y="36">Rust, ember, warm bone, bruised violet</text>
+    <rect class="canvas" x="0" y="52" width="420" height="560" rx="8"/><rect class="accent-stroke" x="8" y="60" width="404" height="356" rx="2" fill="none" stroke-width="1.5"/><rect class="accent-stroke" x="12" y="64" width="396" height="348" rx="1" fill="none" stroke-width="1" opacity=".65"/>
+    <text class="mono heading title-color" x="22" y="86">RUINED RELIQUARY / OUTPOST</text><text class="mono muted" x="330" y="86">D03</text><line class="border" x1="12" y1="99" x2="408" y2="99"/>
+    <text class="mono text small" x="22" y="119">SUP 05</text><text class="mono positive small" x="78" y="119">[■■■□□□□□]</text><text class="mono text small" x="170" y="119">MAT 02</text><text class="mono warning small" x="247" y="119">DAWN 7</text><text class="mono danger small heading" x="340" y="119">[LOW]</text>
+    <line class="border" x1="12" y1="133" x2="408" y2="133"/><line class="border" x1="151" y1="133" x2="151" y2="320"/><line class="border" x1="302" y1="133" x2="302" y2="320"/>
+    <text class="mono title-color heading small" x="22" y="153">SURVIVORS</text><text class="mono text" x="22" y="178">◆ MARA</text><text class="mono info small heading" x="85" y="178">TRAVEL</text><text class="mono muted small" x="29" y="197">Trees / east 6</text>
+    <text class="mono text" x="22" y="224">◇ IVEN</text><text class="mono positive small heading" x="85" y="224">WORK</text><text class="mono muted small" x="29" y="243">Stove / +3</text><text class="mono text" x="22" y="270">· TALA</text><text class="mono muted small" x="85" y="270">IDLE</text><text class="mono danger small heading" x="22" y="300">x NONE BLOCKED</text>
+    <text class="mono title-color heading small" x="164" y="153">SANCTUARY FLOOR</text><rect class="surface" x="163" y="163" width="127" height="124" rx="2"/>
+    <text class="mono muted small" x="170" y="181">###############</text><text class="mono muted small" x="170" y="199">#..W......T...#</text><text class="mono text small" x="170" y="217">#.............#</text><text class="mono accent heading" x="199" y="235">@</text><text class="mono positive heading" x="242" y="235">*</text><text class="mono info heading" x="276" y="253">&gt;</text><text class="mono muted small" x="170" y="271">###############</text>
+    <text class="mono title-color heading small" x="313" y="153">WORK RITE</text><text class="mono muted small" x="313" y="178">SURVIVOR</text><text class="mono text" x="313" y="198">Mara</text><text class="mono accent" x="344" y="219">↓</text><text class="mono muted small" x="313" y="240">STATION</text><text class="mono text" x="313" y="260">Stove</text><rect class="selection" x="311" y="275" width="86" height="22" rx="2"/><text class="mono selection-text small heading" x="319" y="290">[E] ASSIGN</text><text class="mono warning small heading" x="313" y="312">NEXT: DAWN</text>
+    <line class="border" x1="12" y1="320" x2="408" y2="320"/><text class="mono title-color heading small" x="22" y="341">CHRONICLE</text><text class="mono positive small" x="22" y="363">+ Stove labor complete.</text><text class="mono muted small" x="190" y="363">Yield waits for dawn.</text><line class="border" x1="12" y1="380" x2="408" y2="380"/>
+    <text class="mono info small" x="22" y="401">[WASD] WALK</text><text class="mono accent small" x="135" y="401">[B] BUILD</text><text class="mono accent small" x="226" y="401">[E] ASSIGN</text><text class="mono muted small" x="330" y="401">[Q] QUIT</text>
+    <text class="study-note" x="8" y="451">SEMANTIC ROLES</text><rect x="8" y="466" width="92" height="30" rx="3" fill="#dcc7b3"/><rect x="111" y="466" width="92" height="30" rx="3" fill="#92786b"/><rect x="214" y="466" width="92" height="30" rx="3" fill="#b76b4c"/><rect x="317" y="466" width="92" height="30" rx="3" fill="#a68ab0"/>
+    <text class="swatch-label" x="8" y="512">TEXT</text><text class="swatch-label" x="111" y="512">MUTED</text><text class="swatch-label" x="214" y="512">ACCENT</text><text class="swatch-label" x="317" y="512">INFO</text><rect x="8" y="530" width="126" height="30" rx="3" fill="#8d9d62"/><rect x="147" y="530" width="126" height="30" rx="3" fill="#e0a13f"/><rect x="286" y="530" width="123" height="30" rx="3" fill="#d15348"/>
+    <text class="swatch-label" x="8" y="576">POSITIVE</text><text class="swatch-label" x="147" y="576">WARNING</text><text class="swatch-label" x="286" y="576">DANGER</text>
+  </g>
+
+  <text class="page-note" x="36" y="790">Bright saturation is reserved for danger and supernatural states. Every status retains a glyph and text label.</text>
+</svg>

@@ -3,6 +3,7 @@
 //! Renders Ratatui widgets from view models. Never queries ECS gameplay
 //! internals directly.
 
+pub mod chrome;
 pub mod commands;
 pub mod render_grid;
 mod runtime_control;
@@ -29,13 +30,7 @@ use bevy_ecs::{
     system::{Commands, Query, Res, ResMut, SystemParam},
 };
 use bevy_ratatui::{RatatuiContext, event::KeyMessage};
-use ratatui::{
-    layout::Alignment,
-    layout::Rect,
-    style::{Color, Style},
-    text::Line,
-    widgets::{Block, Borders, Paragraph},
-};
+use ratatui::{layout::Alignment, layout::Rect, text::Line, widgets::Paragraph};
 
 use bd_core::{
     BdSet,
@@ -46,6 +41,7 @@ use bd_core::{
     spatial::{TransitionComplete, TransitionIntent},
 };
 
+use chrome::{PanelTone, UiTone, command_ribbon, mode_ribbon, panel, style};
 use screens::{
     ScreenIntent, ScreenRegistry, ScreenState, WidgetRegistry, WidgetRenderContext,
     compute_panel_rects, default_screen_registry, default_widget_registry, validate_screens,
@@ -1488,10 +1484,7 @@ fn render_ui_frame(frame: &mut ratatui::Frame, data: &UiFrameData<'_>) {
 
     let layout = commands::terminal_layout(area.width, area.height);
     if layout == commands::TerminalLayout::TooSmall {
-        let block = Block::default()
-            .title(" Terminal Too Small ")
-            .borders(Borders::ALL)
-            .style(Style::default().fg(Color::Red));
+        let block = panel(data.theme, "Terminal Too Small", PanelTone::Danger);
         let inner = block.inner(area);
         frame.render_widget(block, area);
         let msg = ratatui::widgets::Paragraph::new(vec![
@@ -1504,12 +1497,12 @@ fn render_ui_frame(frame: &mut ratatui::Frame, data: &UiFrameData<'_>) {
                     commands::MIN_TERMINAL_WIDTH,
                     commands::MIN_TERMINAL_HEIGHT
                 ),
-                Style::default().fg(Color::Yellow),
+                style(data.theme, UiTone::Warning),
             ),
             Line::from(""),
             Line::styled(
                 "Please resize your terminal and restart.",
-                Style::default().fg(Color::Gray),
+                style(data.theme, UiTone::Muted),
             ),
         ]);
         frame.render_widget(msg, inner);
@@ -1535,6 +1528,7 @@ fn render_ui_frame(frame: &mut ratatui::Frame, data: &UiFrameData<'_>) {
         symbols: data.symbols,
         theme: data.theme,
         mode: data.mode,
+        screen_id: definition.id.as_str(),
     };
 
     const FOOTER_HEIGHT: u16 = 3;
@@ -1548,15 +1542,15 @@ fn render_ui_frame(frame: &mut ratatui::Frame, data: &UiFrameData<'_>) {
         if let Some(binding) = data.widgets.bindings.get(panel_id.as_str()) {
             (binding.render)(frame, *rect, &wctx);
         } else {
-            let block = Block::default()
-                .title(format!(" Unknown widget: {panel_id} "))
-                .borders(Borders::ALL)
-                .style(Style::default().fg(Color::Red));
+            let block = panel(
+                data.theme,
+                format!("Unknown widget: {panel_id}"),
+                PanelTone::Danger,
+            );
             frame.render_widget(block, *rect);
         }
     }
 
-    screens::render_build_overlay(frame, content_area, &wctx);
     render_footer(
         frame,
         area,
@@ -1566,7 +1560,26 @@ fn render_ui_frame(frame: &mut ratatui::Frame, data: &UiFrameData<'_>) {
         data.interaction,
         data.turn,
         data.day,
+        data.theme,
     );
+
+    // Structural Ruined Reliquary frame: painted after the panels and footer so
+    // the continuous double-line perimeter is never overwritten by content.
+    // Splash screens stay frame-less to keep their centered layout intact.
+    if !matches!(definition.id.as_str(), "title" | "game_over") {
+        chrome::render_outer_frame(frame, data.theme);
+    }
+
+    // Build and management overlays render last but stay inside the shell-owned
+    // content rect (above the footer) so they never cover the structural
+    // perimeter cells or the status footer.
+    let overlay_area = Rect {
+        x: area.x + 1,
+        y: area.y + 1,
+        width: area.width.saturating_sub(2),
+        height: area.height.saturating_sub(4),
+    };
+    screens::render_build_overlay(frame, overlay_area, &wctx);
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -1579,42 +1592,36 @@ fn render_footer(
     interaction: commands::InteractionMode,
     turn: u64,
     day: u64,
+    theme: &ThemeRegistry,
 ) {
-    fn truncate(value: &str, width: usize) -> String {
-        if value.chars().count() <= width {
-            return value.to_owned();
-        }
-        if width <= 1 {
-            return "…".chars().take(width).collect();
-        }
-        format!(
-            "{}…",
-            value
-                .chars()
-                .take(width.saturating_sub(1))
-                .collect::<String>()
-        )
-    }
-
+    // The footer lives inside the Ruined Reliquary frame. Shared chrome turns
+    // semantic state and command projections into one mode ribbon and one command
+    // ribbon; individual screens do not invent footer variants.
     let version = env!("CARGO_PKG_VERSION");
-    let status = truncate(
-        &format!("Turn: {turn} | Day: {day} | Broken Divinity Kernel v{version}"),
-        area.width as usize,
-    );
-    let controls =
-        commands::footer_control_lines(bindings, mode, interaction, screen_id, area.width);
     let footer_area = Rect {
+        x: area.x + 1,
         y: area.y + area.height.saturating_sub(3),
-        height: 3,
-        ..area
+        width: area.width.saturating_sub(2),
+        height: 2,
+    };
+    let controls =
+        commands::footer_control_lines(bindings, mode, interaction, screen_id, footer_area.width);
+    let mode_label = match interaction {
+        commands::InteractionMode::Build => "BUILD".to_owned(),
+        commands::InteractionMode::TaskManagement => "TASK MANAGEMENT".to_owned(),
+        commands::InteractionMode::StationStaffing => "STATION STAFFING".to_owned(),
+        commands::InteractionMode::GameOver => "GAME OVER".to_owned(),
+        commands::InteractionMode::Normal => screen_id.replace('_', " ").to_ascii_uppercase(),
     };
     let para = Paragraph::new(vec![
-        Line::from(status),
-        Line::from(controls.contextual),
-        Line::from(controls.global),
+        mode_ribbon(theme, mode_label, day, turn, version),
+        command_ribbon(
+            theme,
+            &[controls.global.as_str(), controls.contextual.as_str()],
+            footer_area.width,
+        ),
     ])
-    .alignment(Alignment::Left)
-    .style(Style::default().fg(Color::DarkGray));
+    .alignment(Alignment::Left);
     frame.render_widget(para, footer_area);
 }
 
@@ -1821,7 +1828,18 @@ mod tests {
         map: &MapViewModel,
         container: &ContainerViewModel,
     ) -> String {
-        render_screen_with_state(
+        buffer_text(&render_buffer(screen, width, height, mode, map, container))
+    }
+
+    fn render_buffer(
+        screen: &str,
+        width: u16,
+        height: u16,
+        mode: GameMode,
+        map: &MapViewModel,
+        container: &ContainerViewModel,
+    ) -> Buffer {
+        render_buffer_with_state(
             screen,
             width,
             height,
@@ -1835,7 +1853,7 @@ mod tests {
                 ap_max: 3,
                 supplies: 10,
                 day: 1,
-                party_names: vec!["Survivor 1".into(), "Survivor 2".into()],
+                party_names: vec!["Mara".into(), "Iven".into()],
                 ..Default::default()
             },
             LogViewModel::default(),
@@ -1855,9 +1873,14 @@ mod tests {
     ) -> String {
         let buffer =
             render_buffer_with_state(screen, width, height, mode, map, container, stats, log);
-        (0..height)
+        buffer_text(&buffer)
+    }
+
+    fn buffer_text(buffer: &Buffer) -> String {
+        let area = buffer.area;
+        (area.y..area.y + area.height)
             .map(|y| {
-                (0..width)
+                (area.x..area.x + area.width)
                     .map(|x| {
                         buffer
                             .cell((x, y))
@@ -1868,6 +1891,80 @@ mod tests {
             })
             .collect::<Vec<_>>()
             .join("\n")
+    }
+
+    fn titled_panel_inner(buffer: &Buffer, title: &str) -> Option<Rect> {
+        let area = buffer.area;
+        let title = title.chars().collect::<Vec<_>>();
+        let right = area.x + area.width;
+        let bottom = area.y + area.height;
+
+        for y in area.y..bottom {
+            for title_x in area.x..right.saturating_sub(title.len() as u16 - 1) {
+                let title_matches = title.iter().enumerate().all(|(offset, expected)| {
+                    buffer
+                        .cell((title_x + offset as u16, y))
+                        .is_some_and(|cell| cell.symbol() == expected.to_string())
+                });
+                if !title_matches {
+                    continue;
+                }
+
+                let Some(left_x) = (area.x..title_x).rev().find(|x| {
+                    buffer
+                        .cell((*x, y))
+                        .is_some_and(|cell| matches!(cell.symbol(), "┌" | "╔"))
+                }) else {
+                    continue;
+                };
+                let Some(right_x) = (title_x + title.len() as u16..right).find(|x| {
+                    buffer
+                        .cell((*x, y))
+                        .is_some_and(|cell| matches!(cell.symbol(), "┐" | "╗"))
+                }) else {
+                    continue;
+                };
+                let Some(bottom_y) = (y + 1..bottom).find(|candidate_y| {
+                    buffer
+                        .cell((left_x, *candidate_y))
+                        .is_some_and(|cell| matches!(cell.symbol(), "└" | "╚"))
+                        && buffer
+                            .cell((right_x, *candidate_y))
+                            .is_some_and(|cell| matches!(cell.symbol(), "┘" | "╝"))
+                }) else {
+                    continue;
+                };
+
+                return Some(Rect::new(
+                    left_x + 1,
+                    y + 1,
+                    right_x.saturating_sub(left_x + 1),
+                    bottom_y.saturating_sub(y + 1),
+                ));
+            }
+        }
+        None
+    }
+
+    fn normalized_semantic_text(buffer: &Buffer, area: Rect) -> String {
+        let mut text = String::new();
+        for y in area.y..area.y + area.height {
+            for x in area.x..area.x + area.width {
+                let symbol = buffer
+                    .cell((x, y))
+                    .expect("semantic region must remain inside the buffer")
+                    .symbol();
+                if symbol.chars().all(|character| {
+                    character.is_whitespace() || ('\u{2500}'..='\u{257f}').contains(&character)
+                }) {
+                    text.push(' ');
+                } else {
+                    text.push_str(symbol);
+                }
+            }
+            text.push(' ');
+        }
+        text.split_whitespace().collect::<Vec<_>>().join(" ")
     }
 
     #[allow(clippy::too_many_arguments)]
@@ -1993,7 +2090,7 @@ mod tests {
                     ap_current: 3,
                     ap_max: 3,
                     party_names: vec![
-                        "Survivor 1 — Refine Timber: To Station | EnRoute Basic Processing | cargo 1 Raw Timber".into(),
+                        "Mara — Refine Timber: To Station | EnRoute Basic Processing | cargo 1 Raw Timber".into(),
                     ],
                     ..Default::default()
                 },
@@ -2034,9 +2131,7 @@ mod tests {
                     hp_max: 10,
                     ap_current: 3,
                     ap_max: 3,
-                    party_names: vec![
-                        "Survivor 1 — Gather Supplies: Water 2/3 | Working Water".into(),
-                    ],
+                    party_names: vec!["Mara — Gather Supplies: Water 2/3 | Working Water".into()],
                     station_status: vec!["Raw stockpile — Raw Timber 2".into()],
                     next_day_forecast:
                         "Next worker: Supplies +1 in 1 turn | Next day: upkeep -3 → 5".into(),
@@ -2071,7 +2166,7 @@ mod tests {
     }
 
     #[test]
-    fn management_modal_is_complete_at_both_supported_profiles() {
+    fn management_information_and_screen_controls_are_complete_at_supported_profiles() {
         for (width, height) in [(80, 24), (60, 20)] {
             let stats = StatsViewModel {
                 hp_current: 10,
@@ -2107,7 +2202,7 @@ mod tests {
                 }),
                 ..Default::default()
             };
-            let output = render_screen_with_state(
+            let buffer = render_buffer_with_state(
                 "outpost",
                 width,
                 height,
@@ -2117,8 +2212,11 @@ mod tests {
                 stats,
                 LogViewModel::default(),
             );
+            let output = buffer_text(&buffer);
+            let modal = titled_panel_inner(&buffer, "Task Management")
+                .expect("Task Management modal must own one semantic region");
+            let modal_text = normalized_semantic_text(&buffer, modal);
             for required in [
-                "Task Management",
                 "Mara",
                 "Ivo",
                 "Sela",
@@ -2128,12 +2226,22 @@ mod tests {
                 "Next worker:",
                 "Next day:",
                 "upkeep",
-                "Enter:confirm",
-                "Esc:cancel",
             ] {
                 assert!(
-                    output.contains(required),
-                    "{width}x{height} management modal hid `{required}`:\n{output}"
+                    modal_text.contains(required),
+                    "{width}x{height} management modal hid `{required}`; \
+                     modal_semantic_text={modal_text:?}:\n{output}"
+                );
+            }
+            let footer = output
+                .lines()
+                .skip(height.saturating_sub(3) as usize)
+                .collect::<Vec<_>>()
+                .join(" ");
+            for required in ["[Enter] confirm", "[c/Esc] cancel"] {
+                assert!(
+                    footer.contains(required),
+                    "{width}x{height} management screen hid `{required}`; footer={footer:?}"
                 );
             }
         }
@@ -2154,15 +2262,15 @@ mod tests {
                 "BROKEN DIVINITY",
                 "FOUNDATION BUILD",
                 "Press any key to begin",
-                "Load:F9",
-                "Quit:q",
+                "[F9] Load",
+                "[q] Quit",
             ] {
                 assert!(
                     title.contains(required),
                     "{width}x{height} title hid `{required}`:\n{title}"
                 );
             }
-            assert!(!title.contains("Move:wasd/arrows"));
+            assert!(!title.contains("[wasd/arrows] Move"));
 
             let game_over = render_screen_with_state(
                 "game_over",
@@ -2179,10 +2287,10 @@ mod tests {
             );
             for required in [
                 "You have died.",
-                "Restart:r",
-                "Save:F5",
-                "Load:F9",
-                "Quit:q",
+                "[r] Restart",
+                "[F5] Save",
+                "[F9] Load",
+                "[q] Quit",
             ] {
                 assert!(
                     game_over.contains(required),
@@ -2315,19 +2423,13 @@ mod tests {
                 &shelter_map(),
                 &ContainerViewModel::default(),
             );
+            let compact_combat = combat.split_whitespace().collect::<String>();
             for required in [
-                " Map ",
-                " Stats ",
-                "HP: 10/10",
-                "AP: 3/3",
-                "Attack",
-                "Extract",
-                "Save:F5",
-                "Load:F9",
-                "Quit:q",
+                "Map", "Stats", "HP10/10[", "AP3/3[", "Attack", "Extract", "[F5]Save", "[F9]Load",
+                "[q]Quit",
             ] {
                 assert!(
-                    combat.contains(required),
+                    compact_combat.contains(required),
                     "{width}x{height} combat hid `{required}`:\n{combat}"
                 );
             }
@@ -2343,11 +2445,11 @@ mod tests {
             for required in [
                 "Field Dressing",
                 "usable",
-                "Use:u",
-                "Back:i",
-                "Save:F5",
-                "Load:F9",
-                "Quit:q",
+                "[u] Use",
+                "[i] Back",
+                "[F5] Save",
+                "[F9] Load",
+                "[q] Quit",
             ] {
                 assert!(
                     inventory_output.contains(required),
@@ -2810,8 +2912,16 @@ mod tests {
 
     #[test]
     fn compact_build_selection_shows_complete_selected_effect() {
+        // Contract: VISUAL-BUILD-001
+        // Given: a selected Workshop with a long decisive effect at compact 60x20.
+        // When: the final Build Selection buffer is rendered.
+        // Then: the titled modal contains the complete selected label, cost, and effect.
+        // Must not change: approved chrome may change without becoming semantic text;
+        // truncation or moving the decisive detail outside the modal remains forbidden.
+        // Evidence layers: projection, buffer layout; input-state and PTY remain required.
         let required_effect =
             "Produces two Supplies each day when a survivor is physically working here";
+        let required_selection = "▶ 1. Workshop — 4 Supplies";
         let mut map = shelter_map();
         map.build_menu = Some(view_models::BuildMenuVm {
             options: vec![("Workshop".into(), 4, required_effect.into())],
@@ -2819,7 +2929,7 @@ mod tests {
             available_supplies: 10,
         });
 
-        let output = render_screen(
+        let buffer = render_buffer(
             "outpost",
             60,
             20,
@@ -2827,23 +2937,31 @@ mod tests {
             &map,
             &ContainerViewModel::default(),
         );
-
-        let semantic_text = output
-            .chars()
-            .map(|character| {
-                if matches!(character, '│' | '┌' | '┐' | '└' | '┘' | '─') {
-                    ' '
-                } else {
-                    character
-                }
-            })
-            .collect::<String>()
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .join(" ");
+        let output = buffer_text(&buffer);
+        let modal_inner = titled_panel_inner(&buffer, "Build Station").unwrap_or_else(|| {
+            panic!(
+                "contract=VISUAL-BUILD-001 case=build-selection-60x20 \
+                 precondition=selected_workshop_with_long_effect \
+                 action=locate_titled_build_modal_in_final_buffer \
+                 expected=one_bordered_Build_Station_modal actual=missing visual=\n{output}"
+            )
+        });
         assert!(
-            semantic_text.contains(required_effect),
-            "the compact build menu clipped the selected station effect:\n{output}"
+            titled_panel_inner(&buffer, "Missing Station").is_none(),
+            "contract=VISUAL-BUILD-001 case=observer-negative-title \
+             precondition=final_build_selection_buffer action=locate_absent_modal_title \
+             expected=no_semantic_region actual=observer_false_positive"
+        );
+        let semantic_text = normalized_semantic_text(&buffer, modal_inner);
+        assert!(
+            semantic_text.contains(required_selection)
+                && semantic_text.contains(&format!("Effect: {required_effect}")),
+            "contract=VISUAL-BUILD-001 case=build-selection-60x20 \
+             precondition=selected_workshop_with_long_effect \
+             action=read_semantic_content_inside_final_build_modal \
+             expected_selection={required_selection:?} expected_effect={required_effect:?} \
+             must_not_change=complete_selected_label_cost_effect \
+             actual_semantic_text={semantic_text:?} modal_inner={modal_inner:?} visual=\n{output}"
         );
     }
 
@@ -2980,14 +3098,17 @@ mod tests {
                 );
                 let lines = output.lines().collect::<Vec<_>>();
                 let footer = lines[lines.len().saturating_sub(3)..].join(" ");
-                for required in ["Enter:confirm", &format!("{cancel_key}/Esc:cancel")] {
+                for required in [
+                    "[Enter] confirm".to_owned(),
+                    format!("[{cancel_key}/Esc] cancel"),
+                ] {
                     assert!(
-                        footer.contains(required),
+                        footer.contains(&required),
                         "contract=VISUAL-MGMT-002 case={kind:?}-{width}x{height} \
                          footer omits modal control `{required}`; footer={footer:?}\n{output}"
                     );
                 }
-                for forbidden in ["Travel:", "Build:", "Move:"] {
+                for forbidden in ["[t] Travel", "[b] Build", "[wasd/arrows] Move"] {
                     assert!(
                         !footer.contains(forbidden),
                         "contract=VISUAL-MGMT-002 case={kind:?}-{width}x{height} \
@@ -3011,7 +3132,7 @@ mod tests {
                 &ContainerViewModel::default(),
                 StatsViewModel {
                     party_names: vec![
-                        "Survivor 1 — Gather Supplies | Blocked Water: No route | 0/3 → 1 Supplies"
+                        "Mara — Gather Supplies | Blocked Water: No route | 0/3 → 1 Supplies"
                             .into(),
                     ],
                     ..Default::default()
@@ -3032,7 +3153,7 @@ mod tests {
                 .collect::<Vec<_>>()
                 .join(" ");
             for required in [
-                "Survivor", "Gather", "Supplies", "Blocked", "Water:", "No", "route", "0/3",
+                "Mara", "Gather", "Supplies", "Blocked", "Water:", "No", "route", "0/3",
             ] {
                 assert!(
                     semantic_text.contains(required),

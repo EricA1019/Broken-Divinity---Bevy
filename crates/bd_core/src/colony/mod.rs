@@ -2,6 +2,7 @@
 
 pub mod logistics;
 pub mod production;
+pub mod proximity;
 pub mod raids;
 pub mod resources;
 pub mod shelter;

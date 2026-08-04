@@ -55,7 +55,7 @@ fn build_station(driver: &mut FoundationDriver, staffed: bool) {
     driver.fixture_complete_construction(station);
     if staffed {
         let survivor = driver
-            .survivor_by_name("Survivor 1")
+            .survivor_by_name("Mara")
             .expect("stable station worker must exist");
         driver
             .expect_station_assignment_action(
@@ -117,7 +117,7 @@ fn starvation_consequence_applies_once_per_day() {
     let mut driver = colony_driver();
     driver.fixture_set_colony_resource(PoolKind::Supplies, 0);
     let survivor = driver
-        .survivor_by_name("Survivor 1")
+        .survivor_by_name("Mara")
         .expect("stable starvation subject must exist");
     wait_to_next_day(&mut driver);
     let after = driver

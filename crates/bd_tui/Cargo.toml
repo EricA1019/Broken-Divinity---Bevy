@@ -19,3 +19,6 @@ crossterm.workspace = true
 tracing.workspace = true
 thiserror.workspace = true
 serde.workspace = true
+
+[dev-dependencies]
+bd_test_support = { path = "../bd_test_support" }

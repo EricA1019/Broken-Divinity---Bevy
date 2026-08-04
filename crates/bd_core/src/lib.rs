@@ -194,6 +194,7 @@ fn register_foundation(app: &mut App, foundation: bool) {
     app.init_resource::<crate::colony::production::ColonyStorage>();
     app.init_resource::<crate::colony::production::DailyCycleDraft>();
     app.init_resource::<crate::colony::production::LatestDailySummary>();
+    app.init_resource::<crate::colony::proximity::NearbyInteractables>();
     app.add_message::<crate::colony::production::DailySummary>();
 
     // Register action system (replaces direct movement systems)
@@ -329,6 +330,14 @@ fn register_foundation(app: &mut App, foundation: bool) {
         crate::colony::survivors::report_assignment_feedback
             .after(crate::colony::survivors::process_survivor_movement)
             .in_set(BdSet::Mutation),
+    );
+
+    // Nearby interactable projection: refresh after accepted movement and emit
+    // one Chronicle fact per newly entered target. Runs after mutation so it
+    // observes the accepted destination; rendering never writes here.
+    app.add_systems(
+        bevy_app::Update,
+        crate::colony::proximity::update_nearby_interactables.in_set(BdSet::ResultEmission),
     );
 }
 

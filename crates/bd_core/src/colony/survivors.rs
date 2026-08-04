@@ -423,6 +423,9 @@ struct WorkerStepState {
     task: SurvivorTask,
     activity: Option<WorkerActivity>,
     direct_gather_progress: Option<crate::colony::resources::DirectGatherProgress>,
+    /// True when a player assignment was applied this frame (`PendingAssignmentFeedback`
+    /// is still present); the task changed and a stale activity must be recomputed.
+    assignment_pending: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -796,6 +799,7 @@ pub(crate) fn process_survivor_movement(
             &SurvivorTask,
             Option<&WorkerActivity>,
             Option<&crate::colony::resources::DirectGatherProgress>,
+            Option<&PendingAssignmentFeedback>,
         ),
         (
             With<Survivor>,
@@ -825,15 +829,18 @@ pub(crate) fn process_survivor_movement(
     let mut workers = survivors
         .iter()
         .map(
-            |(entity, name, position, task, activity, direct_gather_progress)| WorkerStepState {
-                entity,
-                name: name
-                    .map(|name| name.0.clone())
-                    .unwrap_or_else(|| format!("Survivor {}", entity.to_bits())),
-                position: *position,
-                task: task.clone(),
-                activity: activity.cloned(),
-                direct_gather_progress: direct_gather_progress.cloned(),
+            |(entity, name, position, task, activity, direct_gather_progress, assignment)| {
+                WorkerStepState {
+                    entity,
+                    name: name
+                        .map(|name| name.0.clone())
+                        .unwrap_or_else(|| format!("Survivor {}", entity.to_bits())),
+                    position: *position,
+                    task: task.clone(),
+                    activity: activity.cloned(),
+                    direct_gather_progress: direct_gather_progress.cloned(),
+                    assignment_pending: assignment.is_some(),
+                }
             },
         )
         .collect::<Vec<_>>();
@@ -895,6 +902,22 @@ pub(crate) fn process_survivor_movement(
                 });
             let (next_position, final_activity) = if allow_movement && !performed_direct_work {
                 resolve_worker_activity(worker, &map, &stations, &nodes, &blocked)
+            } else if !allow_movement
+                && recomputing.is_none()
+                && !worker.assignment_pending
+                && matches!(worker.activity, Some(WorkerActivity::Blocked { .. }))
+            {
+                // Observe-only frame: the worker takes no step this frame, so a
+                // Blocked activity owned by the worker workflow is preserved
+                // rather than re-derived from transient surroundings. All other
+                // activities are still re-observed each frame so condition
+                // changes (walled paths, depletion) update the projection. A
+                // fresh player assignment and a restore rebuild recompute even
+                // a Blocked activity.
+                (
+                    worker.position,
+                    worker.activity.clone().expect("guarded above"),
+                )
             } else {
                 (
                     worker.position,

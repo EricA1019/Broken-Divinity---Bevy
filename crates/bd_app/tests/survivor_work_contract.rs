@@ -178,7 +178,7 @@ fn cardinal_work_positions(
 #[test]
 fn new_assignment_does_not_move_during_paused_confirmation() {
     let mut driver = colony_driver(701);
-    let survivor = named_survivor(&mut driver, "Survivor 1");
+    let survivor = named_survivor(&mut driver, "Mara");
     let station = build_station(&mut driver, StationType::Stove);
     let before = driver.position(survivor).expect("survivor has a position");
 
@@ -194,7 +194,7 @@ fn new_assignment_does_not_move_during_paused_confirmation() {
 #[test]
 fn idle_survivor_does_not_move_on_accepted_outpost_turns() {
     let mut driver = colony_driver(717);
-    let survivor = named_survivor(&mut driver, "Survivor 2");
+    let survivor = named_survivor(&mut driver, "Iven");
     let start = Position { x: 8, y: 8 };
     driver
         .fixture_set_position(survivor, start)
@@ -214,7 +214,7 @@ fn idle_survivor_does_not_move_on_accepted_outpost_turns() {
 #[test]
 fn next_outpost_turn_moves_worker_exactly_one_cardinal_step() {
     let mut driver = colony_driver(702);
-    let survivor = named_survivor(&mut driver, "Survivor 1");
+    let survivor = named_survivor(&mut driver, "Mara");
     let station = build_station(&mut driver, StationType::Stove);
     let target = driver.position(station).expect("station has a position");
     let before = driver.position(survivor).expect("survivor has a position");
@@ -239,7 +239,7 @@ fn next_outpost_turn_moves_worker_exactly_one_cardinal_step() {
 #[test]
 fn idle_render_frames_do_not_move_assigned_survivors() {
     let mut driver = colony_driver(703);
-    let survivor = named_survivor(&mut driver, "Survivor 1");
+    let survivor = named_survivor(&mut driver, "Mara");
     let station = build_station(&mut driver, StationType::Stove);
     assign_station(&mut driver, survivor, station);
     let before = driver.position(survivor).expect("survivor has a position");
@@ -258,7 +258,7 @@ fn idle_render_frames_do_not_move_assigned_survivors() {
 #[test]
 fn tactical_turns_do_not_move_colony_survivors() {
     let mut driver = colony_driver(704);
-    let survivor = named_survivor(&mut driver, "Survivor 1");
+    let survivor = named_survivor(&mut driver, "Mara");
     let station = build_station(&mut driver, StationType::Stove);
     assign_station(&mut driver, survivor, station);
     driver
@@ -280,7 +280,7 @@ fn tactical_turns_do_not_move_colony_survivors() {
 #[test]
 fn worker_uses_pathfinding_around_a_wall_blocker() {
     let mut driver = colony_driver(715);
-    let survivor = named_survivor(&mut driver, "Survivor 1");
+    let survivor = named_survivor(&mut driver, "Mara");
     let station = build_station(&mut driver, StationType::Stove);
     let start = Position { x: 5, y: 2 };
     driver
@@ -306,7 +306,7 @@ fn worker_uses_pathfinding_around_a_wall_blocker() {
 #[test]
 fn unreachable_worker_stays_put_and_reports_a_specific_blocked_reason() {
     let mut driver = colony_driver(716);
-    let survivor = named_survivor(&mut driver, "Survivor 2");
+    let survivor = named_survivor(&mut driver, "Iven");
     let station = build_station(&mut driver, StationType::Stove);
     let start = Position { x: 8, y: 8 };
     driver
@@ -330,7 +330,7 @@ fn unreachable_worker_stays_put_and_reports_a_specific_blocked_reason() {
         .take(new_count)
         .collect::<Vec<_>>()
         .join("\n");
-    for required in ["Survivor 2", "Blocked", "Stove"] {
+    for required in ["Iven", "Blocked", "Stove"] {
         assert!(
             feedback.contains(required),
             "blocked feedback must identify `{required}`:\n{feedback}"
@@ -354,7 +354,7 @@ fn unreachable_worker_stays_put_and_reports_a_specific_blocked_reason() {
 #[test]
 fn station_worker_never_enters_the_station_tile() {
     let mut driver = colony_driver(705);
-    let survivor = named_survivor(&mut driver, "Survivor 1");
+    let survivor = named_survivor(&mut driver, "Mara");
     let station = build_station(&mut driver, StationType::Stove);
     let station_position = driver.position(station).expect("station has a position");
     assign_station(&mut driver, survivor, station);
@@ -372,7 +372,7 @@ fn station_worker_never_enters_the_station_tile() {
 #[test]
 fn station_worker_stops_cardinally_adjacent_to_target() {
     let mut driver = colony_driver(706);
-    let survivor = named_survivor(&mut driver, "Survivor 1");
+    let survivor = named_survivor(&mut driver, "Mara");
     let station = build_station(&mut driver, StationType::Stove);
     let station_position = driver.position(station).expect("station has a position");
     assign_station(&mut driver, survivor, station);
@@ -394,7 +394,7 @@ fn station_worker_stops_cardinally_adjacent_to_target() {
 #[test]
 fn gatherer_never_enters_a_resource_node_tile() {
     let mut driver = colony_driver(707);
-    let survivor = named_survivor(&mut driver, "Survivor 3");
+    let survivor = named_survivor(&mut driver, "Tala");
     let nodes = driver.resource_nodes_with_state();
     let water_positions = nodes
         .iter()
@@ -418,14 +418,14 @@ fn gatherer_never_enters_a_resource_node_tile() {
 fn assigned_survivors_never_stack_on_one_tile() {
     let mut driver = colony_driver(708);
     let station = build_station(&mut driver, StationType::Stove);
-    for name in ["Survivor 1", "Survivor 2"] {
+    for name in ["Mara", "Iven"] {
         let survivor = named_survivor(&mut driver, name);
         assign_station(&mut driver, survivor, station);
     }
 
     for step in 0..MOVEMENT_BUDGET {
         wait_once(&mut driver, &format!("collision reservation step {step}"));
-        let positions = ["Survivor 1", "Survivor 2"]
+        let positions = ["Mara", "Iven"]
             .into_iter()
             .map(|name| {
                 let survivor = named_survivor(&mut driver, name);
@@ -446,7 +446,7 @@ fn rest_and_individual_waits_produce_the_same_worker_position() {
     let mut waits = colony_driver(709);
     let mut rest = colony_driver(709);
     for driver in [&mut waits, &mut rest] {
-        let survivor = named_survivor(driver, "Survivor 1");
+        let survivor = named_survivor(driver, "Mara");
         let station = build_station(driver, StationType::Stove);
         assign_station(driver, survivor, station);
     }
@@ -464,8 +464,8 @@ fn rest_and_individual_waits_produce_the_same_worker_position() {
     )
     .expect("rest must resolve");
 
-    let waits_survivor = named_survivor(&mut waits, "Survivor 1");
-    let rest_survivor = named_survivor(&mut rest, "Survivor 1");
+    let waits_survivor = named_survivor(&mut waits, "Mara");
+    let rest_survivor = named_survivor(&mut rest, "Mara");
     assert_eq!(
         waits.position(waits_survivor),
         rest.position(rest_survivor),
@@ -477,7 +477,7 @@ fn rest_and_individual_waits_produce_the_same_worker_position() {
 fn assigned_but_enroute_station_worker_produces_nothing() {
     let mut driver = colony_driver(710);
     wait_until_turn(&mut driver, 23);
-    let survivor = named_survivor(&mut driver, "Survivor 3");
+    let survivor = named_survivor(&mut driver, "Tala");
     let station = build_station(&mut driver, StationType::Stove);
     assert_eq!(
         driver.summary().turn,
@@ -507,7 +507,7 @@ fn assigned_but_enroute_station_worker_produces_nothing() {
 fn assigned_but_enroute_bed_worker_recovers_no_mood() {
     let mut driver = colony_driver(724);
     wait_until_turn(&mut driver, 23);
-    let survivor = named_survivor(&mut driver, "Survivor 3");
+    let survivor = named_survivor(&mut driver, "Tala");
     let bed = build_station(&mut driver, StationType::Bed);
     driver.fixture_set_entity_pool(survivor, PoolKind::Mood, 50);
     let mood_before = driver
@@ -535,7 +535,7 @@ fn assigned_but_enroute_bed_worker_recovers_no_mood() {
 fn adjacent_station_worker_produces_once() {
     let mut driver = colony_driver(711);
     wait_until_turn(&mut driver, 23);
-    let survivor = named_survivor(&mut driver, "Survivor 1");
+    let survivor = named_survivor(&mut driver, "Mara");
     let station = build_station(&mut driver, StationType::Stove);
     let station_position = driver.position(station).expect("station has a position");
     let work_position = Position {
@@ -562,7 +562,7 @@ fn adjacent_station_worker_produces_once() {
 fn assigned_but_enroute_gatherer_produces_nothing() {
     let mut driver = colony_driver(712);
     wait_until_turn(&mut driver, 23);
-    let survivor = named_survivor(&mut driver, "Survivor 2");
+    let survivor = named_survivor(&mut driver, "Iven");
     let targets = driver
         .resource_nodes_with_state()
         .into_iter()
@@ -596,7 +596,7 @@ fn assigned_but_enroute_gatherer_produces_nothing() {
 fn gatherer_at_wrong_node_type_produces_nothing() {
     let mut driver = colony_driver(719);
     wait_until_turn(&mut driver, 23);
-    let survivor = named_survivor(&mut driver, "Survivor 2");
+    let survivor = named_survivor(&mut driver, "Iven");
     let nodes = driver.resource_nodes_with_state();
     let supplies_targets = nodes
         .iter()
@@ -646,7 +646,7 @@ fn gatherer_at_wrong_node_type_produces_nothing() {
 fn blocked_station_worker_produces_nothing() {
     let mut driver = colony_driver(720);
     wait_until_turn(&mut driver, 23);
-    let survivor = named_survivor(&mut driver, "Survivor 2");
+    let survivor = named_survivor(&mut driver, "Iven");
     let station = build_station(&mut driver, StationType::Stove);
     let start = Position { x: 8, y: 8 };
     driver
@@ -676,7 +676,7 @@ fn blocked_station_worker_produces_nothing() {
 #[test]
 fn forecast_excludes_enroute_worker_output() {
     let mut driver = colony_driver(713);
-    let survivor = named_survivor(&mut driver, "Survivor 2");
+    let survivor = named_survivor(&mut driver, "Iven");
     let targets = driver
         .resource_nodes_with_state()
         .into_iter()
@@ -709,7 +709,7 @@ fn rest_and_individual_waits_produce_the_same_daily_resources() {
     let mut waits = colony_driver(721);
     let mut rest = colony_driver(721);
     for driver in [&mut waits, &mut rest] {
-        let survivor = named_survivor(driver, "Survivor 1");
+        let survivor = named_survivor(driver, "Mara");
         let station = build_station(driver, StationType::Stove);
         assign_station(driver, survivor, station);
     }
@@ -749,7 +749,7 @@ fn rest_and_individual_waits_produce_the_same_daily_resources() {
 #[test]
 fn load_does_not_immediately_move_or_produce_for_assigned_worker() {
     let mut driver = colony_driver(722);
-    let survivor = named_survivor(&mut driver, "Survivor 1");
+    let survivor = named_survivor(&mut driver, "Mara");
     let station = build_station(&mut driver, StationType::Stove);
     assign_station(&mut driver, survivor, station);
     let before_position = driver.position(survivor);
@@ -762,7 +762,7 @@ fn load_does_not_immediately_move_or_produce_for_assigned_worker() {
         .expect("checkpoint must restore");
     driver.advance_idle();
 
-    let restored_survivor = named_survivor(&mut driver, "Survivor 1");
+    let restored_survivor = named_survivor(&mut driver, "Mara");
     assert_eq!(driver.position(restored_survivor), before_position);
     assert_eq!(driver.resource_current(PoolKind::Supplies), before_supplies);
     assert_eq!(driver.latest_daily_summary(), before_summary);
@@ -771,7 +771,7 @@ fn load_does_not_immediately_move_or_produce_for_assigned_worker() {
 #[test]
 fn save_load_preserves_the_next_deterministic_worker_step() {
     let mut original = colony_driver(714);
-    let survivor = named_survivor(&mut original, "Survivor 1");
+    let survivor = named_survivor(&mut original, "Mara");
     let station = build_station(&mut original, StationType::Stove);
     assign_station(&mut original, survivor, station);
     let checkpoint = original.checkpoint().expect("checkpoint must serialize");
@@ -781,8 +781,8 @@ fn save_load_preserves_the_next_deterministic_worker_step() {
     wait_once(&mut original, "original deterministic worker step");
     wait_once(&mut restored, "restored deterministic worker step");
 
-    let original_survivor = named_survivor(&mut original, "Survivor 1");
-    let restored_survivor = named_survivor(&mut restored, "Survivor 1");
+    let original_survivor = named_survivor(&mut original, "Mara");
+    let restored_survivor = named_survivor(&mut restored, "Mara");
     assert_eq!(
         original.position(original_survivor),
         restored.position(restored_survivor),

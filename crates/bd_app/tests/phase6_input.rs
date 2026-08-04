@@ -6,13 +6,13 @@ use bd_core::{
         stations::{BuildInteraction, Station, StationType},
         survivors::{Survivor, SurvivorTask},
     },
-    components::{Name, Player, Position, ResourceNode, ResourceNodeType, Tile},
+    components::{BlocksMovement, Name, Player, Position, ResourceNode, ResourceNodeType, Tile},
     direction::Direction,
     map::SmokeMap,
     pathfinding::{AStarPathfinder, Pathfinder},
     session::RunSession,
     signals::{ActionIntent, PoolKind},
-    spatial::{FOUNDATION_DUNGEON_ID, GameMode, OutpostState, TransitionIntent},
+    spatial::{EntityScope, FOUNDATION_DUNGEON_ID, GameMode, OutpostState, TransitionIntent},
 };
 use bd_test_support::foundation_content;
 use bevy_app::App;
@@ -771,7 +771,7 @@ fn colony_checkpoint_round_trip_preserves_the_visible_projection() {
     // Must not change: screen, stats, map geometry, actions, and log.
     // Evidence layers: projection, state diff, persistence, workflow.
     let mut app = outpost_runtime();
-    let selected_name = "Survivor 2";
+    let selected_name = "Iven";
 
     send_physical_key(&mut app, KeyCode::Char('c'));
     app.update();
@@ -1325,15 +1325,11 @@ fn task_management_lists_survivor_tasks_not_station_staffing_choices() {
 #[test]
 fn direct_gather_assignment_projects_source_and_three_tick_progress() {
     let mut app = outpost_runtime();
-    place_named_survivor_at_resource_work_tile(
-        &mut app,
-        "Survivor 1",
-        ResourceNodeType::WaterSource,
-    );
+    place_named_survivor_at_resource_work_tile(&mut app, "Mara", ResourceNodeType::WaterSource);
 
     send_physical_key(&mut app, KeyCode::Char('c'));
     app.update();
-    let survivor_key = named_survivor_menu_key(&app, "Survivor 1");
+    let survivor_key = named_survivor_menu_key(&app, "Mara");
     send_physical_key(&mut app, survivor_key);
     app.update();
     let gather_key = management_choice_key(&app, "Gather Supplies");
@@ -1348,7 +1344,7 @@ fn direct_gather_assignment_projects_source_and_three_tick_progress() {
         .resource::<bd_tui::view_models::StatsViewModel>()
         .party_names
         .iter()
-        .find(|entry| entry.starts_with("Survivor 1"))
+        .find(|entry| entry.starts_with("Mara"))
         .cloned()
         .expect("assigned survivor must remain projected");
     assert!(
@@ -1367,7 +1363,7 @@ fn direct_gather_assignment_projects_source_and_three_tick_progress() {
         .resource::<bd_tui::view_models::StatsViewModel>()
         .party_names
         .iter()
-        .find(|entry| entry.starts_with("Survivor 1"))
+        .find(|entry| entry.starts_with("Mara"))
         .cloned()
         .expect("working survivor must remain projected");
     assert!(
@@ -1385,7 +1381,7 @@ fn recipe_management_uses_human_resource_labels_not_content_ids() {
 
     send_physical_key(&mut app, KeyCode::Char('e'));
     app.update();
-    let survivor_key = named_survivor_menu_key(&app, "Survivor 1");
+    let survivor_key = named_survivor_menu_key(&app, "Mara");
     send_physical_key(&mut app, survivor_key);
     app.update();
     let station_key = management_choice_key(&app, "Basic Processing");
@@ -1419,15 +1415,11 @@ fn recipe_management_uses_human_resource_labels_not_content_ids() {
 #[test]
 fn colony_projection_separates_next_worker_result_from_next_day_upkeep() {
     let mut app = outpost_runtime();
-    place_named_survivor_at_resource_work_tile(
-        &mut app,
-        "Survivor 2",
-        ResourceNodeType::WaterSource,
-    );
+    place_named_survivor_at_resource_work_tile(&mut app, "Iven", ResourceNodeType::WaterSource);
 
     send_physical_key(&mut app, KeyCode::Char('c'));
     app.update();
-    let survivor_key = named_survivor_menu_key(&app, "Survivor 2");
+    let survivor_key = named_survivor_menu_key(&app, "Iven");
     send_physical_key(&mut app, survivor_key);
     app.update();
     let gather_key = management_choice_key(&app, "Gather Supplies");
@@ -1480,7 +1472,7 @@ fn nonzero_raw_stockpile_is_projected_with_a_human_label() {
 #[test]
 fn blocked_direct_gatherer_projects_target_and_actionable_reason() {
     let mut app = outpost_runtime();
-    let survivor = named_survivor(&mut app, "Survivor 3");
+    let survivor = named_survivor(&mut app, "Tala");
     let blocked_position = Position { x: 8, y: 8 };
     app.world_mut()
         .entity_mut(survivor)
@@ -1514,7 +1506,7 @@ fn blocked_direct_gatherer_projects_target_and_actionable_reason() {
 
     send_physical_key(&mut app, KeyCode::Char('c'));
     app.update();
-    let survivor_key = named_survivor_menu_key(&app, "Survivor 3");
+    let survivor_key = named_survivor_menu_key(&app, "Tala");
     send_physical_key(&mut app, survivor_key);
     app.update();
     let gather_key = management_choice_key(&app, "Gather Supplies");
@@ -1532,7 +1524,7 @@ fn blocked_direct_gatherer_projects_target_and_actionable_reason() {
         .resource::<bd_tui::view_models::StatsViewModel>()
         .party_names
         .iter()
-        .find(|entry| entry.starts_with("Survivor 3"))
+        .find(|entry| entry.starts_with("Tala"))
         .cloned()
         .expect("blocked survivor must remain projected");
     assert!(
@@ -1656,7 +1648,7 @@ fn management_cancel_is_atomic_and_discards_modal_gameplay_input() {
 fn station_staffing_confirmation_changes_only_the_named_survivor_relationship() {
     let mut app = outpost_runtime();
     let station = build_station(&mut app, StationType::Stove, Direction::East);
-    let selected_name = "Survivor 2";
+    let selected_name = "Iven";
 
     send_physical_key(&mut app, KeyCode::Char('e'));
     app.update();
@@ -1674,26 +1666,20 @@ fn station_staffing_confirmation_changes_only_the_named_survivor_relationship() 
         named_survivor_task(&mut app, selected_name),
         SurvivorTask::AssignedTo(station.to_bits())
     );
-    assert_eq!(
-        named_survivor_task(&mut app, "Survivor 1"),
-        SurvivorTask::Idle
-    );
-    assert_eq!(
-        named_survivor_task(&mut app, "Survivor 3"),
-        SurvivorTask::Idle
-    );
+    assert_eq!(named_survivor_task(&mut app, "Mara"), SurvivorTask::Idle);
+    assert_eq!(named_survivor_task(&mut app, "Tala"), SurvivorTask::Idle);
 }
 
 #[test]
 fn task_confirmation_emits_one_named_target_and_activity_result() {
     // Contract: INPUT-MGMT-007
-    // Given: Survivor 2 is selected for direct Supplies gathering.
+    // Given: Iven is selected for direct Supplies gathering.
     // When: the player confirms the paused management transaction.
     // Then: one result names survivor, task, Water target, and EnRoute activity.
     // Must not change: confirmation cannot emit duplicate decisive results.
     // Evidence layers: input state machine, projection, state diff, workflow.
     let mut app = outpost_runtime();
-    let selected_name = "Survivor 2";
+    let selected_name = "Iven";
     let log_count_before = app
         .world()
         .resource::<bd_core::gamelog::GameLog>()
@@ -1737,14 +1723,14 @@ fn task_confirmation_emits_one_named_target_and_activity_result() {
 #[test]
 fn station_confirmation_emits_one_named_station_and_activity_result() {
     // Contract: INPUT-MGMT-008
-    // Given: Survivor 2 and the built Stove are selected for staffing.
+    // Given: Iven and the built Stove are selected for staffing.
     // When: the player confirms the paused management transaction.
     // Then: one result names survivor, Stove, and EnRoute activity.
     // Must not change: confirmation cannot emit duplicate decisive results.
     // Evidence layers: input state machine, projection, state diff, workflow.
     let mut app = outpost_runtime();
     build_station(&mut app, StationType::Stove, Direction::East);
-    let selected_name = "Survivor 2";
+    let selected_name = "Iven";
     let log_count_before = app
         .world()
         .resource::<bd_core::gamelog::GameLog>()
@@ -1845,7 +1831,7 @@ fn zero_supplies_overview_exposes_a_reachable_gathering_recovery_path() {
 #[test]
 fn processing_assignment_selects_named_survivor_station_and_recipe_while_paused() {
     let mut app = outpost_runtime();
-    let selected_name = "Survivor 2";
+    let selected_name = "Iven";
     let turn_before = app.world().resource::<RunSession>().turn;
 
     send_physical_key(&mut app, KeyCode::Char('e'));
@@ -1892,7 +1878,7 @@ fn production_key_workflow_assigns_travels_gathers_refines_and_reports() {
 
     send_physical_key(&mut app, KeyCode::Char('e'));
     app.update();
-    let survivor_key = named_survivor_menu_key(&app, "Survivor 1");
+    let survivor_key = named_survivor_menu_key(&app, "Mara");
     send_physical_key(&mut app, survivor_key);
     app.update();
     let station_key = management_choice_key(&app, "Basic Processing");
@@ -1936,7 +1922,7 @@ fn production_key_workflow_assigns_travels_gathers_refines_and_reports() {
         .party_names;
     assert!(
         party.iter().any(|entry| {
-            entry.contains("Survivor 1")
+            entry.contains("Mara")
                 && entry.contains("cargo")
                 && (entry.contains("ToStation")
                     || entry.contains("ReadyToRefine")
@@ -2009,6 +1995,530 @@ fn deterministic_production_key_fuzz_preserves_colony_invariants() {
             );
         }
     }
+}
+
+fn approach_target_from_two_tiles_away(
+    app: &mut App,
+    target: Position,
+) -> (Position, Position, KeyCode) {
+    let player_entity = player(app);
+    let blockers = app
+        .world_mut()
+        .query_filtered::<(Entity, &Position), With<BlocksMovement>>()
+        .iter(app.world())
+        .filter_map(|(entity, position)| (entity != player_entity).then_some(*position))
+        .collect::<HashSet<_>>();
+    let map = &app.world().resource::<OutpostState>().map;
+    [
+        ((0, -1), KeyCode::Char('s')),
+        ((0, 1), KeyCode::Char('w')),
+        ((-1, 0), KeyCode::Char('d')),
+        ((1, 0), KeyCode::Char('a')),
+    ]
+    .into_iter()
+    .find_map(|((dx, dy), key)| {
+        let adjacent = Position {
+            x: target.x + dx,
+            y: target.y + dy,
+        };
+        let start = Position {
+            x: target.x + 2 * dx,
+            y: target.y + 2 * dy,
+        };
+        (map.is_walkable(adjacent.x, adjacent.y)
+            && map.is_walkable(start.x, start.y)
+            && !blockers.contains(&adjacent)
+            && !blockers.contains(&start))
+        .then_some((start, adjacent, key))
+    })
+    .unwrap_or_else(|| panic!("fixture target at {target:?} needs a clear two-step approach"))
+}
+
+fn proximity_target(app: &mut App, case_id: &str) -> (Position, String) {
+    if case_id == "water-node" {
+        let mut matches = app
+            .world_mut()
+            .query::<(&Position, &ResourceNode)>()
+            .iter(app.world())
+            .filter_map(|(position, node)| {
+                (node.kind == ResourceNodeType::WaterSource).then_some(*position)
+            })
+            .collect::<Vec<_>>();
+        matches.sort_by_key(|position| (position.y, position.x));
+        (
+            *matches
+                .first()
+                .expect("Foundation fixture must contain Water Source"),
+            "Water Source".to_owned(),
+        )
+    } else {
+        let mut matches = app
+            .world_mut()
+            .query_filtered::<(&Position, &Name, &StationType), With<Station>>()
+            .iter(app.world())
+            .filter_map(|(position, name, station_type)| {
+                (*station_type == StationType::Custom(1)).then_some((*position, name.0.clone()))
+            })
+            .collect::<Vec<_>>();
+        matches.sort_by(|left, right| {
+            (left.0.y, left.0.x, left.1.as_str()).cmp(&(right.0.y, right.0.x, right.1.as_str()))
+        });
+        matches
+            .first()
+            .cloned()
+            .expect("Foundation fixture must contain Basic Processing")
+    }
+}
+
+fn colony_pool_values(app: &App) -> Vec<(PoolKind, i32)> {
+    app.world()
+        .resource::<ColonyResources>()
+        .pools
+        .iter()
+        .map(|pool| (pool.kind, pool.current))
+        .collect()
+}
+
+#[test]
+fn simultaneous_station_and_node_entry_emits_one_focused_nearby_fact_with_count() {
+    // Contract: COLONY-PROXIMITY-001
+    // Given: the player is one accepted cardinal movement away from entering the
+    // interaction range of a named station or resource node.
+    // When: that movement is submitted through the production physical-input path.
+    // Then: exactly one new Chronicle fact names the target and makes the semantic
+    // Interact action available; later render/projection frames do not duplicate it.
+    // Must not change: proximity feedback does not alter colony pools, survivor
+    // tasks, or the accepted movement destination.
+    // Evidence layers: input state machine, state diff, projection, workflow; final
+    // buffer and PTY remain required.
+    //
+    // Implementation guidance:
+    // - Reusable owner: one stable nearby-interactable projection supplies Chronicle
+    //   entry detection, passive target detail, and Interact availability.
+    // - Integration seam: compare stable proximity before/after an accepted movement;
+    //   rendering and view-model refreshes must remain read-only.
+    // - Preserve: normal movement timing/cost, worker scheduling, pool values, stable
+    //   station/node identity, existing management, and deterministic ordering.
+    // - Invalid shortcuts: do not log from the renderer, pollute every movement with
+    //   repeated prose, hardcode these coordinates/names, use ECS query order, emit
+    //   one fact per simultaneously entered target, or present an unbound Interact
+    //   row as executable.
+    // - Closing evidence: rerun both target cases, neighboring movement/log/input
+    //   tests, the final Chronicle/Context buffers, canonical gate, and PTY movement.
+    // False-green challenge: two different targets enter range on the same
+    // accepted movement. Historical feedback remains one focused fact with a
+    // semantic count, while the current projection retains both targets. This
+    // prevents a per-entity logging loop from passing the one-target cases.
+    let mut app = outpost_runtime();
+    let player_entity = player(&mut app);
+    let occupied = app
+        .world_mut()
+        .query::<(Entity, &Position)>()
+        .iter(app.world())
+        .filter_map(|(entity, position)| (entity != player_entity).then_some(*position))
+        .collect::<HashSet<_>>();
+    let (start, destination, station_position, node_position) = {
+        let map = &app.world().resource::<OutpostState>().map;
+        (2..map.height - 2)
+            .flat_map(|y| (2..map.width - 2).map(move |x| Position { x, y }))
+            .find_map(|destination| {
+                let start = Position {
+                    x: destination.x - 1,
+                    y: destination.y,
+                };
+                let station_position = Position {
+                    x: destination.x,
+                    y: destination.y - 1,
+                };
+                let node_position = Position {
+                    x: destination.x,
+                    y: destination.y + 1,
+                };
+                let clear = [
+                    start,
+                    destination,
+                    station_position,
+                    node_position,
+                    Position {
+                        x: destination.x + 1,
+                        y: destination.y,
+                    },
+                ];
+                clear
+                    .iter()
+                    .all(|position| {
+                        map.is_walkable(position.x, position.y) && !occupied.contains(position)
+                    })
+                    .then_some((start, destination, station_position, node_position))
+            })
+            .expect("multi-target proximity fixture needs one clear cross")
+    };
+    app.world_mut().spawn((
+        Station,
+        StationType::Custom(1),
+        Name("Alpha Relay".into()),
+        station_position,
+        BlocksMovement,
+        EntityScope::ColonyPersistent,
+    ));
+    app.world_mut().spawn((
+        ResourceNode {
+            source_id: "source.water".into(),
+            kind: ResourceNodeType::WaterSource,
+            depleted: false,
+        },
+        Name("Water Source".into()),
+        node_position,
+        BlocksMovement,
+        EntityScope::ColonyPersistent,
+    ));
+    app.world_mut().entity_mut(player_entity).insert(start);
+    app.world_mut()
+        .insert_resource(bd_core::colony::proximity::NearbyInteractables::default());
+    app.world_mut()
+        .insert_resource(bd_core::gamelog::GameLog::default());
+    app.update();
+
+    let log_count_before = app
+        .world()
+        .resource::<bd_core::gamelog::GameLog>()
+        .iter()
+        .count();
+    send_physical_key(&mut app, KeyCode::Char('d'));
+    app.update();
+    app.update();
+
+    assert_eq!(
+        app.world().get::<Position>(player_entity),
+        Some(&destination),
+        "contract=COLONY-PROXIMITY-001 case=simultaneous-station-node \
+             fixture=clear-cross precondition=start_{start:?} input=d frames_advanced=2 \
+             expected=accepted_destination_{destination:?} actual={:?}",
+        app.world().get::<Position>(player_entity)
+    );
+    let log = app.world().resource::<bd_core::gamelog::GameLog>();
+    let new_entry_count = log.iter().count().saturating_sub(log_count_before);
+    let nearby_facts = log
+        .iter()
+        .take(new_entry_count)
+        .filter(|entry| entry.message.to_ascii_uppercase().contains("NEARBY"))
+        .map(|entry| entry.message.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        nearby_facts.len(),
+        1,
+        "contract=COLONY-PROXIMITY-001 case=simultaneous-station-node \
+             workflow_step=enter_two_target_range input=d frames_advanced=2 \
+             expected=one_focused_NEARBY_fact_with_count actual={nearby_facts:?}"
+    );
+    let fact = &nearby_facts[0];
+    let normalized = fact.to_ascii_lowercase();
+    assert!(
+        fact.contains("Alpha Relay")
+            && (fact.contains("+1")
+                || normalized.contains("1 more")
+                || normalized.contains("2 nearby")
+                || normalized.contains("2 targets")
+                || normalized.contains("2 interactable")),
+        "contract=COLONY-PROXIMITY-001 case=simultaneous-station-node \
+             workflow_step=read_focused_fact expected=deterministic_Alpha_Relay_focus_and_semantic_count \
+             actual_fact={fact:?}"
+    );
+    let targets = &app
+        .world()
+        .resource::<bd_core::colony::proximity::NearbyInteractables>()
+        .targets;
+    assert_eq!(
+        targets.len(),
+        2,
+        "contract=COLONY-PROXIMITY-001 case=simultaneous-station-node \
+             workflow_step=inspect_current_projection expected=complete_two_target_list \
+             actual_targets={targets:?}"
+    );
+    assert_eq!(targets[0].name, "Alpha Relay");
+    assert_eq!(targets[1].name, "Water Source");
+}
+
+fn assert_single_target_proximity_entry(case_id: &str) {
+    let mut initialization_app = outpost_runtime();
+    let (initialization_target, _) = proximity_target(&mut initialization_app, case_id);
+    let (_, initialization_adjacent, _) =
+        approach_target_from_two_tiles_away(&mut initialization_app, initialization_target);
+    let initialization_player = player(&mut initialization_app);
+
+    // False-green challenge: establishing an adjacent fixture and building
+    // the initial proximity projection is not an accepted movement. It may
+    // populate current tooltip/context state, but it must not write history.
+    // This catches position-difference polling that mistakes initialization,
+    // restoration, or a fixture relocation for a production movement result.
+    initialization_app
+        .world_mut()
+        .entity_mut(initialization_player)
+        .insert(initialization_adjacent);
+    initialization_app
+        .world_mut()
+        .insert_resource(bd_core::colony::proximity::NearbyInteractables::default());
+    let nearby_before_initialization = initialization_app
+        .world()
+        .resource::<bd_core::gamelog::GameLog>()
+        .iter()
+        .filter(|entry| entry.message.to_ascii_uppercase().contains("NEARBY"))
+        .count();
+    initialization_app.update();
+    let nearby_after_initialization = initialization_app
+        .world()
+        .resource::<bd_core::gamelog::GameLog>()
+        .iter()
+        .filter(|entry| entry.message.to_ascii_uppercase().contains("NEARBY"))
+        .count();
+    assert_eq!(
+        nearby_after_initialization, nearby_before_initialization,
+        "contract=COLONY-PROXIMITY-001 case={case_id} fixture=adjacent-initialization \
+             workflow_step=build_initial_projection input=none frames_advanced=1 \
+             expected=no_historical_NEARBY_fact_without_accepted_movement \
+             actual_before={nearby_before_initialization} \
+             actual_after={nearby_after_initialization}"
+    );
+
+    let mut app = outpost_runtime();
+    let (target, target_label) = proximity_target(&mut app, case_id);
+    let (start, adjacent, movement_key) = approach_target_from_two_tiles_away(&mut app, target);
+    let player_entity = player(&mut app);
+    app.world_mut().entity_mut(player_entity).insert(start);
+    app.update();
+
+    let pools_before = colony_pool_values(&app);
+    let tasks_before = survivor_tasks(&mut app);
+    let log_count_before = app
+        .world()
+        .resource::<bd_core::gamelog::GameLog>()
+        .iter()
+        .count();
+
+    send_physical_key(&mut app, movement_key);
+    app.update();
+    app.update();
+
+    assert_eq!(
+        app.world().get::<Position>(player_entity),
+        Some(&adjacent),
+        "contract=COLONY-PROXIMITY-001 case={case_id} fixture=two-step-approach \
+             precondition=start_{start:?}_target_{target:?} input={movement_key:?} \
+             expected=accepted_destination_{adjacent:?} actual={:?}",
+        app.world().get::<Position>(player_entity)
+    );
+    let log = app.world().resource::<bd_core::gamelog::GameLog>();
+    let new_entry_count = log.iter().count().saturating_sub(log_count_before);
+    let nearby = log
+        .iter()
+        .take(new_entry_count)
+        .filter(|entry| entry.message.to_ascii_uppercase().contains("NEARBY"))
+        .map(|entry| entry.message.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        nearby.len(),
+        1,
+        "contract=COLONY-PROXIMITY-001 case={case_id} fixture=two-step-approach \
+             workflow_step=enter_range input={movement_key:?} frames_advanced=2 \
+             expected=one_NEARBY_fact actual={nearby:?} trace_tail=n/a replay_tail={:?}",
+        action_ids(&app)
+    );
+    for required in [target_label.as_str(), "Interact"] {
+        assert!(
+            nearby[0].contains(required),
+            "contract=COLONY-PROXIMITY-001 case={case_id} fixture=two-step-approach \
+                 workflow_step=enter_range expected_field={required:?} \
+                 actual_fact={:?}",
+            nearby[0]
+        );
+    }
+    let actions = &app
+        .world()
+        .resource::<bd_tui::view_models::ActionListViewModel>()
+        .actions;
+    let configured_interact_key = app
+        .world()
+        .resource::<bd_tui::commands::CommandBindings>()
+        .key_for(bd_tui::commands::UiCommand::Interact)
+        .map(bd_tui::commands::config_key_name);
+    let interact = actions
+        .iter()
+        .find(|action| action.label == "Interact")
+        .unwrap_or_else(|| {
+            panic!(
+                "contract=COLONY-PROXIMITY-001 case={case_id} fixture=two-step-approach \
+                     workflow_step=inspect_available_actions expected=semantic_Interact_row \
+                     actual_actions={actions:?}"
+            )
+        });
+    match configured_interact_key {
+        Some(expected_key) => assert!(
+            interact.enabled
+                && interact.key_hint == expected_key
+                && interact.denial_reason.is_none(),
+            "contract=COLONY-PROXIMITY-001 case={case_id} fixture=two-step-approach \
+                 workflow_step=cross_check_bound_interact expected=enabled_binding_{expected_key:?} \
+                 actual_interact={interact:?}"
+        ),
+        None => assert!(
+            !interact.enabled
+                && interact.key_hint == "unbound"
+                && interact
+                    .denial_reason
+                    .as_deref()
+                    .is_some_and(|reason| !reason.trim().is_empty()),
+            "contract=COLONY-PROXIMITY-001 case={case_id} fixture=two-step-approach \
+                 workflow_step=cross_check_unbound_interact \
+                 expected=visible_but_disabled_Interact_with_truthful_reason \
+                 actual_interact={interact:?}"
+        ),
+    }
+    assert_eq!(colony_pool_values(&app), pools_before);
+    assert_eq!(survivor_tasks(&mut app), tasks_before);
+
+    let log_count_after_entry = app
+        .world()
+        .resource::<bd_core::gamelog::GameLog>()
+        .iter()
+        .count();
+    app.update();
+    app.update();
+    let log_count_after_idle_frames = app
+        .world()
+        .resource::<bd_core::gamelog::GameLog>()
+        .iter()
+        .count();
+    assert_eq!(
+        log_count_after_idle_frames, log_count_after_entry,
+        "contract=COLONY-PROXIMITY-001 case={case_id} fixture=two-step-approach \
+             workflow_step=idle_projection_frames frames_advanced=2 \
+             expected=no_duplicate_NEARBY_fact actual_log_count_before={} \
+             actual_log_count_after={log_count_after_idle_frames}",
+        log_count_after_entry
+    );
+}
+
+#[test]
+fn entering_adjacent_range_emits_one_deduplicated_nearby_hint() {
+    // Primary contract: COLONY-PROXIMITY-001
+    // Given/When/Then: one accepted production move enters station range and
+    // creates one named Chronicle fact plus a truthful semantic Interact row.
+    // Must not change: movement destination, pools, tasks, and idle-frame silence.
+    // Implementation guidance: repair the shared nearby resolver/entry-feedback and
+    // action-projection seams; do not log from rendering, hardcode the fixture, or
+    // enable an unbound command. Close with every registered support, neighbors,
+    // final buffers/PTY, and the canonical gate.
+    assert_single_target_proximity_entry("processing-station");
+}
+
+#[test]
+fn entering_water_node_range_emits_one_deduplicated_nearby_hint() {
+    assert_single_target_proximity_entry("water-node");
+}
+
+#[test]
+fn leaving_range_is_silent_and_reentry_emits_exactly_once_again() {
+    // Supporting contract: COLONY-PROXIMITY-001
+    // Given: an accepted move has already emitted the station's one entry fact.
+    // When: production movement leaves cardinal range and later re-enters it.
+    // Then: leaving is silent and re-entry emits exactly one fresh named fact.
+    // Must not change: idle projection frames stay silent and the final current
+    // target list contains the re-entered station once.
+    // Evidence layers: production input, edge state, Chronicle, current projection.
+    //
+    // Implementation guidance:
+    // - Reusable owner: the shared proximity edge tracks the current stable set,
+    //   not an ever-seen identity set.
+    // - Integration seam: accepted player movement rearms entry after a silent exit.
+    // - Preserve: movement destination, deterministic identity, and render purity.
+    // - Invalid shortcuts: one-shot lifetime deduplication or exit logging is not green.
+    // - Closing evidence: run this independently with both single-target entries,
+    //   simultaneous aggregation, neighboring input/log tests, gate, and PTY.
+    let case_id = "processing-station-reentry";
+    let mut app = outpost_runtime();
+    let (target, target_label) = proximity_target(&mut app, "processing-station");
+    let (start, adjacent, movement_key) = approach_target_from_two_tiles_away(&mut app, target);
+    let return_key = match movement_key {
+        KeyCode::Char('a') => KeyCode::Char('d'),
+        KeyCode::Char('d') => KeyCode::Char('a'),
+        KeyCode::Char('w') => KeyCode::Char('s'),
+        KeyCode::Char('s') => KeyCode::Char('w'),
+        unexpected => panic!(
+            "contract=COLONY-PROXIMITY-001 case={case_id} fixture=reentry \
+             precondition=cardinal_approach expected=movement_key actual={unexpected:?}"
+        ),
+    };
+    let player_entity = player(&mut app);
+    app.world_mut().entity_mut(player_entity).insert(start);
+    app.world_mut()
+        .insert_resource(bd_core::colony::proximity::NearbyInteractables::default());
+    app.world_mut()
+        .insert_resource(bd_core::gamelog::GameLog::default());
+    app.update();
+
+    send_physical_key(&mut app, movement_key);
+    app.update();
+    app.update();
+    assert_eq!(app.world().get::<Position>(player_entity), Some(&adjacent));
+    let after_first_entry = app
+        .world()
+        .resource::<bd_core::gamelog::GameLog>()
+        .iter()
+        .filter(|entry| entry.message.to_ascii_uppercase().contains("NEARBY"))
+        .count();
+    assert_eq!(
+        after_first_entry, 1,
+        "contract=COLONY-PROXIMITY-001 case={case_id} fixture=reentry \
+         workflow_step=first_entry expected=one_NEARBY_fact actual={after_first_entry}"
+    );
+
+    send_physical_key(&mut app, return_key);
+    app.update();
+    app.update();
+    assert_eq!(app.world().get::<Position>(player_entity), Some(&start));
+    let after_exit = app
+        .world()
+        .resource::<bd_core::gamelog::GameLog>()
+        .iter()
+        .filter(|entry| entry.message.to_ascii_uppercase().contains("NEARBY"))
+        .count();
+    assert_eq!(
+        after_exit, after_first_entry,
+        "contract=COLONY-PROXIMITY-001 case={case_id} fixture=reentry \
+         workflow_step=leave_range expected=silent_exit actual_before={after_first_entry} \
+         actual_after={after_exit}"
+    );
+
+    send_physical_key(&mut app, movement_key);
+    app.update();
+    app.update();
+    assert_eq!(app.world().get::<Position>(player_entity), Some(&adjacent));
+    let facts = app
+        .world()
+        .resource::<bd_core::gamelog::GameLog>()
+        .iter()
+        .filter(|entry| entry.message.to_ascii_uppercase().contains("NEARBY"))
+        .map(|entry| entry.message.clone())
+        .collect::<Vec<_>>();
+    assert_eq!(
+        facts.len(),
+        2,
+        "contract=COLONY-PROXIMITY-001 case={case_id} fixture=reentry \
+         workflow_step=reenter_range expected=exactly_one_fresh_NEARBY_fact \
+         actual_facts={facts:?}"
+    );
+    assert!(facts.iter().all(|fact| fact.contains(&target_label)));
+    let targets = &app
+        .world()
+        .resource::<bd_core::colony::proximity::NearbyInteractables>()
+        .targets;
+    assert_eq!(
+        targets.len(),
+        1,
+        "contract=COLONY-PROXIMITY-001 case={case_id} fixture=reentry \
+         workflow_step=inspect_current_projection expected=one_reentered_target \
+         actual_targets={targets:?}"
+    );
 }
 
 #[test]
@@ -2372,7 +2882,7 @@ fn staffed_and_unstaffed_station_have_distinct_ascii_projection() {
 
     send_physical_key(&mut app, KeyCode::Char('e'));
     app.update();
-    let survivor_key = named_survivor_menu_key(&app, "Survivor 1");
+    let survivor_key = named_survivor_menu_key(&app, "Mara");
     send_physical_key(&mut app, survivor_key);
     app.update();
     let station_key = management_choice_key(&app, "Stove");
@@ -2398,7 +2908,7 @@ fn assigned_worker_row_names_target_and_numeric_distance() {
     // Then: the row names the target and its current numeric tile distance.
     // Must not change: assignment remains paused and does not move the worker.
     let mut app = outpost_runtime();
-    let survivor = named_survivor(&mut app, "Survivor 1");
+    let survivor = named_survivor(&mut app, "Mara");
     let position_before = *app
         .world()
         .get::<Position>(survivor)
@@ -2423,7 +2933,7 @@ fn assigned_worker_row_names_target_and_numeric_distance() {
 
     send_physical_key(&mut app, KeyCode::Char('c'));
     app.update();
-    let survivor_key = named_survivor_menu_key(&app, "Survivor 1");
+    let survivor_key = named_survivor_menu_key(&app, "Mara");
     send_physical_key(&mut app, survivor_key);
     app.update();
     let gather_key = management_choice_key(&app, "Gather Supplies");
@@ -2446,7 +2956,7 @@ fn assigned_worker_row_names_target_and_numeric_distance() {
         .resource::<bd_tui::view_models::StatsViewModel>()
         .party_names
         .iter()
-        .find(|entry| entry.starts_with("Survivor 1"))
+        .find(|entry| entry.starts_with("Mara"))
         .cloned()
         .expect("assigned survivor must remain visible");
     let distance_text = format!("{expected_distance} tiles");

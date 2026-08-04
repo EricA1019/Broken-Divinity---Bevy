@@ -241,7 +241,8 @@ For every numbered task:
 6. implement the smallest production change;
 7. rerun the focused test and neighboring crate tests;
 8. run the affected player workflow;
-9. run `bash scripts/test-gate.sh`;
+9. run signed candidate mode when implementing a delegated red handoff, or the
+   argument-free canonical gate when performing independent review;
 10. compare to the GDD and this plan;
 11. update registry and evidence only where status actually changed.
 
@@ -705,12 +706,424 @@ whitespace check, registry validation, and generated metrics.
 | UI8-B | Dungeon acceptance | Workflows/evidence |
 | UI8-C | Visual review/final audit | Evidence documents |
 
+---
+
+## 17. Phase UI9 — Provisions and Contextual Colony Interaction
+
+### 17.1 Owner-approved outcome
+
+This phase deepens the existing Foundation colony presentation without adding
+new production simulation. It owns three player-visible outcomes:
+
+1. Supplies is no longer a flat counter. It presents exact stock, a responsive
+   shared gauge, next-day delta/result, and a text condition at 80x24 and
+   60x20.
+2. Entering cardinal interaction range of a station or resource node produces
+   one deduplicated `NEARBY` Chronicle fact and exposes Interact without
+   requiring glyph memorization.
+3. One reusable context presentation serves stations, resource nodes, and
+   colonists. It identifies the exact target, exposes only applicable actions,
+   and shows `Set Production` as unavailable/coming later for this UI-only
+   slice.
+
+This phase does not authorize queues, priorities, automation, station
+upgrades, depletion balance, new recipes, or a second production model.
+Existing direct gathering, staffing, recipe work, construction, and paused
+management remain authoritative.
+
+### 17.2 Required authority lock before input implementation
+
+The current D-20/THC-01 contract assigns `e` directly to station staffing.
+The proposed long-term interaction language makes Interact the primary entry
+point and routes station staffing through a station context action. The
+implementation agent must not silently rewrite that locked control.
+
+Before changing the physical binding, obtain and record one of these owner
+decisions:
+
+- approve `e` as contextual Interact and amend the D-20/THC-01 control wording,
+  while retaining `c` as the direct-task shortcut; or
+- preserve `e` staffing and bind Interact to a different configured command.
+
+The red presentation contracts intentionally require a semantic Interact
+control but do not own the physical key. Help, footer, action projection, and
+input routing must derive from the eventual configured binding.
+
+### 17.3 Shared presentation model
+
+Project display-ready data once. Rendering must not inspect ECS components,
+parse forecast prose, infer identity from a glyph, or switch on individual
+content IDs.
+
+The reusable resource projection carries:
+
+- semantic resource identity and short/long label;
+- exact current and maximum values;
+- optional next-boundary delta and resulting value;
+- semantic condition such as Stable, Low, or Critical;
+- tone/token only, never a renderer-owned raw color.
+
+The reusable interaction projection carries:
+
+- stable target selector suitable for duplicate station types;
+- semantic category and visual token;
+- display name, position, distance, and concise status;
+- structured detail rows supplied by the owning domain/catalog projection;
+- ordered context actions with semantic action ID, label, binding hint,
+  applicability, reachability, enabled state, and denial reason.
+
+These action states are intentionally distinct. `applicable` means the target
+and domain state support the action. `reachable` means the current interaction
+state has an owner-approved binding and reducer route. `enabled` means invoking
+that route now can produce the claimed result. A label, a guessed key, or a key
+owned by a normal-world command proves none of those facts.
+
+Until UI9-D receives the Section 17.2 owner lock and supplies the Context input
+reducer, UI9-C action rows are previews only. They remain visibly disabled with
+a truthful reason such as `Open Interact menu` or `Interaction binding pending`.
+`Set Production` keeps the stronger `Coming later` reason. The presentation
+must never show `Enter`, `a`, `p`, or any other invented hint as an enabled
+Context control merely because that glyph looks plausible.
+
+Representative adapters populate the same projection:
+
+| Target | Required passive detail | Initial context actions |
+|---|---|---|
+| Station | name, operational/construction state, staffing, active recipe/progress | Inspect; Assign Worker when valid; Set Production disabled as `Coming later` |
+| Resource node | human source label, output, renewable/depleted state, assigned worker/progress | Inspect; existing gather-assignment entry where valid |
+| Colonist | name, activity, target, progress, cargo/blocker when applicable | Inspect; existing task-assignment entry where valid |
+| Construction site | station label, completed/required work, current worker | Inspect progress |
+
+Unknown future categories retain a visible fallback containing identity and
+Inspect; they never panic or silently disappear.
+
+### 17.4 B3 Provisions composition
+
+Use the existing shared panel, meter, chip, ribbon, and theme primitives. Do
+not create a Supplies-only gauge implementation.
+
+Baseline information shape:
+
+```text
+┌ ◆ PROVISIONS ───────────────────────────────────┐
+│ SUP 10 [#---------]  DAWN -3 → 07  [LOW]       │
+│ MAT 02   PLT 01   FTH 00              DAY 02   │
+└─────────────────────────────────────────────────┘
+```
+
+At 80x24, the resource summary may use a horizontal ribbon or a named panel
+region, but the map remains the largest interactive area. At 60x20, preserve
+the exact Supplies value, a recognizable partial track, the next-day delta and
+result, and the text condition; secondary resources may collapse to metric
+chips. Color supports the meaning but never owns it alone.
+
+Thresholds and forecasts belong to authoritative projection data. The
+renderer receives condition/delta/result and only formats them. A hardcoded
+`100`, parsing `next_day_forecast`, or calculating colony pressure in the
+screen renderer is not an acceptable green.
+
+### 17.5 Proximity and Chronicle rules
+
+- Interaction range is cardinal adjacency for this Foundation slice.
+- Evaluate the change after an accepted player movement, not during rendering.
+- Emit one structured `NEARBY` fact only for targets newly entering range.
+- Remaining adjacent, waiting, rendering, resizing, Help, save, and load emit
+  no duplicate nearby fact.
+- Leaving range clears eligibility silently; later re-entry may notify again.
+- If several targets enter together, use one deterministic focused fact plus a
+  count, while Interact exposes the complete deterministic target list.
+- Target ordering uses stable category/content identity and position, never
+  ECS query order or raw entity bits.
+- The Chronicle fact names the target and makes Interact discoverable.
+
+The passive Context card may refresh from current authoritative proximity
+without writing history. The Chronicle is historical edge-triggered feedback;
+the tooltip is current state. Do not make the renderer append to `GameLog`.
+
+The multi-target acceptance matrix includes unlike categories and two targets
+with the same display name. One accepted move must produce one focused
+Chronicle fact with a semantic count, while the current projection retains
+every target in deterministic order. Duplicate names must remain
+distinguishable by stable player-facing selector data such as category and
+position/distance; numeric ECS identity is never displayed or used for order.
+
+### 17.6 Context interaction state
+
+Conceptual flow:
+
+```text
+World
+  └─ Interact
+       ├─ zero targets  -> one truthful denial, remain in World
+       ├─ one target    -> Context Menu(target)
+       └─ many targets  -> Target Picker -> Context Menu(target)
+```
+
+The context interaction is paused. Opening, navigating, inspecting,
+cancelling, and activating a UI-only placeholder advance no turn, move no
+worker, mutate no resource/task/station relationship, and emit no gameplay
+success.
+
+The final composed screen, not an isolated widget, must show:
+
+- one identifiable context target;
+- category/status and applicable detail;
+- active selection;
+- enabled/disabled actions with reasons;
+- confirm/cancel controls agreeing with the footer;
+- no normal-world action advertised as immediately active while the context
+  menu owns input.
+
+For UI9-C, before the Context reducer exists, the same composition must also
+show that preview actions are unavailable rather than pretending that their
+key hints work. After UI9-D, every enabled row must agree with configuration,
+Help/footer text, the active input state, and a production workflow that
+actually reaches the named target/action. The focused target owns the visible
+detail and action set; actions from other nearby targets may not be flattened
+into it.
+
+`Set Production` is present for an operational station but disabled with a
+clear `Coming later` reason. It must not emit an intent or success result. A
+later owner-approved phase may route it to the existing recipe model; it may
+not introduce a parallel queue or production formula.
+
+### 17.7 Small-agent implementation batches
+
+Execute exactly one red contract at a time. Do not edit or weaken later tests
+to make an earlier batch green.
+
+#### UI9-A — Provisions projection and shared gauge
+
+1. Run the focused `VISUAL-ECON-002` test and retain its red diagnostic.
+2. Replace the flat Supplies projection with structured display-ready facts.
+3. Render through shared B3 meter/chip/panel primitives at both profiles.
+4. Preserve HP/AP tracks, map primacy, exact day, other resource values,
+   current worker/day separation, and existing theme ownership.
+5. Run the focused test, `bd_tui --lib`, the final-buffer profile pair, and the
+   signed candidate gate. Report CandidateGreen only until review.
+
+#### UI9-B — Proximity projection and Chronicle edge
+
+1. Run `COLONY-PROXIMITY-001` and retain the station/node failures.
+2. Build one read-only nearby-target resolver shared by Chronicle feedback,
+   passive context, and Interact availability.
+3. Diff stable before/after nearby sets only after accepted movement.
+4. Format one structured fact at the existing feedback boundary. Exercise a
+   simultaneous station/node entry and require one deterministic focused fact
+   plus a count while retaining both targets in the current projection.
+5. Preserve movement cost/time, worker scheduling, resources, direct
+   gathering, and render purity.
+6. Rerun the focused workflow, neighboring input/log tests, and canonical
+   gate.
+
+#### UI9-C — Reusable passive context presentation
+
+1. Run `VISUAL-CONTEXT-001` for station, node, and colonist at both profiles.
+2. Populate one generic target/detail/action projection through category
+   adapters. Keep applicability, input reachability, and executable state
+   separate; before UI9-D, all preview actions are disabled with truthful
+   reasons rather than invented controls.
+3. Compose the Context card/menu through shared panels and selection/status
+   primitives; do not add three separate renderers.
+4. Cover operational/construction and staffing detail for stations, output and
+   renewable/depleted detail for nodes, and activity/target/progress/cargo or
+   blocker detail when applicable for colonists.
+5. Add a duplicate-display-name multi-target case proving stable
+   disambiguation and one focused action set rather than flattened actions.
+6. Keep the map primary and prevent compact clipping or stale cells.
+7. Rerun final buffers, action-binding cross-checks, observer mutation probes,
+   and profile PTY captures.
+
+#### UI9-B/C smaller-agent v2 review — withdrawn 2026-08-03
+
+The next implementation agent begins at the corrective UI9-C batch and uses the repository-level
+`$authoritative-test-pipeline` loop. Tests, fixtures, observers, registry
+status, and evidence are read-only implementation constraints unless an
+independently reproduced observer defect is reported and test repair is
+separately authorized.
+
+The v2 candidate made useful production progress and passed its signed gate,
+but independent review found a mixed-source false green: display prose was
+parsed to remove semantic segments while the Context title independently
+derived staffing from a poisoned parallel worker field. The v2 prompt,
+manifest, baseline, and digest are historical evidence only and must not be
+reused. A later implementation handoff requires a newly validated red set and
+new v3 baseline/manifest/digest. It must protect this plan, every listed UI9-C
+primary/supporting test and shared observer/fixture, the sealed dirty-worktree
+baseline, and the mandatory authority/status files enforced by the repository
+gate. Its whole-batch closing command will be:
+
+```text
+bash scripts/test-gate.sh \
+  --candidate-manifest <reviewer-supplied-path> \
+  --manifest-sha256 <reviewer-supplied-digest>
+```
+
+Only `STATUS=CandidateGreen` is a valid implementation handoff. The reviewer
+then audits semantics and DRY ownership, updates every status ledger together,
+and runs the argument-free canonical gate.
+
+UI9-B is now a green preservation boundary. Run it after each proximity-owner
+change in this order, one exact test at a time:
+
+1. `cargo test -p bd_app --test phase6_input entering_adjacent_range_emits_one_deduplicated_nearby_hint -- --exact --nocapture`
+   - current green: station entry emits once and unbound Interact is disabled
+     with a truthful reason;
+2. `cargo test -p bd_app --test phase6_input entering_water_node_range_emits_one_deduplicated_nearby_hint -- --exact --nocapture`
+   - current green: the node follows the same projection and action truth;
+3. `cargo test -p bd_app --test phase6_input simultaneous_station_and_node_entry_emits_one_focused_nearby_fact_with_count -- --exact --nocapture`
+   - current green: one accepted move emits one deterministic focused fact plus
+     a semantic count while retaining the complete target set;
+4. `cargo test -p bd_app --test phase6_input leaving_range_is_silent_and_reentry_emits_exactly_once_again -- --exact --nocapture`
+   - current green preservation guard: leaving is silent and later re-entry
+     emits once again.
+
+All four UI9-B rows must remain green together. A regression is
+`STATUS=NotComplete`, not part of the authorized UI9-C implementation.
+
+Then run UI9-C in bounded groups:
+
+Use `cargo test -p bd_tui --lib ui_development_contract_tests::<test-name> -- --exact --nocapture`
+for each named UI9-C row below so no earlier case can hide its diagnostic.
+
+- category projection: `nearby_station_context_is_complete_at_supported_profiles`,
+  `nearby_node_context_is_complete_at_supported_profiles`, and
+  `nearby_colonist_context_is_complete_at_supported_profiles` independently;
+- authoritative state: `context_detail_and_actions_follow_authoritative_target_state`
+  for construction and
+  `depleted_node_context_changes_detail_and_action_applicability` for depletion;
+- active authoritative state:
+  `staffed_station_context_includes_worker_recipe_and_progress`,
+  `assigned_node_context_includes_worker_and_progress`,
+  `assigned_colonist_context_includes_target_and_progress`,
+  `carrying_colonist_context_includes_target_and_cargo`, and
+  `blocked_colonist_context_includes_target_and_reason` independently;
+- shared-owner seam:
+  `context_view_model_transports_shared_detail_without_semantic_parsing`, which
+  proves complete semantic-segment transport independently, and
+  `final_context_consumes_the_shared_detail_projection_once`, which supplies a
+  distinctive Unstaffed shared `detail` projection with an opposing staffed
+  worker decoy and requires every final title/body decision to remain coherent;
+- action truth: `passive_context_never_advertises_unroutable_actions_as_enabled`,
+  `passive_node_context_never_advertises_unroutable_actions_as_enabled`, and
+  `passive_colonist_context_never_advertises_unroutable_actions_as_enabled`,
+  plus `a_binding_without_a_context_reducer_does_not_enable_interact`;
+- final composition: `station_context_survives_final_composition_at_supported_profiles`,
+  `node_context_survives_final_composition_at_supported_profiles`, and
+  `colonist_context_survives_final_composition_at_supported_profiles`, plus the
+  five independently named active-state final-composition rows; and
+- multi-target focus:
+  `duplicate_named_nearby_targets_remain_distinguishable_in_context`.
+
+The post-v2 red baseline retains the valid production staffing work and has two
+independently observable shared-owner failures. The transport case rejects
+category/staffing segments stripped from formatted `detail`; the paired final
+case rejects a `Station Staffed` title when the authoritative status/detail are
+Unstaffed and only the poisoned legacy worker field implies staffed. All
+production-reachable staffed-station, assigned-node, active-colonist,
+bound-without-reducer, default category, construction/depletion,
+duplicate-target, and neighboring cases are preservation guards; they are not
+substitutes for these two reds.
+
+For every group, use the loop `READ → BASELINE → DIAGNOSE → IMPLEMENT → FOCUSED
+VALIDATION → CLASSIFY`. Repeat while red. After the whole registered UI9-C set
+passes, run neighboring targets and the signed candidate gate, inspect the production
+diff for category-specific renderers or duplicated action rules, and report
+`CandidateGreen` only. UI9-D remains unauthorized until Section 17.2 receives
+an owner decision; do not bind Interact or implement the menu reducer in this
+handoff.
+
+#### UI9-C v3 shared-owner review — withdrawn 2026-08-03
+
+The v3 implementation repaired the two mixed-source reds inside
+`crates/bd_tui/src/view_models.rs`: complete `NearbyTarget.detail` now reaches
+the Context view model, and the title follows authoritative category/status
+rather than poisoned worker/recipe/progress fields. Those two exact rows are
+green preservation boundaries for the next batch.
+
+Independent final-composition review then reproduced three remaining 60x20
+failures: the default station loses the Set Production denial reason, the
+staffed station loses later action/reason content, and the assigned node clips
+the Assign Gatherer row. The complete semantic detail plus required action and
+denial text cannot fit the existing three-row compact Context composition
+through a legal `view_models.rs`-only change. The v3 write set is therefore
+exhausted and its `NotComplete` status is correct.
+
+The v3 body, baseline, manifest, and digest are withdrawn historical evidence
+and must remain unchanged. A candidate-created execution-handoff document is
+not authority and must not be carried into the next baseline. The next
+reviewer-sealed UI9-C v4 batch may modify exactly:
+
+```text
+crates/bd_tui/src/view_models.rs
+crates/bd_tui/src/screens.rs
+```
+
+V4 owns one reusable Context presentation/composition correction. It may
+arrange, wrap, style, or allocate the generic structured target/detail/action
+representation in `screens.rs`, but may not parse or rederive domain facts,
+introduce category/profile/fixture branches, weaken detail/action truth, change
+input routing, or implement UI9-D. It must begin from the three independently
+reproduced 60x20 diagnostics, preserve the two v3 shared-owner greens and all
+registered UI9-C category/state/action/focus rows, then close through the
+signed candidate gate and the required in-chat implementation handoff.
+
+#### UI9-D — Input reducer and menu shell
+
+This batch starts only after Section 17.2 is owner-locked.
+
+Its first red workflow must cross-check configuration, Help/footer, projected
+key hints, and runtime routing. It opens Context through the production key,
+selects a target when several are present, invokes one enabled action, cancels,
+and proves all UI-only steps are paused. No action may be promoted from preview
+to enabled until that workflow exists.
+
+1. Add one semantic Interact command and derive Help/footer/action hints from
+   the configured binding.
+2. Implement zero/one/many target transitions in the existing paused
+   interaction reducer rather than a second input pipeline.
+3. Keep `Set Production` disabled and non-mutating.
+4. Preserve existing `c` direct-task behavior and route any retained staffing
+   entry to the existing workflow.
+5. Add production-input workflow evidence for open, choose target, navigate,
+   cancel, resize/close cleanup, and forbidden mutations.
+
+### 17.8 Invalid shortcuts the green audit must reject
+
+- hardcoding Water Source, Basic Processing, Mara, test coordinates, or the
+  two supported terminal sizes in production;
+- deriving tooltips from glyphs or renderer ECS queries;
+- appending Chronicle messages during draw/projection frames;
+- printing the forecast string beside a decorative unrelated bar;
+- one station menu, one node menu, and one colonist menu with duplicated
+  layout/control logic;
+- making `Set Production` enabled while it performs no mutation;
+- deleting HP/AP, worker detail, compact content, or existing shortcuts to
+  free space;
+- editing fixtures, assertions, contract status, or observers merely to make
+  the gate green.
+
+### 17.9 Closing evidence and status
+
+The implementation agent may report `CandidateGreen` only after the focused
+owners, completion-critical supports, neighbors, and signed candidate gate
+pass. `VerifiedGreen` requires independent review, atomic status-ledger
+reconciliation, and the zero-exit canonical gate. `ReviewedGreen` additionally
+requires production-diff/DRY
+review, final 80x24 and 60x20 buffers, required PTY workflows, authority drift
+review, and aligned registry/evidence records.
+
+At the current handoff, `VISUAL-ECON-002` and `COLONY-PROXIMITY-001` are
+`GreenUnreviewed`; `VISUAL-CONTEXT-001` is accurately `Red` on the independent
+shared-detail transport and mixed-source final-coherence seams above. The input/menu-shell contract remains
+unregistered until the Section 17.2 key decision is recorded; a test must not
+silently decide that owner choice.
 Each batch must be independently reviewable and revertible. Never mix harness
 work, layout redesign, gameplay changes, and unrelated cleanup.
 
 ---
 
-## 17. Per-Batch Completion Record
+## 18. Per-Batch Completion Record
 
 Record:
 
@@ -736,7 +1149,7 @@ A batch is incomplete if a field is omitted without explanation.
 
 ---
 
-## 18. Risk Controls
+## 19. Risk Controls
 
 | Risk | Required control |
 |---|---|
@@ -752,7 +1165,7 @@ A batch is incomplete if a field is omitted without explanation.
 
 ---
 
-## 19. Non-Goals
+## 20. Non-Goals
 
 No mouse, wall-clock animation, graphical tiles, new mechanics, queues,
 priorities, upgrades, deeper automation, raids, events, sanity, overworld,
@@ -761,7 +1174,7 @@ broad balance changes, Ratatui replacement, or ECS rewrite.
 
 ---
 
-## 20. Definition of Done
+## 21. Definition of Done
 
 The pass is complete only when:
 

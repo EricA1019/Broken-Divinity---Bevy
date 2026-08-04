@@ -37,7 +37,7 @@ fn build_and_assign(driver: &mut FoundationDriver) {
         .unwrap();
     driver.fixture_complete_construction(station);
     let survivor = driver
-        .survivor_by_name("Survivor 1")
+        .survivor_by_name("Mara")
         .expect("stable assigned survivor must exist");
     driver.fixture_assign_station(survivor, station).unwrap();
 }

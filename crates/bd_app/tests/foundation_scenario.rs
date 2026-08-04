@@ -131,7 +131,7 @@ fn canonical_colony_setup_uses_actions() {
         .expect("colony setup step: build action must create a Stove");
     driver.fixture_complete_construction(station);
     let survivor = driver
-        .survivor_by_name("Survivor 1")
+        .survivor_by_name("Mara")
         .expect("colony setup step: named starter survivor must exist");
 
     driver

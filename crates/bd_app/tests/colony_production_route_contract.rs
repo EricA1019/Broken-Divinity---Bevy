@@ -259,7 +259,7 @@ fn absent_worker_tick_is_a_no_op() {
 fn scheduler_frames_without_accepted_time_do_not_advance_logistics() {
     let mut driver = FoundationDriver::new(4400);
     driver.start_colony().unwrap();
-    let survivor = driver.survivor_by_name("Survivor 1").unwrap();
+    let survivor = driver.survivor_by_name("Mara").unwrap();
     driver
         .assign_recipe(
             "assign render-idle worker",
@@ -291,7 +291,7 @@ fn scheduler_frames_without_accepted_time_do_not_advance_logistics() {
 fn tactical_turns_do_not_advance_colony_logistics() {
     let mut driver = FoundationDriver::new(4405);
     driver.start_colony().unwrap();
-    let survivor = driver.survivor_by_name("Survivor 1").unwrap();
+    let survivor = driver.survivor_by_name("Mara").unwrap();
     driver
         .assign_recipe(
             "assign tactical-paused worker",
@@ -345,7 +345,7 @@ fn one_survivor_completes_the_pilot_source_to_station_route() {
         "fixture station must not overlap a generated source"
     );
     driver.fixture_spawn_processing_station(station_position);
-    let survivor = driver.survivor_by_name("Survivor 1").unwrap();
+    let survivor = driver.survivor_by_name("Mara").unwrap();
     driver.fixture_assign_recipe(survivor, "recipe.refine_timber");
     let materials_before = driver
         .resource_current(bd_core::signals::PoolKind::Materials)
@@ -389,7 +389,7 @@ fn carrying_checkpoint_preserves_recipe_stage_and_raw_cargo() {
     let mut driver = FoundationDriver::new(4402);
     driver.start_colony().unwrap();
     driver.fixture_spawn_processing_station(Position { x: 3, y: 3 });
-    let survivor = driver.survivor_by_name("Survivor 1").unwrap();
+    let survivor = driver.survivor_by_name("Mara").unwrap();
     driver.fixture_assign_recipe(survivor, "recipe.refine_timber");
     let player = driver.player().unwrap();
     for _ in 0..100 {
@@ -413,7 +413,7 @@ fn carrying_checkpoint_preserves_recipe_stage_and_raw_cargo() {
     let cargo = driver.worker_cargo(survivor).unwrap();
     let checkpoint = driver.checkpoint().unwrap();
     driver.restore_checkpoint(&checkpoint).unwrap();
-    let restored_survivor = driver.survivor_by_name("Survivor 1").unwrap();
+    let restored_survivor = driver.survivor_by_name("Mara").unwrap();
 
     assert_eq!(driver.worker_cargo(restored_survivor), Some(cargo));
     assert_eq!(
@@ -426,7 +426,7 @@ fn carrying_checkpoint_preserves_recipe_stage_and_raw_cargo() {
 fn partial_work_progress_survives_checkpoint_without_free_yield() {
     let mut driver = FoundationDriver::new(4402);
     driver.start_colony().unwrap();
-    let survivor = driver.survivor_by_name("Survivor 1").unwrap();
+    let survivor = driver.survivor_by_name("Mara").unwrap();
     driver.fixture_assign_recipe(survivor, "recipe.refine_timber");
     let source = driver
         .resource_node_layout()
@@ -451,7 +451,7 @@ fn partial_work_progress_survives_checkpoint_without_free_yield() {
 
     let checkpoint = driver.checkpoint().unwrap();
     let mut restored = FoundationDriver::from_checkpoint(&checkpoint).unwrap();
-    let restored_survivor = restored.survivor_by_name("Survivor 1").unwrap();
+    let restored_survivor = restored.survivor_by_name("Mara").unwrap();
     let restored_job = restored.logistics_job(restored_survivor).unwrap();
     assert_eq!(restored_job.stage, JobStage::ReadyToGather);
     assert_eq!(restored_job.work_completed, 1);
@@ -468,7 +468,7 @@ fn carrying_checkpoint_preserves_the_next_deterministic_worker_tick() {
     let mut original = FoundationDriver::new(4403);
     original.start_colony().unwrap();
     original.fixture_spawn_processing_station(Position { x: 3, y: 3 });
-    let survivor = original.survivor_by_name("Survivor 1").unwrap();
+    let survivor = original.survivor_by_name("Mara").unwrap();
     original.fixture_assign_recipe(survivor, "recipe.refine_timber");
     let player = original.player().unwrap();
     for _ in 0..100 {
@@ -506,7 +506,7 @@ fn carrying_checkpoint_preserves_the_next_deterministic_worker_tick() {
             None,
         )
         .unwrap();
-    let restored_survivor = restored.survivor_by_name("Survivor 1").unwrap();
+    let restored_survivor = restored.survivor_by_name("Mara").unwrap();
 
     assert_eq!(
         restored.position(restored_survivor),
@@ -539,7 +539,7 @@ fn checkpoint_round_trip_preserves_every_logistics_stage() {
     {
         let mut driver = FoundationDriver::new(4410 + case_index as u64);
         driver.start_colony().unwrap();
-        let survivor = driver.survivor_by_name("Survivor 1").unwrap();
+        let survivor = driver.survivor_by_name("Mara").unwrap();
         driver.fixture_assign_recipe(survivor, "recipe.refine_timber");
         let player = driver.player().unwrap();
         for _ in 0..160 {
@@ -565,7 +565,7 @@ fn checkpoint_round_trip_preserves_every_logistics_stage() {
         let position = driver.position(survivor).unwrap();
         let checkpoint = driver.checkpoint().unwrap();
         driver.restore_checkpoint(&checkpoint).unwrap();
-        let restored_survivor = driver.survivor_by_name("Survivor 1").unwrap();
+        let restored_survivor = driver.survivor_by_name("Mara").unwrap();
 
         assert_eq!(
             driver.logistics_job(restored_survivor),
@@ -589,7 +589,7 @@ fn checkpoint_round_trip_preserves_every_logistics_stage() {
 fn reassigning_a_carrying_worker_deposits_raw_cargo_and_cancels_logistics() {
     let mut driver = FoundationDriver::new(4404);
     driver.start_colony().unwrap();
-    let survivor = driver.survivor_by_name("Survivor 1").unwrap();
+    let survivor = driver.survivor_by_name("Mara").unwrap();
     driver.fixture_assign_recipe(survivor, "recipe.refine_timber");
     let player = driver.player().unwrap();
     for _ in 0..100 {
@@ -650,8 +650,8 @@ fn two_workers_share_one_station_work_tile_without_stacking_or_duplicate_credit(
     ] {
         driver.fixture_set_outpost_tile(wall, bd_core::components::Tile::Wall);
     }
-    let first_worker = driver.survivor_by_name("Survivor 1").unwrap();
-    let second_worker = driver.survivor_by_name("Survivor 2").unwrap();
+    let first_worker = driver.survivor_by_name("Mara").unwrap();
+    let second_worker = driver.survivor_by_name("Iven").unwrap();
     driver.fixture_assign_recipe(first_worker, "recipe.refine_timber");
     driver.fixture_assign_recipe(second_worker, "recipe.refine_timber");
     let materials_before = driver
@@ -703,8 +703,8 @@ fn complete_colony_workflow_replays_deterministically_from_player_actions() {
     let mut second = FoundationDriver::new(4510);
     first.start_colony().unwrap();
     second.start_colony().unwrap();
-    let original_survivor = first.survivor_by_name("Survivor 1").unwrap();
-    let second_survivor = second.survivor_by_name("Survivor 1").unwrap();
+    let original_survivor = first.survivor_by_name("Mara").unwrap();
+    let second_survivor = second.survivor_by_name("Mara").unwrap();
     first
         .assign_recipe(
             "first deterministic recipe assignment",
@@ -813,8 +813,8 @@ fn two_survivors_complete_different_chains_without_stacking_or_duplicate_credit(
     let mut driver = FoundationDriver::new(4501);
     driver.start_colony().unwrap();
     driver.fixture_spawn_processing_station(Position { x: 3, y: 3 });
-    let timber_worker = driver.survivor_by_name("Survivor 1").unwrap();
-    let plant_worker = driver.survivor_by_name("Survivor 2").unwrap();
+    let timber_worker = driver.survivor_by_name("Mara").unwrap();
+    let plant_worker = driver.survivor_by_name("Iven").unwrap();
     driver.fixture_assign_recipe(timber_worker, "recipe.refine_timber");
     driver.fixture_assign_recipe(plant_worker, "recipe.refine_plants");
     let materials_before = driver

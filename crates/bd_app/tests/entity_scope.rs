@@ -56,7 +56,7 @@ fn station_assignment_survives_dungeon_round_trip() {
     let mut driver = colony_driver();
     let station = build_station(&mut driver);
     let survivor = driver
-        .survivor_by_name("Survivor 1")
+        .survivor_by_name("Mara")
         .expect("named starter survivor");
     driver
         .fixture_assign_station(survivor, station)

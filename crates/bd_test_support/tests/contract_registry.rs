@@ -486,6 +486,43 @@ fn seeded_registry_maps_current_foundation_contract_batches() {
         "bd_app::phase6_input::colony_checkpoint_round_trip_preserves_the_visible_projection",
         "bd_app::phase6_input::tactical_checkpoint_round_trip_preserves_the_visible_projection",
         "bd_tui::lib::tests::blocked_worker_target_and_reason_fit_supported_profiles",
+        "bd_tui::lib::ui_development_contract_tests::tui_renderers_delegate_terminal_colors_to_the_theme_layer",
+        "bd_tui::lib::chrome::tests::standard_panel_separates_neutral_border_from_emphasized_title",
+        "bd_tui::lib::chrome::tests::semantic_tones_resolve_without_renderer_owned_colors",
+        "bd_tui::lib::ui_development_contract_tests::outpost_panels_render_shared_chrome_at_supported_profiles",
+        "bd_tui::lib::ui_development_contract_tests::closed_double_frame_observer_rejects_single_cell_breaks",
+        "bd_tui::lib::ui_development_contract_tests::reliquary_panel_and_meter_observers_reject_single_cell_breaks",
+        "bd_tui::lib::ui_development_contract_tests::selected_cinder_rite_identity_frames_colony_and_reusable_screens",
+        "bd_tui::lib::ui_development_contract_tests::provisions_show_stock_pressure_and_dawn_outlook_at_supported_profiles",
+        "bd_app::phase6_input::entering_adjacent_range_emits_one_deduplicated_nearby_hint",
+        "bd_app::phase6_input::entering_water_node_range_emits_one_deduplicated_nearby_hint",
+        "bd_app::phase6_input::simultaneous_station_and_node_entry_emits_one_focused_nearby_fact_with_count",
+        "bd_app::phase6_input::leaving_range_is_silent_and_reentry_emits_exactly_once_again",
+        "bd_tui::lib::ui_development_contract_tests::nearby_station_context_is_complete_at_supported_profiles",
+        "bd_tui::lib::ui_development_contract_tests::nearby_node_context_is_complete_at_supported_profiles",
+        "bd_tui::lib::ui_development_contract_tests::nearby_colonist_context_is_complete_at_supported_profiles",
+        "bd_tui::lib::ui_development_contract_tests::station_context_survives_final_composition_at_supported_profiles",
+        "bd_tui::lib::ui_development_contract_tests::node_context_survives_final_composition_at_supported_profiles",
+        "bd_tui::lib::ui_development_contract_tests::colonist_context_survives_final_composition_at_supported_profiles",
+        "bd_tui::lib::ui_development_contract_tests::context_detail_and_actions_follow_authoritative_target_state",
+        "bd_tui::lib::ui_development_contract_tests::depleted_node_context_changes_detail_and_action_applicability",
+        "bd_tui::lib::ui_development_contract_tests::passive_context_never_advertises_unroutable_actions_as_enabled",
+        "bd_tui::lib::ui_development_contract_tests::passive_node_context_never_advertises_unroutable_actions_as_enabled",
+        "bd_tui::lib::ui_development_contract_tests::passive_colonist_context_never_advertises_unroutable_actions_as_enabled",
+        "bd_tui::lib::ui_development_contract_tests::duplicate_named_nearby_targets_remain_distinguishable_in_context",
+        "bd_tui::lib::ui_development_contract_tests::staffed_station_context_includes_worker_recipe_and_progress",
+        "bd_tui::lib::ui_development_contract_tests::assigned_node_context_includes_worker_and_progress",
+        "bd_tui::lib::ui_development_contract_tests::assigned_colonist_context_includes_target_and_progress",
+        "bd_tui::lib::ui_development_contract_tests::carrying_colonist_context_includes_target_and_cargo",
+        "bd_tui::lib::ui_development_contract_tests::blocked_colonist_context_includes_target_and_reason",
+        "bd_tui::lib::ui_development_contract_tests::a_binding_without_a_context_reducer_does_not_enable_interact",
+        "bd_tui::lib::ui_development_contract_tests::context_view_model_transports_shared_detail_without_semantic_parsing",
+        "bd_tui::lib::ui_development_contract_tests::final_context_consumes_the_shared_detail_projection_once",
+        "bd_tui::lib::ui_development_contract_tests::staffed_station_recipe_progress_survives_final_composition",
+        "bd_tui::lib::ui_development_contract_tests::assigned_node_worker_progress_survives_final_composition",
+        "bd_tui::lib::ui_development_contract_tests::assigned_colonist_target_progress_survives_final_composition",
+        "bd_tui::lib::ui_development_contract_tests::carrying_colonist_target_cargo_survives_final_composition",
+        "bd_tui::lib::ui_development_contract_tests::blocked_colonist_reason_survives_final_composition",
     ];
     let context = RegistryValidationContext::new(
         project_root()
@@ -504,7 +541,7 @@ fn seeded_registry_maps_current_foundation_contract_batches() {
     );
     assert_eq!(
         registry.contracts.len(),
-        88,
+        93,
         "the registry must own every contract in the current visual, worker, management, shell, persistence, build, spatial, and dungeon batches"
     );
     assert_eq!(
@@ -515,8 +552,8 @@ fn seeded_registry_maps_current_foundation_contract_batches() {
                 contract.id.starts_with("VISUAL-") && contract.status == "GreenUnreviewed"
             })
             .count(),
-        35,
-        "thirty-five registered visual contracts are green but still require review evidence"
+        38,
+        "thirty-eight registered visual contracts are green but still require review evidence"
     );
     assert_eq!(
         registry
@@ -524,8 +561,8 @@ fn seeded_registry_maps_current_foundation_contract_batches() {
             .iter()
             .filter(|contract| contract.status == "Red")
             .count(),
-        0,
-        "the implemented Foundation contract registry must contain no unresolved red contracts"
+        1,
+        "the corrective UI9-C handoff must contain exactly one unresolved red contract"
     );
     assert_eq!(
         registry
@@ -534,8 +571,8 @@ fn seeded_registry_maps_current_foundation_contract_batches() {
             .filter(|contract| contract.id.starts_with("COLONY-")
                 && contract.status == "GreenUnreviewed")
             .count(),
-        23,
-        "all twenty-three colony contracts are green but unreviewed"
+        24,
+        "twenty-four colony contracts are green but unreviewed"
     );
     assert_eq!(
         registry

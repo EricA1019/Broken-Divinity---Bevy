@@ -19,13 +19,64 @@ use bd_core::{
     signals::PoolKind,
 };
 
-#[derive(Resource, Debug, Clone, Default)]
+/// Authoritative colony Supplies cap. Mirrors the colony Supplies pool bound
+/// created by `bd_core::colony::production` (`Pool::new(Supplies, _, 0, 100)`)
+/// and the `forecast_colony` clamp. Production always overrides the bound from
+/// the live pool; this default only covers direct projection construction in
+/// tests and is never consumed by the resource renderer.
+pub const COLONY_SUPPLIES_CAP: i32 = 100;
+
+/// Semantic resource pressure condition shared by every pool gauge.
+///
+/// The projection layer owns this threshold and emits a semantic token; the
+/// renderer only formats the label and resolves the token. No fixture-specific
+/// values live here.
+pub fn resource_condition(current: i32, maximum: i32) -> (crate::visual::StyleToken, &'static str) {
+    use crate::visual::StyleToken;
+    if maximum <= 0 {
+        (StyleToken::UiDanger, "UNKNOWN")
+    } else if current <= 0 {
+        (StyleToken::UiDanger, "CRITICAL")
+    } else if current * 4 < maximum {
+        (StyleToken::UiWarning, "LOW")
+    } else {
+        (StyleToken::UiPositive, "STABLE")
+    }
+}
+
+/// Display-ready structured gauge for one colony pool. Populated by the
+/// production projection from authoritative pool and forecast data; the
+/// renderer consumes this and never recomputes pressure or parses prose.
+#[derive(Debug, Clone)]
+pub struct ResourceGaugeVm {
+    /// Semantic label, e.g. "SUP".
+    pub label: String,
+    /// Exact current stock (authoritative).
+    pub current: i32,
+    /// Authoritative bound.
+    pub maximum: i32,
+    /// Display-ready condition label, e.g. "LOW"/"STABLE".
+    pub condition: &'static str,
+    /// Semantic fill token resolved by the theme layer.
+    pub tone: crate::visual::StyleToken,
+    /// Authoritative next-boundary delta.
+    pub delta: i32,
+    /// Resulting amount after the next boundary.
+    pub result: i32,
+}
+
+#[derive(Resource, Debug, Clone)]
 pub struct StatsViewModel {
     pub hp_current: i32,
     pub hp_max: i32,
     pub ap_current: i32,
     pub ap_max: i32,
     pub supplies: i32,
+    /// Authoritative Supplies bound (legacy flat projection; the renderer uses
+    /// [`StatsViewModel::supplies_gauge`] instead).
+    pub supplies_max: i32,
+    /// Structured display-ready Supplies gauge facts.
+    pub supplies_gauge: Option<ResourceGaugeVm>,
     pub faith: i32,
     pub materials: i32,
     pub wild_plants: i32,
@@ -41,8 +92,63 @@ pub struct StatsViewModel {
     pub next_day_forecast: String,
     pub latest_daily_summary: Vec<String>,
     pub management: Option<ManagementMenuVm>,
+    /// Active nearby-target identity shown by the Context panel.
+    pub context_target: Option<ContextTargetVm>,
     /// Compact faction standings: (label, value, status_text).
     pub faction_standings: Vec<(String, i32, String)>,
+}
+
+impl Default for StatsViewModel {
+    fn default() -> Self {
+        Self {
+            supplies_max: COLONY_SUPPLIES_CAP,
+            supplies_gauge: None,
+            context_target: None,
+            hp_current: 0,
+            hp_max: 0,
+            ap_current: 0,
+            ap_max: 0,
+            supplies: 0,
+            faith: 0,
+            materials: 0,
+            wild_plants: 0,
+            stored_items: Vec::new(),
+            carried_loot: 0,
+            extraction_ready: false,
+            save_available: false,
+            run_outcome: bd_core::session::RunOutcome::None,
+            extracted_loot: 0,
+            day: 0,
+            party_names: Vec::new(),
+            station_status: Vec::new(),
+            next_day_forecast: String::new(),
+            latest_daily_summary: Vec::new(),
+            management: None,
+            faction_standings: Vec::new(),
+        }
+    }
+}
+
+/// Compact re-presentation of the authoritative dawn outlook embedded in the
+/// colony forecast display line.
+///
+/// The forecast prose is produced by the colony projection from structured
+/// `forecast_colony` data (e.g. `…stn=-3→7 M+0…`). This projection extracts the
+/// already-computed supplies delta and resulting amount so a narrow resource
+/// panel never clips the decisive outlook. It never computes colony pressure;
+/// it only re-presents values the domain already produced.
+pub fn dawn_outlook(forecast: &str) -> Option<(String, String)> {
+    let marker = '→';
+    let start = forecast.find(marker)?;
+    let delta = forecast[..start]
+        .rsplit(|character: char| character.is_whitespace() || character == '=')
+        .next()?
+        .to_string();
+    let result = forecast[start + marker.len_utf8()..]
+        .split_whitespace()
+        .next()?
+        .to_string();
+    Some((delta, result))
 }
 
 #[derive(Resource, Debug, Clone, Copy, Default)]
@@ -84,6 +190,25 @@ pub struct ActionItemVm {
     pub key_hint: String,
     pub enabled: bool,
     pub denial_reason: Option<String>,
+}
+
+/// Identity of the active context target shown by the Context panel.
+#[derive(Debug, Clone)]
+pub struct ContextTargetVm {
+    pub name: String,
+    /// Canonical category label (e.g. "Station", "Resource Node", "Colonist").
+    pub category: String,
+    /// Concise status phrase shown in the Context feed.
+    pub status: String,
+    /// Category heading shown in the Context panel title (e.g.
+    /// "Operational Station", "Resource Node", "Colonist").
+    pub title: String,
+    /// 1-based index of the focused target within the nearby set.
+    pub focus_index: usize,
+    /// Total number of nearby targets (for the focus selector).
+    pub target_count: usize,
+    /// Player-facing position cue of the focused target.
+    pub position: (i32, i32),
 }
 
 #[derive(Resource, Debug, Clone, Default)]
@@ -344,6 +469,11 @@ fn build_stats_vm(inputs: StatsProjectionInputs, mut vm: ResMut<StatsViewModel>)
         .pools
         .get(PoolKind::Supplies)
         .map_or(0, |p| p.current);
+    vm.supplies_max = inputs
+        .colony_res
+        .pools
+        .get(PoolKind::Supplies)
+        .map_or(COLONY_SUPPLIES_CAP, |p| p.max);
     vm.faith = inputs
         .colony_res
         .pools
@@ -668,6 +798,22 @@ fn build_party_vm(
         forecast.plants_net,
         forecast.faith_net,
     );
+
+    // Structured resource gauge: authoritative current/bound, condition, and
+    // next-day delta/result produced here so the renderer only formats facts.
+    let supplies_pool = colony_resources.pools.get(PoolKind::Supplies);
+    let gauge_current = supplies_pool.map_or(0, |pool| pool.current);
+    let gauge_maximum = supplies_pool.map_or(COLONY_SUPPLIES_CAP, |pool| pool.max);
+    let (gauge_tone, gauge_condition) = resource_condition(gauge_current, gauge_maximum);
+    vm.supplies_gauge = Some(ResourceGaugeVm {
+        label: "SUP".into(),
+        current: gauge_current,
+        maximum: gauge_maximum,
+        condition: gauge_condition,
+        tone: gauge_tone,
+        delta: forecast.supplies_net,
+        result: forecast.supplies_after,
+    });
     vm.latest_daily_summary = latest_daily_summary.0.as_ref().map_or_else(
         Vec::new,
         bd_core::colony::production::DailySummary::display_lines,
@@ -869,7 +1015,9 @@ fn build_action_list_vm(
     game_time: Res<bd_core::time::GameTime>,
     bindings: Res<crate::commands::CommandBindings>,
     station_catalog: Res<bd_core::colony::stations::StationCatalog>,
+    nearby: Res<bd_core::colony::proximity::NearbyInteractables>,
     mut vm: ResMut<ActionListViewModel>,
+    mut stats_vm: ResMut<StatsViewModel>,
 ) {
     let Some((player_entity, pp, pools, _)) = player
         .iter()
@@ -956,7 +1104,7 @@ fn build_action_list_vm(
         staff.denial_reason = Some("No idle survivor".into());
     }
 
-    vm.actions = projections
+    let mut items = projections
         .into_iter()
         .map(|action| ActionItemVm {
             label: action.label,
@@ -964,7 +1112,126 @@ fn build_action_list_vm(
             enabled: action.enabled,
             denial_reason: action.denial_reason,
         })
-        .collect();
+        .collect::<Vec<_>>();
+
+    // The colony context owns the action feed while an interactable target is
+    // nearby: one generic context projection (fed by the shared proximity
+    // resolver) supplies Interact and the focused target's preview actions. No
+    // normal-world actions are advertised while the context owns input, and no
+    // second nearby target's actions are flattened into the focused feed.
+    if *mode == bd_core::spatial::GameMode::Outpost && !nearby.is_empty() {
+        let focused = &nearby.targets[0];
+        let interact_key = bindings
+            .key_for(crate::commands::UiCommand::Interact)
+            .map(crate::commands::config_key_name);
+        // Interact is a semantic command with no owner-approved Context reducer
+        // route yet (UI9-D is not authorized). A configured binding alone does
+        // not make it executable, so it stays disabled with a truthful route
+        // reason; an unbound Interact keeps the "unbound" hint. UI9-C preview
+        // actions are likewise disabled until the Context menu reducer exists.
+        let interact = match &interact_key {
+            Some(key) => ActionItemVm {
+                label: "Interact".into(),
+                key_hint: key.clone(),
+                enabled: false,
+                denial_reason: Some("No Context route".into()),
+            },
+            None => ActionItemVm {
+                label: "Interact".into(),
+                key_hint: "unbound".into(),
+                enabled: false,
+                denial_reason: Some("Interact is unbound".into()),
+            },
+        };
+        let preview_reason = "Menu".to_string();
+        let mut context_items = vec![interact];
+        context_items.push(ActionItemVm {
+            label: format!("Inspect {}", focused.name),
+            key_hint: String::new(),
+            enabled: false,
+            denial_reason: Some(preview_reason.clone()),
+        });
+        match focused.category {
+            bd_core::colony::proximity::NearbyCategory::Station
+                if focused.construction.is_none() =>
+            {
+                // Set Production precedes Assign Worker so the wrapped Context
+                // feed packs into the compact three-row profile without
+                // clipping; both remain disabled previews.
+                // UI-only placeholder: production recipes are owner-locked
+                // for a later phase, so this stays visibly unavailable.
+                context_items.push(ActionItemVm {
+                    label: "Set Production".into(),
+                    key_hint: String::new(),
+                    enabled: false,
+                    denial_reason: Some("Coming later".into()),
+                });
+                context_items.push(ActionItemVm {
+                    label: "Assign Worker".into(),
+                    key_hint: String::new(),
+                    enabled: false,
+                    denial_reason: Some(preview_reason),
+                });
+            }
+            // Construction sites never inherit operational-only actions.
+            bd_core::colony::proximity::NearbyCategory::Station => {}
+            bd_core::colony::proximity::NearbyCategory::ResourceNode if !focused.depleted => {
+                context_items.push(ActionItemVm {
+                    label: "Assign Gatherer".into(),
+                    key_hint: String::new(),
+                    enabled: false,
+                    denial_reason: Some(preview_reason),
+                });
+            }
+            // Depleted nodes never advertise invalid gathering actions.
+            bd_core::colony::proximity::NearbyCategory::ResourceNode => {}
+            bd_core::colony::proximity::NearbyCategory::Colonist => {
+                context_items.push(ActionItemVm {
+                    label: "Assign Task".into(),
+                    key_hint: String::new(),
+                    enabled: false,
+                    denial_reason: Some(preview_reason),
+                });
+            }
+        }
+        items = context_items;
+        // The Context title names the category and the authoritative staffing
+        // state only. It must never derive staffing from the legacy parallel
+        // worker/recipe/progress fields, which an adversarial observer can
+        // poison independently of the shared detail/status.
+        let title = match focused.category {
+            bd_core::colony::proximity::NearbyCategory::Station
+                if focused.construction.is_some() =>
+            {
+                "Construction Station".to_string()
+            }
+            bd_core::colony::proximity::NearbyCategory::Station => {
+                format!("Station {}", focused.status)
+            }
+            bd_core::colony::proximity::NearbyCategory::ResourceNode => "Resource Node".to_string(),
+            bd_core::colony::proximity::NearbyCategory::Colonist => "Colonist".to_string(),
+        };
+        // The Context feed transports the authoritative shared detail
+        // projection with every semantic segment intact; only the presentation
+        // separator is normalized. Category adapters in the proximity resolver
+        // own the domain wording, and this layer never rebuilds it from
+        // parallel fields or strips semantic segments.
+        let category_label = focused.category.label().to_string();
+        let status = focused.detail.replace(" · ", " ");
+        stats_vm.context_target = Some(ContextTargetVm {
+            name: focused.name.clone(),
+            category: category_label,
+            status,
+            title,
+            focus_index: 1,
+            target_count: nearby.targets.len(),
+            position: (focused.position.x, focused.position.y),
+        });
+    } else {
+        stats_vm.context_target = None;
+    }
+
+    vm.actions = items;
 }
 
 fn build_help_vm(

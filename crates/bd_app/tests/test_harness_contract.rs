@@ -28,7 +28,7 @@ fn build_and_assign(driver: &mut FoundationDriver) {
         .expect("built Stove must exist");
     driver.fixture_complete_construction(station);
     let survivor = driver
-        .survivor_by_name("Survivor 1")
+        .survivor_by_name("Mara")
         .expect("stable survivor must exist");
     driver
         .fixture_assign_station(survivor, station)
@@ -50,7 +50,7 @@ fn fingerprint_tracks_durable_colony_state_but_excludes_transient_build_state() 
     );
 
     let survivor = driver
-        .survivor_by_name("Survivor 1")
+        .survivor_by_name("Mara")
         .expect("stable survivor must exist");
     driver
         .fixture_set_position(survivor, Position { x: 10, y: 10 })
@@ -110,7 +110,7 @@ fn blocked_worker_reason_is_recomputed_without_duplicate_log_on_restore() {
     let mut original = colony_driver(803);
     build_and_assign(&mut original);
     let survivor = original
-        .survivor_by_name("Survivor 1")
+        .survivor_by_name("Mara")
         .expect("stable survivor must exist");
     original
         .fixture_set_position(survivor, Position { x: 8, y: 8 })
@@ -125,8 +125,13 @@ fn blocked_worker_reason_is_recomputed_without_duplicate_log_on_restore() {
     }
     original.advance_idle();
     let before = original.fingerprint();
+    let blocked = before
+        .survivors
+        .iter()
+        .find(|entry| entry.name == "Mara")
+        .expect("Mara fingerprint must exist");
     assert!(
-        before.survivors[0].activity.starts_with("Blocked:"),
+        blocked.activity.starts_with("Blocked:"),
         "fixture must establish a typed Blocked activity"
     );
     let logs_before = original.log_messages();
@@ -147,16 +152,20 @@ fn working_station_contribution_survives_save_load() {
     let mut original = colony_driver(804);
     build_and_assign(&mut original);
     let survivor = original
-        .survivor_by_name("Survivor 1")
+        .survivor_by_name("Mara")
         .expect("stable survivor must exist");
     original
         .fixture_set_position(survivor, Position { x: 3, y: 1 })
         .expect("adjacent work position must resolve");
     original.advance_idle();
+    let fingerprint = original.fingerprint();
+    let working = fingerprint
+        .survivors
+        .iter()
+        .find(|entry| entry.name == "Mara")
+        .expect("Mara fingerprint must exist");
     assert!(
-        original.fingerprint().survivors[0]
-            .activity
-            .starts_with("Working:"),
+        working.activity.starts_with("Working:"),
         "fixture must establish Working activity"
     );
     let checkpoint = original.checkpoint().expect("checkpoint must serialize");

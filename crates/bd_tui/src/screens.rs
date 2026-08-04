@@ -11,44 +11,34 @@ use bevy_ecs::prelude::*;
 /// Width percentage for the stats/info right-side panel.
 const STATS_PANEL_WIDTH_PCT: u16 = 28;
 
-/// HP percentage above which the value is shown in green (healthy).
+/// HP percentage above which the value is shown as positive (healthy).
 const HP_GREEN_THRESHOLD_PCT: i32 = 50;
 /// HP percentage below which the value is shown in yellow (wounded).
 const HP_YELLOW_THRESHOLD_PCT: i32 = 25;
 /// Above this ratio HP is green, below it yellow, below HP_YELLOW_THRESHOLD it's red.
-fn hp_color(current: i32, max: i32) -> ratatui::style::Color {
+fn hp_tone(current: i32, max: i32) -> UiTone {
     if max <= 0 {
-        return ratatui::style::Color::Red;
+        return UiTone::Danger;
     }
     let pct = (current * 100) / max;
     if pct >= HP_GREEN_THRESHOLD_PCT {
-        ratatui::style::Color::Green
+        UiTone::Positive
     } else if pct >= HP_YELLOW_THRESHOLD_PCT {
-        ratatui::style::Color::Yellow
+        UiTone::Warning
     } else {
-        ratatui::style::Color::Red
+        UiTone::Danger
     }
 }
 
-/// AP color: cyan when full, blue otherwise.
-fn ap_color(current: i32, max: i32) -> ratatui::style::Color {
-    if max > 0 && current >= max {
-        ACCENT_COLOR
-    } else {
-        ratatui::style::Color::Blue
-    }
+/// AP tone: informational at every fill level.
+fn ap_tone(_current: i32, _max: i32) -> UiTone {
+    UiTone::Info
 }
-
-// ── UI color constants ──
-
-/// Secondary/muted text color.
-const MUTED_COLOR: ratatui::style::Color = ratatui::style::Color::DarkGray;
-/// Highlight/accent color (labels, active items).
-const ACCENT_COLOR: ratatui::style::Color = ratatui::style::Color::Cyan;
 
 use ratatui::{Frame, layout::Rect};
 
 use super::{
+    chrome::{PanelTone, UiTone, meter, panel, resource_gauge, style},
     render_grid::RenderCellGrid,
     theme::ThemeRegistry,
     view_models::{
@@ -115,6 +105,9 @@ pub struct WidgetRenderContext<'a> {
     pub symbols: &'a SymbolRegistry,
     pub theme: &'a ThemeRegistry,
     pub mode: bd_core::spatial::GameMode,
+    /// Active screen id (e.g. "outpost", "combat"). Region naming such as
+    /// Chronicle/Context derives from the screen, not from entity content.
+    pub screen_id: &'a str,
 }
 
 /// A registered widget knows its view-model dependency and how to render.
@@ -301,9 +294,11 @@ pub fn default_screen_registry() -> ScreenRegistry {
                 layout: PanelLayout::Bottom { height_pct: 20 },
                 view_model: "LogViewModel".into(),
             },
+            // Context needs three inner rows so the longest station action set
+            // (status + Inspect/Assign/Set Production + reason) stays legible.
             PanelDefinition {
                 id: "actions".into(),
-                layout: PanelLayout::Bottom { height_pct: 20 },
+                layout: PanelLayout::Bottom { height_pct: 25 },
                 view_model: "ActionListViewModel".into(),
             },
             PanelDefinition {
@@ -400,10 +395,20 @@ pub fn compact_screen_definition(definition: &ScreenDefinition) -> ScreenDefinit
         "outpost" => {
             for panel in &mut compact.panels {
                 match panel.id.as_str() {
-                    "outpost_party" => panel.layout = PanelLayout::Left { width_pct: 25 },
-                    "stats" => panel.layout = PanelLayout::Right { width_pct: 20 },
-                    "actions" => panel.layout = PanelLayout::Bottom { height_pct: 24 },
-                    "log" => panel.layout = PanelLayout::Bottom { height_pct: 18 },
+                    // Slightly narrower party keeps the shelter map the largest
+                    // interactive panel once Chronicle/Context grow to keep
+                    // target identity and actions readable at 60x20.
+                    "outpost_party" => panel.layout = PanelLayout::Left { width_pct: 22 },
+                    // Eleven inner cells retain live-sized values plus a two-cell
+                    // ASCII track (for example HP24/30[#-]).
+                    "stats" => panel.layout = PanelLayout::Right { width_pct: 24 },
+                    // Context needs three inner rows so the longest station
+                    // action set (Inspect/Assign/Set Production + reason) stays
+                    // legible without clipping.
+                    "actions" => panel.layout = PanelLayout::Bottom { height_pct: 37 },
+                    // Chronicle needs two inner rows so a wrapped NEARBY fact
+                    // never loses its target name or Interact hint.
+                    "log" => panel.layout = PanelLayout::Bottom { height_pct: 25 },
                     _ => {}
                 }
             }
@@ -412,8 +417,8 @@ pub fn compact_screen_definition(definition: &ScreenDefinition) -> ScreenDefinit
             for panel in &mut compact.panels {
                 match panel.id.as_str() {
                     "stats" => panel.layout = PanelLayout::Right { width_pct: 25 },
-                    "actions" => panel.layout = PanelLayout::Bottom { height_pct: 24 },
-                    "log" => panel.layout = PanelLayout::Bottom { height_pct: 36 },
+                    "actions" => panel.layout = PanelLayout::Bottom { height_pct: 32 },
+                    "log" => panel.layout = PanelLayout::Bottom { height_pct: 32 },
                     _ => {}
                 }
             }
@@ -440,11 +445,9 @@ fn game_over_status_line(extracted_loot: u32) -> String {
 }
 
 fn render_game_over_splash_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
-    let style_title = ratatui::style::Style::default()
-        .fg(ratatui::style::Color::Red)
-        .add_modifier(ratatui::style::Modifier::BOLD);
-    let style_muted = ratatui::style::Style::default().fg(MUTED_COLOR);
-    let style_accent = ratatui::style::Style::default().fg(ACCENT_COLOR);
+    let style_title = style(ctx.theme, UiTone::Danger);
+    let style_muted = style(ctx.theme, UiTone::Muted);
+    let style_accent = style(ctx.theme, UiTone::Accent);
 
     let text: Vec<ratatui::text::Line> = if area.width < 50 || area.height < 10 {
         vec![
@@ -490,11 +493,9 @@ fn render_game_over_splash_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRen
 
 /// Render the title screen splash.
 fn render_title_splash_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
-    let style_title = ratatui::style::Style::default()
-        .fg(ACCENT_COLOR)
-        .add_modifier(ratatui::style::Modifier::BOLD);
-    let style_muted = ratatui::style::Style::default().fg(MUTED_COLOR);
-    let style_accent = ratatui::style::Style::default().fg(ACCENT_COLOR);
+    let style_title = style(ctx.theme, UiTone::Title);
+    let style_muted = style(ctx.theme, UiTone::Muted);
+    let style_accent = style(ctx.theme, UiTone::Accent);
 
     let mut text = vec![
         ratatui::text::Line::styled("BROKEN DIVINITY", style_title),
@@ -509,7 +510,7 @@ fn render_title_splash_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderC
     if !ctx.stats.save_available {
         text.push(ratatui::text::Line::styled(
             "Load unavailable — No save",
-            ratatui::style::Style::default().fg(ratatui::style::Color::Yellow),
+            style(ctx.theme, UiTone::Warning),
         ));
     }
     if let Some(entry) = ctx
@@ -521,7 +522,7 @@ fn render_title_splash_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderC
         text.push(ratatui::text::Line::from(""));
         text.push(ratatui::text::Line::styled(
             truncate_end(&entry.message, area.width as usize),
-            ratatui::style::Style::default().fg(ratatui::style::Color::Yellow),
+            style(ctx.theme, UiTone::Warning),
         ));
     }
     let content_height = (text.len() as u16).min(area.height);
@@ -811,10 +812,7 @@ fn render_map_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
             format!(" {direction} {} · {distance} tiles ", target.label)
         },
     );
-    let block = ratatui::widgets::Block::default()
-        .title(title)
-        .borders(ratatui::widgets::Borders::ALL)
-        .style(ratatui::style::Style::default().fg(ratatui::style::Color::Gray));
+    let block = panel(ctx.theme, title.trim(), PanelTone::Standard);
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -904,16 +902,10 @@ pub fn render_build_overlay(frame: &mut Frame, area: Rect, ctx: &WidgetRenderCon
             }
         };
         let mut lines = vec![
-            ratatui::text::Line::styled(stages, ratatui::style::Style::default().fg(ACCENT_COLOR)),
-            ratatui::text::Line::styled(
-                menu.resources.clone(),
-                ratatui::style::Style::default().fg(ratatui::style::Color::Yellow),
-            ),
+            ratatui::text::Line::styled(stages, style(ctx.theme, UiTone::Accent)),
+            ratatui::text::Line::styled(menu.resources.clone(), style(ctx.theme, UiTone::Warning)),
             ratatui::text::Line::from(menu.forecast.clone()),
-            ratatui::text::Line::styled(
-                "Select survivor:",
-                ratatui::style::Style::default().fg(ACCENT_COLOR),
-            ),
+            ratatui::text::Line::styled("Select survivor:", style(ctx.theme, UiTone::Accent)),
         ];
         for (index, survivor) in menu.survivors.iter().enumerate() {
             let selected = menu.selected_survivor == Some(index);
@@ -923,11 +915,14 @@ pub fn render_build_overlay(frame: &mut Frame, area: Rect, ctx: &WidgetRenderCon
                     if selected { "▶" } else { " " },
                     index + 1
                 ),
-                ratatui::style::Style::default().fg(if selected {
-                    ACCENT_COLOR
-                } else {
-                    ratatui::style::Color::White
-                }),
+                style(
+                    ctx.theme,
+                    if selected {
+                        UiTone::Accent
+                    } else {
+                        UiTone::Text
+                    },
+                ),
             ));
         }
         if menu.selected_survivor.is_some() {
@@ -935,13 +930,16 @@ pub fn render_build_overlay(frame: &mut Frame, area: Rect, ctx: &WidgetRenderCon
                 let selected = menu.selected_task == Some(index);
                 lines.push(ratatui::text::Line::styled(
                     format!("{} {task}", if selected { "▶" } else { " " }),
-                    ratatui::style::Style::default().fg(if task.contains("unavailable") {
-                        ratatui::style::Color::DarkGray
-                    } else if selected {
-                        ACCENT_COLOR
-                    } else {
-                        ratatui::style::Color::White
-                    }),
+                    style(
+                        ctx.theme,
+                        if task.contains("unavailable") {
+                            UiTone::Muted
+                        } else if selected {
+                            UiTone::Accent
+                        } else {
+                            UiTone::Text
+                        },
+                    ),
                 ));
             }
         }
@@ -951,7 +949,7 @@ pub fn render_build_overlay(frame: &mut Frame, area: Rect, ctx: &WidgetRenderCon
         };
         lines.push(ratatui::text::Line::styled(
             format!("1-9:select  Enter:confirm  {cancel_key}/Esc:cancel"),
-            ratatui::style::Style::default().fg(MUTED_COLOR),
+            style(ctx.theme, UiTone::Muted),
         ));
 
         let width = area.width.saturating_sub(2).min(76);
@@ -974,10 +972,7 @@ pub fn render_build_overlay(frame: &mut Frame, area: Rect, ctx: &WidgetRenderCon
             super::view_models::ManagementMenuKind::TaskAssignment => " Task Management ",
             super::view_models::ManagementMenuKind::StationStaffing => " Station Staffing ",
         };
-        let block = ratatui::widgets::Block::default()
-            .title(title)
-            .borders(ratatui::widgets::Borders::ALL)
-            .style(ratatui::style::Style::default().fg(ACCENT_COLOR));
+        let block = panel(ctx.theme, title.trim(), PanelTone::Modal);
         let inner = block.inner(modal);
         frame.render_widget(block, modal);
         frame.render_widget(
@@ -988,7 +983,7 @@ pub fn render_build_overlay(frame: &mut Frame, area: Rect, ctx: &WidgetRenderCon
     }
 
     if let Some(menu) = &ctx.map.build_menu {
-        let width = area.width.saturating_sub(2).min(76);
+        let width = area.width.min(76);
         let inner_width = width.saturating_sub(2).max(1) as usize;
         let selected_effect_rows = menu.options.get(menu.selected).map_or(0, |(_, _, effect)| {
             format!("Effect: {effect}")
@@ -1015,38 +1010,35 @@ pub fn render_build_overlay(frame: &mut Frame, area: Rect, ctx: &WidgetRenderCon
             height,
         };
         frame.render_widget(ratatui::widgets::Clear, modal);
-        let block = ratatui::widgets::Block::default()
-            .title(" Build Station ")
-            .borders(ratatui::widgets::Borders::ALL)
-            .style(ratatui::style::Style::default().fg(ACCENT_COLOR));
+        let block = panel(ctx.theme, "Build Station", PanelTone::Modal);
         let inner = block.inner(modal);
         frame.render_widget(block, modal);
 
         let mut lines = vec![ratatui::text::Line::styled(
             format!("Available: {} Supplies", menu.available_supplies),
-            ratatui::style::Style::default().fg(ratatui::style::Color::Yellow),
+            style(ctx.theme, UiTone::Warning),
         )];
         for (index, (label, cost, effect)) in menu.options.iter().enumerate() {
             let selected = index == menu.selected;
             let prefix = if selected { "▶" } else { " " };
-            let color = if effect.starts_with("Disabled") {
-                ratatui::style::Color::DarkGray
+            let tone = if effect.starts_with("Disabled") {
+                UiTone::Muted
             } else if menu.available_supplies < *cost {
-                ratatui::style::Color::Red
+                UiTone::Danger
             } else if selected {
-                ACCENT_COLOR
+                UiTone::Accent
             } else {
-                ratatui::style::Color::White
+                UiTone::Text
             };
             lines.push(ratatui::text::Line::styled(
                 format!("{prefix} {}. {label} — {cost} Supplies", index + 1),
-                ratatui::style::Style::default().fg(color),
+                style(ctx.theme, tone),
             ));
         }
         if let Some((_, cost, effect)) = menu.options.get(menu.selected) {
             lines.push(ratatui::text::Line::styled(
                 format!("Effect: {effect}"),
-                ratatui::style::Style::default().fg(ACCENT_COLOR),
+                style(ctx.theme, UiTone::Accent),
             ));
             if menu.available_supplies < *cost {
                 lines.push(ratatui::text::Line::styled(
@@ -1054,14 +1046,14 @@ pub fn render_build_overlay(frame: &mut Frame, area: Rect, ctx: &WidgetRenderCon
                         "Unavailable: Need {} more Supplies",
                         cost - menu.available_supplies
                     ),
-                    ratatui::style::Style::default().fg(ratatui::style::Color::Red),
+                    style(ctx.theme, UiTone::Danger),
                 ));
             }
         }
         let numeric_choices = menu.options.len().min(9);
         lines.push(ratatui::text::Line::styled(
             format!("↑↓/1-{numeric_choices}:highlight Enter:placement b/Esc:cancel"),
-            ratatui::style::Style::default().fg(MUTED_COLOR),
+            style(ctx.theme, UiTone::Muted),
         ));
         frame.render_widget(
             ratatui::widgets::Paragraph::new(lines).wrap(ratatui::widgets::Wrap { trim: true }),
@@ -1082,17 +1074,14 @@ pub fn render_build_overlay(frame: &mut Frame, area: Rect, ctx: &WidgetRenderCon
             ..area
         };
         frame.render_widget(ratatui::widgets::Clear, banner);
-        let block = ratatui::widgets::Block::default()
-            .title(" Build Placement ")
-            .borders(ratatui::widgets::Borders::ALL)
-            .style(ratatui::style::Style::default().fg(ACCENT_COLOR));
+        let block = panel(ctx.theme, "Build Placement", PanelTone::Modal);
         let inner = block.inner(banner);
         frame.render_widget(block, banner);
         let mut lines = Vec::new();
         if let Some(detail) = &ctx.map.build_placement {
             lines.push(ratatui::text::Line::styled(
                 format!("{} — {} Supplies", detail.label, detail.supply_cost),
-                ratatui::style::Style::default().fg(ACCENT_COLOR),
+                style(ctx.theme, UiTone::Accent),
             ));
             lines.push(ratatui::text::Line::from(format!(
                 "Effect: {}",
@@ -1105,7 +1094,7 @@ pub fn render_build_overlay(frame: &mut Frame, area: Rect, ctx: &WidgetRenderCon
         if let Some(reason) = &ctx.map.build_ghost_denial {
             lines.push(ratatui::text::Line::styled(
                 reason.clone(),
-                ratatui::style::Style::default().fg(ratatui::style::Color::Red),
+                style(ctx.theme, UiTone::Danger),
             ));
         }
         frame.render_widget(ratatui::widgets::Paragraph::new(lines), inner);
@@ -1148,10 +1137,7 @@ fn truncate_middle(value: &str, width: usize) -> String {
 }
 
 fn render_stats_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
-    let block = ratatui::widgets::Block::default()
-        .title(" Stats ")
-        .borders(ratatui::widgets::Borders::ALL)
-        .style(ratatui::style::Style::default().fg(ratatui::style::Color::Gray));
+    let block = panel(ctx.theme, "Stats", PanelTone::Standard);
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -1168,11 +1154,30 @@ fn render_stats_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext)
     } else {
         format!("Stored loot: {stored_loot}")
     };
-    let supplies_text = if compact_stats {
-        format!("Sup:{}", ctx.stats.supplies)
-    } else {
-        format!("Supplies: {}", ctx.stats.supplies)
-    };
+    // Supplies uses the structured display-ready gauge projected by the colony
+    // projection. The renderer consumes these facts and never recomputes
+    // pressure from flat fields or parses forecast prose.
+    let supply_gauge = ctx.stats.supplies_gauge.as_ref().map(|gauge| {
+        resource_gauge(
+            ctx.theme,
+            &gauge.label,
+            gauge.current,
+            gauge.maximum,
+            inner.width,
+            gauge.tone,
+        )
+    });
+    let supply_condition_text = ctx
+        .stats
+        .supplies_gauge
+        .as_ref()
+        .map(|gauge| format!("[{}]", gauge.condition));
+    let dawn_text = ctx
+        .stats
+        .supplies_gauge
+        .as_ref()
+        .map(|gauge| format!("DAWN {}→{}", gauge.delta, gauge.result))
+        .unwrap_or_default();
     let faith_text = format!("Faith:{}", ctx.stats.faith);
     let materials_text = if compact_stats {
         format!("Mat:{}", ctx.stats.materials)
@@ -1198,75 +1203,83 @@ fn render_stats_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext)
         )
     };
 
-    let text = vec![
-        ratatui::text::Line::from(vec![
-            ratatui::text::Span::styled(
-                "HP: ",
-                ratatui::style::Style::default().fg(ratatui::style::Color::Gray),
-            ),
-            ratatui::text::Span::styled(
-                format!("{}/{}", ctx.stats.hp_current, ctx.stats.hp_max),
-                ratatui::style::Style::default()
-                    .fg(hp_color(ctx.stats.hp_current, ctx.stats.hp_max)),
-            ),
-        ]),
-        ratatui::text::Line::from(""),
-        ratatui::text::Line::from(vec![
-            ratatui::text::Span::styled(
-                "AP: ",
-                ratatui::style::Style::default().fg(ratatui::style::Color::Gray),
-            ),
-            ratatui::text::Span::styled(
-                format!("{}/{}", ctx.stats.ap_current, ctx.stats.ap_max),
-                ratatui::style::Style::default()
-                    .fg(ap_color(ctx.stats.ap_current, ctx.stats.ap_max)),
-            ),
-        ]),
-        ratatui::text::Line::from(""),
-        ratatui::text::Line::styled(
-            supplies_text,
-            ratatui::style::Style::default().fg(ratatui::style::Color::Yellow),
+    // The resource region keeps the shared gauge, condition chip, compact dawn
+    // outlook, and the full secondary resource set at every supported profile.
+    // No established compact content is deleted to make room.
+    let mut text = vec![
+        meter(
+            ctx.theme,
+            "HP",
+            ctx.stats.hp_current,
+            ctx.stats.hp_max,
+            inner.width,
+            hp_tone(ctx.stats.hp_current, ctx.stats.hp_max),
         ),
-        ratatui::text::Line::styled(
-            faith_text,
-            ratatui::style::Style::default().fg(ACCENT_COLOR),
-        ),
-        ratatui::text::Line::styled(
-            materials_text,
-            ratatui::style::Style::default().fg(ratatui::style::Color::Yellow),
-        ),
-        ratatui::text::Line::styled(
-            plants_text,
-            ratatui::style::Style::default().fg(ratatui::style::Color::Green),
-        ),
-        ratatui::text::Line::styled(
-            stored_loot_text,
-            ratatui::style::Style::default().fg(ratatui::style::Color::Cyan),
-        ),
-        ratatui::text::Line::styled(
-            truncate_end(&last_run_text, inner.width as usize),
-            ratatui::style::Style::default().fg(MUTED_COLOR),
-        ),
-        ratatui::text::Line::from(""),
-        ratatui::text::Line::styled(
-            format!("Day: {}", ctx.stats.day),
-            ratatui::style::Style::default().fg(MUTED_COLOR),
+        meter(
+            ctx.theme,
+            "AP",
+            ctx.stats.ap_current,
+            ctx.stats.ap_max,
+            inner.width,
+            ap_tone(ctx.stats.ap_current, ctx.stats.ap_max),
         ),
         ratatui::text::Line::from(""),
     ];
+    if let (Some(gauge), Some(condition)) = (&supply_gauge, &supply_condition_text) {
+        text.push(gauge.clone());
+        text.push(ratatui::text::Line::styled(
+            condition.clone(),
+            ctx.theme.resolve(
+                ctx.stats
+                    .supplies_gauge
+                    .as_ref()
+                    .map_or(crate::visual::StyleToken::UiMuted, |gauge| gauge.tone),
+            ),
+        ));
+    }
+    text.push(if dawn_text.is_empty() {
+        ratatui::text::Line::from("")
+    } else {
+        ratatui::text::Line::styled(dawn_text, style(ctx.theme, UiTone::Warning))
+    });
+    text.push(ratatui::text::Line::styled(
+        faith_text,
+        style(ctx.theme, UiTone::Accent),
+    ));
+    text.push(ratatui::text::Line::styled(
+        materials_text,
+        style(ctx.theme, UiTone::Warning),
+    ));
+    text.push(ratatui::text::Line::styled(
+        plants_text,
+        style(ctx.theme, UiTone::Positive),
+    ));
+    text.push(ratatui::text::Line::styled(
+        stored_loot_text,
+        style(ctx.theme, UiTone::Accent),
+    ));
+    text.push(ratatui::text::Line::styled(
+        truncate_end(&last_run_text, inner.width as usize),
+        style(ctx.theme, UiTone::Muted),
+    ));
+    text.push(ratatui::text::Line::from(""));
+    text.push(ratatui::text::Line::styled(
+        format!("Day: {}", ctx.stats.day),
+        style(ctx.theme, UiTone::Text),
+    ));
+    text.push(ratatui::text::Line::from(""));
 
     // P17-D: Faction standings
-    let mut text = text;
     for (label, _val, status) in &ctx.stats.faction_standings {
-        let color = match status.as_str() {
-            "H" => ratatui::style::Color::Red,
-            "F" => ratatui::style::Color::Green,
-            "A" => ratatui::style::Color::Cyan,
-            _ => ratatui::style::Color::Gray,
+        let tone = match status.as_str() {
+            "H" => UiTone::Danger,
+            "F" => UiTone::Positive,
+            "A" => UiTone::Accent,
+            _ => UiTone::Muted,
         };
         text.push(ratatui::text::Line::styled(
             truncate_end(&format!("{}: {}", label, status), inner.width as usize),
-            ratatui::style::Style::default().fg(color),
+            style(ctx.theme, tone),
         ));
     }
 
@@ -1277,7 +1290,7 @@ fn render_stats_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext)
             } else {
                 format!("Carried loot: {}", ctx.stats.carried_loot)
             },
-            ratatui::style::Style::default().fg(ratatui::style::Color::Cyan),
+            style(ctx.theme, UiTone::Accent),
         ));
         text.push(ratatui::text::Line::styled(
             if ctx.stats.extraction_ready {
@@ -1285,11 +1298,14 @@ fn render_stats_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext)
             } else {
                 "Extraction: Reach exit"
             },
-            ratatui::style::Style::default().fg(if ctx.stats.extraction_ready {
-                ratatui::style::Color::Green
-            } else {
-                MUTED_COLOR
-            }),
+            style(
+                ctx.theme,
+                if ctx.stats.extraction_ready {
+                    UiTone::Positive
+                } else {
+                    UiTone::Muted
+                },
+            ),
         ));
     }
 
@@ -1298,98 +1314,190 @@ fn render_stats_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext)
 }
 
 fn render_log_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
-    let block = ratatui::widgets::Block::default()
-        .title(" Log ")
-        .borders(ratatui::widgets::Borders::ALL)
-        .style(ratatui::style::Style::default().fg(ratatui::style::Color::Gray));
+    // At the colony this region is the Chronicle: a news feed that wraps so a
+    // structured NEARBY fact never loses its target name or Interact hint.
+    // Other screens keep the compact truncating Log that preserves useful
+    // path tails.
+    let chronicle = ctx.screen_id == "outpost";
+    let block = panel(
+        ctx.theme,
+        if chronicle { "Chronicle" } else { "Log" },
+        PanelTone::Dense,
+    );
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let visible_rows = inner.height as usize;
-    let first_visible = ctx.log.entries.len().saturating_sub(visible_rows);
-    let mut visible = ctx
-        .log
-        .entries
-        .iter()
-        .skip(first_visible)
-        .collect::<Vec<_>>();
-    if visible_rows > 0
-        && !visible
-            .iter()
-            .any(|entry| entry.level == bd_core::gamelog::LogLevel::Warn)
-        && let Some(warning) = ctx
-            .log
-            .entries
-            .iter()
-            .rev()
-            .find(|entry| entry.level == bd_core::gamelog::LogLevel::Warn)
-    {
-        if visible.len() == visible_rows {
-            visible.remove(0);
-        }
-        visible.insert(0, warning);
-    }
-    let lines: Vec<ratatui::text::Line> = visible
-        .into_iter()
-        .map(|entry| {
-            let style = match entry.level {
-                bd_core::gamelog::LogLevel::Info => {
-                    ratatui::style::Style::default().fg(ratatui::style::Color::White)
+    // At the colony, an empty Chronicle carries the authoritative next-day
+    // outlook so the compact profile never loses the decisive forecast while
+    // the resource region keeps every secondary resource line.
+    let lines: Vec<ratatui::text::Line> =
+        if chronicle && ctx.log.entries.is_empty() && !ctx.stats.next_day_forecast.is_empty() {
+            vec![ratatui::text::Line::styled(
+                ctx.stats.next_day_forecast.clone(),
+                style(ctx.theme, UiTone::Warning),
+            )]
+        } else {
+            let visible_rows = inner.height as usize;
+            // The Chronicle renders newest-first so a wrapped fact (NEARBY) is
+            // never displaced by older one-line entries: the newest entries wrap at
+            // the top and older entries fill only remaining room. A decisive
+            // warning that overflowed out of the newest window is still pinned at
+            // the bottom so the player cannot miss it.
+            let visible = if chronicle {
+                let mut visible = ctx
+                    .log
+                    .entries
+                    .iter()
+                    .rev()
+                    .take(visible_rows)
+                    .collect::<Vec<_>>();
+                if visible_rows > 0
+                    && !visible
+                        .iter()
+                        .any(|entry| entry.level == bd_core::gamelog::LogLevel::Warn)
+                    && let Some(warning) = ctx
+                        .log
+                        .entries
+                        .iter()
+                        .rev()
+                        .find(|entry| entry.level == bd_core::gamelog::LogLevel::Warn)
+                {
+                    if visible.len() == visible_rows {
+                        visible.pop();
+                    }
+                    visible.push(warning);
                 }
-                bd_core::gamelog::LogLevel::Warn => {
-                    ratatui::style::Style::default().fg(ratatui::style::Color::Yellow)
-                }
-                bd_core::gamelog::LogLevel::Combat => {
-                    ratatui::style::Style::default().fg(ratatui::style::Color::Red)
-                }
-            };
-            let message = if entry.message.contains('/') {
-                truncate_middle(&entry.message, inner.width as usize)
+                visible
             } else {
-                truncate_end(&entry.message, inner.width as usize)
+                let first_visible = ctx.log.entries.len().saturating_sub(visible_rows);
+                let mut visible = ctx
+                    .log
+                    .entries
+                    .iter()
+                    .skip(first_visible)
+                    .collect::<Vec<_>>();
+                if visible_rows > 0
+                    && !visible
+                        .iter()
+                        .any(|entry| entry.level == bd_core::gamelog::LogLevel::Warn)
+                    && let Some(warning) = ctx
+                        .log
+                        .entries
+                        .iter()
+                        .rev()
+                        .find(|entry| entry.level == bd_core::gamelog::LogLevel::Warn)
+                {
+                    if visible.len() == visible_rows {
+                        visible.remove(0);
+                    }
+                    visible.insert(0, warning);
+                }
+                visible
             };
-            ratatui::text::Line::styled(message, style)
-        })
-        .collect();
+            visible
+                .into_iter()
+                .map(|entry| {
+                    let tone = match entry.level {
+                        bd_core::gamelog::LogLevel::Info => UiTone::Text,
+                        bd_core::gamelog::LogLevel::Warn => UiTone::Warning,
+                        bd_core::gamelog::LogLevel::Combat => UiTone::Danger,
+                    };
+                    let message = if chronicle {
+                        entry.message.clone()
+                    } else if entry.message.contains('/') {
+                        truncate_middle(&entry.message, inner.width as usize)
+                    } else {
+                        truncate_end(&entry.message, inner.width as usize)
+                    };
+                    ratatui::text::Line::styled(message, style(ctx.theme, tone))
+                })
+                .collect()
+        };
 
-    let para = ratatui::widgets::Paragraph::new(lines);
+    let mut para = ratatui::widgets::Paragraph::new(lines);
+    if chronicle {
+        para = para.wrap(ratatui::widgets::Wrap { trim: false });
+    }
     frame.render_widget(para, inner);
 }
 
 fn render_actions_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
-    let block = ratatui::widgets::Block::default()
-        .title(" Actions ")
-        .borders(ratatui::widgets::Borders::ALL)
-        .style(ratatui::style::Style::default().fg(ratatui::style::Color::Gray));
+    // At the colony this region is the Context action feed for the active
+    // nearby target; the title names the focused category/state. Other screens
+    // keep the plain Actions region.
+    let context = ctx.screen_id == "outpost";
+    let context_target = &ctx.stats.context_target;
+    let title = if let Some(target) = context_target {
+        format!("Context · {}", target.title)
+    } else if context {
+        "Context".to_string()
+    } else {
+        "Actions".to_string()
+    };
+    let block = panel(ctx.theme, title, PanelTone::Dense);
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let spans: Vec<ratatui::text::Span> = ctx
+    let mut spans = Vec::new();
+    if let Some(target) = context_target {
+        // A multi-target nearby set carries a player-facing focus selector so
+        // duplicate-named targets stay distinguishable without raw identity.
+        if target.target_count > 1 {
+            spans.push(ratatui::text::Span::styled(
+                format!(
+                    "{}/{} {},{} ",
+                    target.focus_index, target.target_count, target.position.0, target.position.1
+                ),
+                style(ctx.theme, UiTone::Muted),
+            ));
+        }
+        // Concise status stays with the context feed so the focused target's
+        // category/status never rely on glyph inference. The global Interact
+        // entry command is not a target action and is omitted from the feed.
+        spans.push(ratatui::text::Span::styled(
+            format!("{} ", target.status),
+            style(ctx.theme, UiTone::KeyHint),
+        ));
+    }
+    // Action rows carry their key hint and label; the shared disabled-preview
+    // reasons are then appended once each as compact bare tokens so the wrapped
+    // feed keeps every action row, disabled reason, and detail visible inside
+    // the three compact inner rows. Separators stay single-space so the ratatui
+    // word wrapper packs without clipping.
+    let mut rendered_reasons: Vec<&str> = Vec::new();
+    for action in ctx
         .actions
         .actions
         .iter()
-        .flat_map(|a| {
-            let key_style = if a.enabled {
-                ratatui::style::Style::default().fg(ratatui::style::Color::Yellow)
-            } else {
-                ratatui::style::Style::default().fg(MUTED_COLOR)
-            };
-            let mut parts = vec![
-                ratatui::text::Span::styled(format!("{} ", a.key_hint), key_style),
-                ratatui::text::Span::raw(a.label.to_string()),
-            ];
-            if let Some(ref reason) = a.denial_reason {
-                parts.push(ratatui::text::Span::styled(
-                    format!(" ({})", reason),
-                    ratatui::style::Style::default().fg(ratatui::style::Color::Red),
-                ));
+        .filter(|a| context_target.is_none() || a.label != "Interact")
+    {
+        let key_style = if action.enabled {
+            style(ctx.theme, UiTone::KeyHint)
+        } else {
+            style(ctx.theme, UiTone::Muted)
+        };
+        if !action.key_hint.is_empty() {
+            spans.push(ratatui::text::Span::styled(
+                format!("{} ", action.key_hint),
+                key_style,
+            ));
+        }
+        spans.push(ratatui::text::Span::raw(action.label.to_string()));
+        spans.push(ratatui::text::Span::raw(" "));
+        if let Some(reason) = action.denial_reason.as_deref() {
+            if !rendered_reasons.contains(&reason) {
+                rendered_reasons.push(reason);
             }
-            parts.push(ratatui::text::Span::raw("  "));
-            parts
-        })
-        .collect();
+        }
+    }
+    for reason in rendered_reasons {
+        spans.push(ratatui::text::Span::styled(
+            format!("{reason} "),
+            style(ctx.theme, UiTone::Danger),
+        ));
+    }
 
     let para = ratatui::widgets::Paragraph::new(ratatui::text::Line::from(spans))
         .wrap(ratatui::widgets::Wrap { trim: false });
@@ -1397,10 +1505,7 @@ fn render_actions_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContex
 }
 
 fn render_inventory_list_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
-    let block = ratatui::widgets::Block::default()
-        .title(" Inventory ")
-        .borders(ratatui::widgets::Borders::ALL)
-        .style(ratatui::style::Style::default().fg(ratatui::style::Color::Gray));
+    let block = panel(ctx.theme, "Inventory", PanelTone::Standard);
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -1418,7 +1523,7 @@ fn render_inventory_list_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRende
             };
             ratatui::text::Line::styled(
                 truncate_end(&format!(" {}{}", item.name, state), inner.width as usize),
-                ratatui::style::Style::default().fg(ratatui::style::Color::White),
+                style(ctx.theme, UiTone::Text),
             )
         })
         .collect();
@@ -1428,10 +1533,7 @@ fn render_inventory_list_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRende
 }
 
 fn render_equipment_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
-    let block = ratatui::widgets::Block::default()
-        .title(" Equipment ")
-        .borders(ratatui::widgets::Borders::ALL)
-        .style(ratatui::style::Style::default().fg(ratatui::style::Color::Gray));
+    let block = panel(ctx.theme, "Equipment", PanelTone::Standard);
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -1442,10 +1544,7 @@ fn render_equipment_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderCont
         .iter()
         .filter(|item| item.equipped)
         .map(|item| {
-            ratatui::text::Line::styled(
-                format!(" {}", item.name),
-                ratatui::style::Style::default().fg(ACCENT_COLOR),
-            )
+            ratatui::text::Line::styled(format!(" {}", item.name), style(ctx.theme, UiTone::Accent))
         })
         .collect();
 
@@ -1463,6 +1562,22 @@ pub fn compute_panel_rects(def: &ScreenDefinition, total: Rect) -> Vec<(String, 
         return vec![];
     }
 
+    // Colony and reusable screens sit inside the structural Ruined Reliquary
+    // frame: every panel is inset one cell from the terminal perimeter so the
+    // continuous double-line frame (top rule, side rails, bottom rule) owns the
+    // outermost edge. Splash screens (title, game over) stay frame-less and use
+    // the full content area to preserve their centered layout.
+    let layout_total = if matches!(def.id.as_str(), "title" | "game_over") {
+        total
+    } else {
+        Rect {
+            x: total.x + 1,
+            y: total.y + 1,
+            width: total.width.saturating_sub(2),
+            height: total.height.saturating_sub(1),
+        }
+    };
+
     // Separate main vs non-main panels
     let non_main: Vec<&PanelDefinition> = def
         .panels
@@ -1476,12 +1591,12 @@ pub fn compute_panel_rects(def: &ScreenDefinition, total: Rect) -> Vec<(String, 
         .collect();
 
     let mut result = Vec::new();
-    let mut remaining = total;
+    let mut remaining = layout_total;
 
     // Process left panels first
     for panel in &non_main {
         if let PanelLayout::Left { width_pct } = panel.layout {
-            let w = (total.width * width_pct / 100).max(1);
+            let w = (layout_total.width * width_pct / 100).max(1);
             let left = Rect {
                 width: w,
                 ..remaining
@@ -1498,7 +1613,7 @@ pub fn compute_panel_rects(def: &ScreenDefinition, total: Rect) -> Vec<(String, 
     // Process right panels
     for panel in &non_main {
         if let PanelLayout::Right { width_pct } = panel.layout {
-            let w = (total.width * width_pct / 100).max(1);
+            let w = (layout_total.width * width_pct / 100).max(1);
             let right = Rect {
                 x: remaining.x + remaining.width.saturating_sub(w),
                 width: w,
@@ -1515,7 +1630,7 @@ pub fn compute_panel_rects(def: &ScreenDefinition, total: Rect) -> Vec<(String, 
     // Process top panels
     for panel in &non_main {
         if let PanelLayout::Top { height_pct } = panel.layout {
-            let h = (total.height * height_pct / 100).max(1);
+            let h = (layout_total.height * height_pct / 100).max(1);
             let top = Rect {
                 height: h,
                 ..remaining
@@ -1532,7 +1647,7 @@ pub fn compute_panel_rects(def: &ScreenDefinition, total: Rect) -> Vec<(String, 
     // Process bottom panels
     for panel in &non_main {
         if let PanelLayout::Bottom { height_pct } = panel.layout {
-            let h = (total.height * height_pct / 100).max(1);
+            let h = (layout_total.height * height_pct / 100).max(1);
             let bottom = Rect {
                 y: remaining.y + remaining.height.saturating_sub(h),
                 height: h,
@@ -1559,10 +1674,7 @@ pub fn compute_panel_rects(def: &ScreenDefinition, total: Rect) -> Vec<(String, 
 // ---------------------------------------------------------------------------
 
 fn render_outpost_party_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
-    let block = ratatui::widgets::Block::default()
-        .title(" Party ")
-        .borders(ratatui::widgets::Borders::ALL)
-        .style(ratatui::style::Style::default().fg(ratatui::style::Color::Gray));
+    let block = panel(ctx.theme, "Party", PanelTone::Dense);
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -1570,37 +1682,25 @@ fn render_outpost_party_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRender
     let mut lines = Vec::new();
     if !ctx.stats.latest_daily_summary.is_empty() {
         lines.extend(ctx.stats.latest_daily_summary.iter().map(|summary_line| {
-            ratatui::text::Line::styled(
-                summary_line.clone(),
-                ratatui::style::Style::default()
-                    .fg(ratatui::style::Color::Yellow)
-                    .add_modifier(ratatui::style::Modifier::BOLD),
-            )
+            ratatui::text::Line::styled(summary_line.clone(), style(ctx.theme, UiTone::KeyHint))
         }));
         lines.push(ratatui::text::Line::from(""));
     }
     if ctx.stats.party_names.is_empty() {
         lines.push(ratatui::text::Line::styled(
             " (empty)",
-            ratatui::style::Style::default().fg(MUTED_COLOR),
+            style(ctx.theme, UiTone::Muted),
         ));
     } else {
         lines.extend(ctx.stats.party_names.iter().map(|name| {
-            ratatui::text::Line::styled(
-                format!(" {}", name),
-                ratatui::style::Style::default().fg(ratatui::style::Color::White),
-            )
+            ratatui::text::Line::styled(format!(" {}", name), style(ctx.theme, UiTone::Text))
         }));
         lines.extend(ctx.stats.station_status.iter().map(|status| {
-            ratatui::text::Line::styled(
-                format!(" {status}"),
-                ratatui::style::Style::default().fg(ACCENT_COLOR),
-            )
+            ratatui::text::Line::styled(format!(" {status}"), style(ctx.theme, UiTone::Accent))
         }));
-        lines.push(ratatui::text::Line::styled(
-            format!(" {}", ctx.stats.next_day_forecast),
-            ratatui::style::Style::default().fg(ratatui::style::Color::Yellow),
-        ));
+        // The dawn forecast lives in the Chronicle when there is no recent
+        // history, so it stays visible at both profiles without shrinking the
+        // party column or dropping secondary resources.
     }
 
     let para = ratatui::widgets::Paragraph::new(lines).wrap(ratatui::widgets::Wrap { trim: false });
@@ -1612,18 +1712,13 @@ fn render_outpost_party_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRender
 // ---------------------------------------------------------------------------
 
 fn render_help_keys_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
-    let block = ratatui::widgets::Block::default()
-        .title(" Help ")
-        .borders(ratatui::widgets::Borders::ALL)
-        .style(ratatui::style::Style::default().fg(ACCENT_COLOR));
+    let block = panel(ctx.theme, "Help", PanelTone::Modal);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
     let mut lines: Vec<ratatui::text::Line> = vec![ratatui::text::Line::styled(
         " Controls and shelter legend",
-        ratatui::style::Style::default()
-            .fg(ACCENT_COLOR)
-            .add_modifier(ratatui::style::Modifier::BOLD),
+        style(ctx.theme, UiTone::Title),
     )];
     let column_gap = 2_usize;
     let inner_width = inner.width as usize;
@@ -1646,12 +1741,12 @@ fn render_help_keys_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderCont
         );
         lines.push(ratatui::text::Line::styled(
             format!("{left:<column_width$}{:column_gap$}{right}", ""),
-            ratatui::style::Style::default().fg(ratatui::style::Color::White),
+            style(ctx.theme, UiTone::Text),
         ));
     }
     lines.push(ratatui::text::Line::styled(
         " ? or Esc: close Help",
-        ratatui::style::Style::default().fg(MUTED_COLOR),
+        style(ctx.theme, UiTone::Muted),
     ));
 
     let para = ratatui::widgets::Paragraph::new(lines);
@@ -1659,10 +1754,7 @@ fn render_help_keys_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderCont
 }
 
 fn render_debug_trace_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
-    let block = ratatui::widgets::Block::default()
-        .title(" Signal Trace (F1: toggle) ")
-        .borders(ratatui::widgets::Borders::ALL)
-        .style(ratatui::style::Style::default().fg(ratatui::style::Color::Gray));
+    let block = panel(ctx.theme, "Signal Trace (F1: toggle)", PanelTone::Standard);
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -1674,18 +1766,12 @@ fn render_debug_trace_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderCo
         .rev()
         .take(inner.height as usize)
         .map(|entry| {
-            let style = match entry.level {
-                bd_core::gamelog::LogLevel::Info => {
-                    ratatui::style::Style::default().fg(ratatui::style::Color::White)
-                }
-                bd_core::gamelog::LogLevel::Warn => {
-                    ratatui::style::Style::default().fg(ratatui::style::Color::Yellow)
-                }
-                bd_core::gamelog::LogLevel::Combat => {
-                    ratatui::style::Style::default().fg(ratatui::style::Color::Red)
-                }
+            let tone = match entry.level {
+                bd_core::gamelog::LogLevel::Info => UiTone::Text,
+                bd_core::gamelog::LogLevel::Warn => UiTone::Warning,
+                bd_core::gamelog::LogLevel::Combat => UiTone::Danger,
             };
-            ratatui::text::Line::styled(entry.message.as_str(), style)
+            ratatui::text::Line::styled(entry.message.as_str(), style(ctx.theme, tone))
         })
         .collect();
 
@@ -1709,12 +1795,8 @@ fn render_event_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext)
         ctx.event.speaker, ctx.event.text
     );
     let para = ratatui::widgets::Paragraph::new(text)
-        .style(ratatui::style::Style::default().fg(ratatui::style::Color::White))
-        .block(
-            ratatui::widgets::Block::default()
-                .title(" Event ")
-                .borders(ratatui::widgets::Borders::ALL),
-        );
+        .style(style(ctx.theme, UiTone::Text))
+        .block(panel(ctx.theme, "Event", PanelTone::Standard));
     frame.render_widget(para, area);
 }
 
@@ -1733,12 +1815,8 @@ fn render_event_choices_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRender
         ));
     }
     let para = ratatui::widgets::Paragraph::new(text)
-        .style(ratatui::style::Style::default().fg(ratatui::style::Color::Yellow))
-        .block(
-            ratatui::widgets::Block::default()
-                .title(" Choices ")
-                .borders(ratatui::widgets::Borders::ALL),
-        );
+        .style(style(ctx.theme, UiTone::Warning))
+        .block(panel(ctx.theme, "Choices", PanelTone::Standard));
     frame.render_widget(para, area);
 }
 

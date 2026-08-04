@@ -217,7 +217,7 @@ fn foundation_direct_gather_rules_are_declared_in_content() {
 #[test]
 fn direct_gather_requires_three_work_ticks_and_credits_once() {
     let mut driver = colony_driver(22_001);
-    let survivor = named_survivor(&mut driver, "Survivor 1");
+    let survivor = named_survivor(&mut driver, "Mara");
     driver.fixture_set_colony_resource(PoolKind::Supplies, 5);
     place_at_matching_work_tile(&mut driver, survivor, PoolKind::Supplies);
     assign_direct_gathering(&mut driver, survivor, PoolKind::Supplies);
@@ -263,7 +263,7 @@ fn direct_gather_requires_three_work_ticks_and_credits_once() {
 fn day_boundary_does_not_credit_legacy_direct_gather_output() {
     let mut driver = colony_driver(22_002);
     wait_until_turn(&mut driver, 22);
-    let survivor = named_survivor(&mut driver, "Survivor 2");
+    let survivor = named_survivor(&mut driver, "Iven");
     driver.fixture_set_colony_resource(PoolKind::Materials, 5);
     place_at_matching_work_tile(&mut driver, survivor, PoolKind::Materials);
     assign_direct_gathering(&mut driver, survivor, PoolKind::Materials);
@@ -305,7 +305,7 @@ fn day_boundary_does_not_credit_legacy_direct_gather_output() {
 #[test]
 fn render_and_tactical_frames_do_not_advance_direct_gathering() {
     let mut driver = colony_driver(22_003);
-    let survivor = named_survivor(&mut driver, "Survivor 3");
+    let survivor = named_survivor(&mut driver, "Tala");
     driver.fixture_set_colony_resource(PoolKind::WildPlants, 5);
     place_at_matching_work_tile(&mut driver, survivor, PoolKind::WildPlants);
     assign_direct_gathering(&mut driver, survivor, PoolKind::WildPlants);
@@ -349,7 +349,7 @@ fn render_and_tactical_frames_do_not_advance_direct_gathering() {
 #[test]
 fn partial_direct_gather_progress_survives_save_load_without_free_output() {
     let mut original = colony_driver(22_004);
-    let survivor = named_survivor(&mut original, "Survivor 1");
+    let survivor = named_survivor(&mut original, "Mara");
     original.fixture_set_colony_resource(PoolKind::Supplies, 5);
     place_at_matching_work_tile(&mut original, survivor, PoolKind::Supplies);
     assign_direct_gathering(&mut original, survivor, PoolKind::Supplies);
@@ -360,7 +360,7 @@ fn partial_direct_gather_progress_survives_save_load_without_free_output() {
     let checkpoint = original.checkpoint().expect("checkpoint must serialize");
     let mut restored =
         FoundationDriver::from_checkpoint(&checkpoint).expect("checkpoint must restore");
-    let restored_survivor = named_survivor(&mut restored, "Survivor 1");
+    let restored_survivor = named_survivor(&mut restored, "Mara");
     assert_eq!(resource(&restored, PoolKind::Supplies), before);
     assert_eq!(
         restored.survivor_task(restored_survivor),
@@ -385,7 +385,7 @@ fn partial_direct_gather_progress_survives_save_load_without_free_output() {
 #[test]
 fn reassignment_clears_partial_direct_gather_progress_without_output() {
     let mut driver = colony_driver(22_005);
-    let survivor = named_survivor(&mut driver, "Survivor 2");
+    let survivor = named_survivor(&mut driver, "Iven");
     driver.fixture_set_colony_resource(PoolKind::Materials, 5);
     place_at_matching_work_tile(&mut driver, survivor, PoolKind::Materials);
     assign_direct_gathering(&mut driver, survivor, PoolKind::Materials);
@@ -432,7 +432,7 @@ fn every_foundation_direct_gather_task_uses_the_same_three_tick_rule() {
 
     for (case_id, kind) in cases {
         let mut driver = colony_driver(22_100 + case_id.len() as u64);
-        let survivor = named_survivor(&mut driver, "Survivor 1");
+        let survivor = named_survivor(&mut driver, "Mara");
         driver.fixture_set_colony_resource(kind, 5);
         let work_position = place_at_matching_work_tile(&mut driver, survivor, kind);
         assign_direct_gathering(&mut driver, survivor, kind);
@@ -459,7 +459,7 @@ fn every_foundation_direct_gather_task_uses_the_same_three_tick_rule() {
 #[test]
 fn zero_supplies_recovers_after_three_worker_ticks_without_waiting_for_day_end() {
     let mut driver = colony_driver(22_006);
-    let survivor = named_survivor(&mut driver, "Survivor 3");
+    let survivor = named_survivor(&mut driver, "Tala");
     driver.fixture_set_colony_resource(PoolKind::Supplies, 0);
     place_at_matching_work_tile(&mut driver, survivor, PoolKind::Supplies);
     assign_direct_gathering(&mut driver, survivor, PoolKind::Supplies);
@@ -484,7 +484,7 @@ fn zero_supplies_recovers_after_three_worker_ticks_without_waiting_for_day_end()
 fn rest_and_equivalent_individual_turns_preserve_direct_gather_results() {
     let mut individual = colony_driver(22_007);
     wait_until_turn(&mut individual, 21);
-    let survivor = named_survivor(&mut individual, "Survivor 1");
+    let survivor = named_survivor(&mut individual, "Mara");
     place_at_matching_work_tile(&mut individual, survivor, PoolKind::Materials);
     assign_direct_gathering(&mut individual, survivor, PoolKind::Materials);
     let checkpoint = individual.checkpoint().expect("fixture must checkpoint");

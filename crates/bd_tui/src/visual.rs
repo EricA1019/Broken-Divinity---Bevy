@@ -52,6 +52,21 @@ pub enum StyleToken {
     Danger,
     Muted,
     Selection,
+    UiText,
+    UiMuted,
+    UiAccent,
+    UiPositive,
+    UiWarning,
+    UiInfo,
+    UiDanger,
+    UiPanelBorder,
+    UiPanelTitle,
+    UiModalBorder,
+    UiModalTitle,
+    UiKeyHint,
+    /// Brand wordmark on the title screen — deliberately distinct from the
+    /// Cinder Rite panel/modal title copper so the product mark stays stable.
+    TitleWordmark,
 }
 
 /// Maps a VisualToken to its glyph and style.

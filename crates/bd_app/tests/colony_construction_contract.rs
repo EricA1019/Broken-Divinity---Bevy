@@ -41,7 +41,7 @@ fn idle_survivors_travel_to_and_complete_construction_without_stealing_assigned_
     let mut driver = colony_driver();
     let player = driver.player().unwrap();
     let protected = driver
-        .survivor_by_name("Survivor 1")
+        .survivor_by_name("Mara")
         .expect("stable protected survivor must exist");
     driver
         .submit_action_and_advance_result_frame(
