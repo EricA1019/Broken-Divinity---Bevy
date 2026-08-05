@@ -892,6 +892,104 @@ fn render_map_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
 }
 
 pub fn render_build_overlay(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContext) {
+    if let Some(menu) = &ctx.stats.context_menu {
+        let mut lines = Vec::new();
+        if menu.phase == crate::ContextMenuPhase::Picker {
+            lines.push(ratatui::text::Line::styled(
+                "Select target:",
+                style(ctx.theme, UiTone::Accent),
+            ));
+            for (index, target) in menu.targets.iter().enumerate() {
+                let selected = index == menu.focused_index;
+                lines.push(ratatui::text::Line::styled(
+                    format!(
+                        "{} {}. {} ({})",
+                        if selected { "▶" } else { " " },
+                        index + 1,
+                        target.name,
+                        target.category
+                    ),
+                    style(
+                        ctx.theme,
+                        if selected {
+                            UiTone::Accent
+                        } else {
+                            UiTone::Text
+                        },
+                    ),
+                ));
+            }
+        } else {
+            lines.push(ratatui::text::Line::styled(
+                format!("{} — {}", menu.target_name, menu.category),
+                style(ctx.theme, UiTone::Accent),
+            ));
+            lines.push(ratatui::text::Line::styled(
+                menu.detail.clone(),
+                style(ctx.theme, UiTone::KeyHint),
+            ));
+            if menu.actions.is_empty() {
+                lines.push(ratatui::text::Line::styled(
+                    "No actions available.",
+                    style(ctx.theme, UiTone::Muted),
+                ));
+            }
+            for (index, action) in menu.actions.iter().enumerate() {
+                let selected = menu.selected == Some(index);
+                let tone = if !action.enabled {
+                    UiTone::Muted
+                } else if selected {
+                    UiTone::Accent
+                } else {
+                    UiTone::Text
+                };
+                let reason = action
+                    .denial_reason
+                    .as_deref()
+                    .map(|reason| format!(" ({reason})"))
+                    .unwrap_or_default();
+                lines.push(ratatui::text::Line::styled(
+                    format!(
+                        "{} {}. {}{reason}",
+                        if selected { "▶" } else { " " },
+                        action.key_hint,
+                        action.label
+                    ),
+                    style(ctx.theme, tone),
+                ));
+            }
+        }
+        lines.push(ratatui::text::Line::styled(
+            "1-9:select  Enter:confirm  x/Esc:cancel",
+            style(ctx.theme, UiTone::Muted),
+        ));
+
+        let width = area.width.saturating_sub(2).min(76);
+        let inner_width = usize::from(width.saturating_sub(2)).max(1);
+        let wrapped_rows = lines
+            .iter()
+            .map(|line| line.width().max(1).div_ceil(inner_width))
+            .sum::<usize>();
+        let height = u16::try_from(wrapped_rows.saturating_add(2))
+            .unwrap_or(area.height)
+            .min(area.height);
+        let modal = Rect {
+            x: area.x + area.width.saturating_sub(width) / 2,
+            y: area.y + area.height.saturating_sub(height) / 2,
+            width,
+            height,
+        };
+        frame.render_widget(ratatui::widgets::Clear, modal);
+        let block = panel(ctx.theme, " Context ", PanelTone::Modal);
+        let inner = block.inner(modal);
+        frame.render_widget(block, modal);
+        frame.render_widget(
+            ratatui::widgets::Paragraph::new(lines).wrap(ratatui::widgets::Wrap { trim: true }),
+            inner,
+        );
+        return;
+    }
+
     if let Some(menu) = &ctx.stats.management {
         let stages = match menu.kind {
             super::view_models::ManagementMenuKind::TaskAssignment => {

@@ -974,6 +974,7 @@ fn render_buffer(
         mode,
         map.build_menu.is_some() || map.build_ghost.is_some(),
         stats.management.as_ref().map(|menu| menu.kind),
+        stats.context_menu.is_some(),
     );
     let data = UiFrameData {
         definition,
@@ -2267,6 +2268,7 @@ fn closed_management_modal_leaves_the_same_canvas_as_a_clean_overview() {
                 GameMode::Outpost,
                 false,
                 stats.management.as_ref().map(|menu| menu.kind),
+                stats.context_menu.is_some(),
             ),
             turn: 0,
             day: 0,
@@ -2891,22 +2893,27 @@ fn blocked_colonist_context_includes_target_and_reason() {
 
 #[test]
 fn a_binding_without_a_context_reducer_does_not_enable_interact() {
-    // Supporting contract: VISUAL-CONTEXT-001 action truth.
-    // Given: a test binding names Interact but the normal Outpost router still
-    // has no Interact reducer route. Then: Context must keep Interact disabled
-    // with a truthful menu/reducer reason. Binding reachability alone is not
-    // executability, and this test must remain green when UI9-D later supplies
-    // both facts together.
-    let mut bindings = commands::CommandBindings::default();
-    bindings.bind(commands::UiCommand::Interact, KeyCode::Char('x'));
+    // Supporting contract: VISUAL-CONTEXT-001 action truth (UI9-D).
+    // Given: the UI9-D reducer now exists and the default Outpost router
+    // resolves the configured Interact binding while a nearby target is present.
+    // Then: Interact is enabled with the binding hint and no denial reason.
+    // Binding reachability, an active reducer route, and a projected target must
+    // all agree before any row is enabled; the historical no-reducer state that
+    // kept a bound Interact disabled is superseded by the Section 17.2 decision.
+    let bindings = commands::CommandBindings::default();
+    assert_eq!(
+        bindings.key_for(commands::UiCommand::Interact).copied(),
+        Some(KeyCode::Char('x')),
+        "UI9-D must configure the Interact binding"
+    );
     assert_eq!(
         bindings.command_for_key_in(
             &KeyCode::Char('x'),
             GameMode::Outpost,
             commands::InteractionMode::Normal,
         ),
-        None,
-        "fixture must prove bound-but-unroutable rather than unbound"
+        Some(commands::UiCommand::Interact),
+        "the Outpost router must resolve the configured Interact binding"
     );
     let (_, _, _, _, _, _, actions, _) = production_context_fixture("station-bound-interact");
     let interact = actions
@@ -2914,16 +2921,215 @@ fn a_binding_without_a_context_reducer_does_not_enable_interact() {
         .iter()
         .find(|action| action.label == "Interact")
         .expect("bound seam fixture must project Interact");
-    let reason = interact.denial_reason.as_deref().unwrap_or_default();
     assert!(
-        !interact.enabled
-            && interact.key_hint == "x"
-            && ["menu", "reducer", "route"]
-                .iter()
-                .any(|term| reason.to_ascii_lowercase().contains(term)),
-        "contract=VISUAL-CONTEXT-001 case=bound-without-reducer \
+        interact.enabled && interact.key_hint == "x" && interact.denial_reason.is_none(),
+        "contract=VISUAL-CONTEXT-001 case=bound-with-reducer \
          workflow_step=cross_check_applicability_reachability_executability \
-         expected=disabled_x_binding_with_route_reason actual={interact:?}"
+         expected=enabled_x_binding_with_context_reducer actual={interact:?}"
+    );
+}
+
+#[test]
+fn ui9_d_interact_opens_paused_context_menu_and_routes_actions() {
+    // Contract: UI9-D input reducer and menu shell.
+    // Given: the player enters cardinal range of an operational station.
+    // When: the configured Interact key is pressed.
+    // Then: a paused Context menu opens on the focused target, every normal
+    // world input is paused while open, an enabled action routes into the
+    // existing management workflow, and cancel returns to Normal.
+    // Must not change: `e` staffing, `c` task assignment, Set Production
+    // disabled (Coming later), map primacy, or any simulation/resource state.
+    // Evidence layers: InputStateMachine, Projection, Workflow.
+    let mut app = production_outpost_runtime();
+    let player = app
+        .world_mut()
+        .query_filtered::<Entity, With<Player>>()
+        .iter(app.world())
+        .next()
+        .expect("Foundation player must exist");
+    let target = app
+        .world_mut()
+        .query_filtered::<(Entity, &Name, &Position, &StationType), With<Station>>()
+        .iter(app.world())
+        .filter_map(|(entity, _, _, station_type)| {
+            (*station_type == StationType::Custom(1)).then_some(entity)
+        })
+        .next()
+        .expect("Foundation fixture must contain Basic Processing");
+    let occupied = app
+        .world_mut()
+        .query::<(Entity, &Position)>()
+        .iter(app.world())
+        .filter_map(|(entity, position)| {
+            (entity != target && entity != player).then_some(*position)
+        })
+        .collect::<Vec<_>>();
+    let map = &app.world().resource::<bd_core::spatial::OutpostState>().map;
+    let (target_position, adjacent_position, start_position) = (1..map.height - 1)
+        .flat_map(|y| (1..map.width - 3).map(move |x| (x, y)))
+        .find_map(|(x, y)| {
+            let target_position = Position { x, y };
+            let adjacent_position = Position { x: x + 1, y };
+            let start_position = Position { x: x + 2, y };
+            (map.is_walkable(target_position.x, target_position.y)
+                && map.is_walkable(adjacent_position.x, adjacent_position.y)
+                && map.is_walkable(start_position.x, start_position.y)
+                && !occupied.iter().any(|position| {
+                    *position == target_position
+                        || *position == adjacent_position
+                        || *position == start_position
+                        || (position.x - adjacent_position.x).unsigned_abs()
+                            + (position.y - adjacent_position.y).unsigned_abs()
+                            <= 1
+                }))
+            .then_some((target_position, adjacent_position, start_position))
+        })
+        .expect("UI9-D workflow needs one isolated two-step approach");
+    app.world_mut().entity_mut(target).insert(target_position);
+    app.world_mut().entity_mut(player).insert(start_position);
+    app.world_mut()
+        .insert_resource(bd_core::colony::proximity::NearbyInteractables::default());
+    app.world_mut().insert_resource(GameLog::default());
+    app.update();
+    {
+        let mut messages = app.world_mut().resource_mut::<Messages<KeyMessage>>();
+        messages.write(KeyMessage(KeyEvent::new_with_kind(
+            KeyCode::Char('a'),
+            KeyModifiers::NONE,
+            KeyEventKind::Press,
+        )));
+        messages.write(KeyMessage(KeyEvent::new_with_kind(
+            KeyCode::Char('a'),
+            KeyModifiers::NONE,
+            KeyEventKind::Release,
+        )));
+    }
+    app.update();
+    app.update();
+    assert_eq!(
+        app.world().get::<Position>(player),
+        Some(&adjacent_position),
+        "UI9-D workflow must enter range of the station"
+    );
+
+    // Interact is enabled with the configured binding while a target is near.
+    let actions = app.world().resource::<ActionListViewModel>();
+    let interact = actions
+        .actions
+        .iter()
+        .find(|action| action.label == "Interact")
+        .expect("adjacent station must project Interact");
+    assert!(
+        interact.enabled && interact.key_hint == "x",
+        "UI9-D must project enabled Interact with the x binding"
+    );
+
+    // Open the paused Context menu through the Interact key.
+    advance_context_key(&mut app, KeyCode::Char('x'));
+    let menu = app
+        .world()
+        .resource::<StatsViewModel>()
+        .context_menu
+        .as_ref()
+        .expect("Interact must open the Context menu on a nearby station")
+        .clone();
+    assert_eq!(menu.target_name, "Basic Processing");
+    assert!(menu.actions.iter().any(|a| a.label == "Set Production"));
+    let assign_index = menu
+        .actions
+        .iter()
+        .position(|a| a.label == "Assign Worker")
+        .expect("station Context menu must offer Assign Worker");
+
+    // Every normal-world input is paused while the menu is open.
+    let before = *app
+        .world()
+        .get::<Position>(player)
+        .expect("player position must exist");
+    advance_context_key(&mut app, KeyCode::Char('w'));
+    let after = *app
+        .world()
+        .get::<Position>(player)
+        .expect("player position must exist");
+    assert_eq!(
+        before, after,
+        "normal movement must be paused while the Context menu is open"
+    );
+    assert!(
+        app.world()
+            .resource::<StatsViewModel>()
+            .context_menu
+            .is_some(),
+        "Context menu must stay open while paused input is rejected"
+    );
+
+    // Select Assign Worker and confirm: it routes into the existing staffing
+    // workflow and the Context menu closes.
+    advance_context_key(
+        &mut app,
+        KeyCode::Char(char::from(b'1' + u8::try_from(assign_index).unwrap())),
+    );
+    advance_context_key(&mut app, KeyCode::Enter);
+    let stats = app.world().resource::<StatsViewModel>();
+    assert!(
+        stats.context_menu.is_none(),
+        "Context menu must close after confirming a routed action"
+    );
+    assert_eq!(
+        stats.management.as_ref().map(|menu| menu.kind),
+        Some(view_models::ManagementMenuKind::StationStaffing),
+        "Assign Worker must route into the existing station staffing workflow"
+    );
+
+    // Cancel the staffing menu through its existing `e` control.
+    advance_context_key(&mut app, KeyCode::Char('e'));
+    assert!(
+        app.world()
+            .resource::<StatsViewModel>()
+            .management
+            .is_none(),
+        "staffing menu must cancel through its existing control"
+    );
+
+    // Reopen and cancel the Context menu through its own control.
+    advance_context_key(&mut app, KeyCode::Char('x'));
+    assert!(
+        app.world()
+            .resource::<StatsViewModel>()
+            .context_menu
+            .is_some(),
+        "Interact must reopen the Context menu"
+    );
+    advance_context_key(&mut app, KeyCode::Char('x'));
+    assert!(
+        app.world()
+            .resource::<StatsViewModel>()
+            .context_menu
+            .is_none(),
+        "Interact/Esc must cancel the Context menu"
+    );
+
+    // Set Production stays a disabled Coming-later placeholder inside the menu.
+    advance_context_key(&mut app, KeyCode::Char('x'));
+    let menu = app
+        .world()
+        .resource::<StatsViewModel>()
+        .context_menu
+        .as_ref()
+        .expect("Context menu must reopen for the placeholder check")
+        .clone();
+    let set_production = menu
+        .actions
+        .iter()
+        .find(|a| a.label == "Set Production")
+        .expect("station Context menu must keep Set Production");
+    assert!(
+        !set_production.enabled
+            && set_production
+                .denial_reason
+                .as_deref()
+                .is_some_and(|reason| reason.contains("Coming later")),
+        "Set Production must remain a disabled Coming-later placeholder"
     );
 }
 
@@ -3126,12 +3332,13 @@ fn blocked_colonist_reason_survives_final_composition() {
 }
 
 fn assert_passive_context_action_truth(case_id: &str) {
-    // Supporting contract: VISUAL-CONTEXT-001
+    // Supporting contract: VISUAL-CONTEXT-001 / UI9-D
     // Given: UI9-C projects a real nearby station, node, or colonist while the
-    // owner-locked Interact binding and Context reducer do not yet exist.
+    // UI9-D Context reducer exists and `x` is the configured Interact binding.
     // When: the production action projection advertises the target's preview actions.
-    // Then: every preview is visibly disabled with a truthful reason; no invented
-    // key hint is presented as executable.
+    // Then: Interact is enabled with the configured binding hint; every other
+    // preview stays visibly disabled with a truthful reason; no invented key
+    // hint is presented as executable.
     // Must not change: `e` remains station staffing, `c` remains task assignment,
     // and Set Production remains unavailable as Coming later.
     // Evidence layers: projection and input-state presentation.
@@ -3141,34 +3348,40 @@ fn assert_passive_context_action_truth(case_id: &str) {
     //   applicability from binding reachability and executable state.
     // - Integration seam: action rows, configured bindings, and the active input
     //   reducer must agree before any row is enabled.
-    // - Preserve: D-20 controls and the Section 17.2 owner lock.
+    // - Preserve: D-20 controls and the Section 17.2 owner decision (`x`).
     // - Invalid shortcuts: `unbound` is not enabled; `a`, `p`, or Enter cannot be
     //   borrowed from unrelated world commands; a non-empty hint is not reachability.
     // - Closing evidence: rerun this category matrix, input/Help/footer neighbors,
-    //   the canonical gate, and the eventual UI9-D production workflow.
+    //   the canonical gate, and the UI9-D production workflow.
     let (_, _, _, _, _, _, actions, _) = production_context_fixture(case_id);
     let bindings = commands::CommandBindings::default();
-    assert!(
-        bindings.key_for(commands::UiCommand::Interact).is_none(),
-        "contract=VISUAL-CONTEXT-001 case={case_id} fixture=owner-locked-bindings \
-             precondition=UI9_D_not_authorized expected=Interact_unbound"
+    assert_eq!(
+        bindings
+            .key_for(commands::UiCommand::Interact)
+            .map(commands::config_key_name)
+            .as_deref(),
+        Some("x"),
+        "contract=VISUAL-CONTEXT-001 case={case_id} fixture=ui9-d-bindings \
+             workflow_step=read_interact_binding expected=Interact_bound_to_x"
     );
     for action in &actions.actions {
         let reason = action.denial_reason.as_deref().unwrap_or_default();
+        if action.label == "Interact" {
+            assert!(
+                action.enabled && action.key_hint == "x" && reason.is_empty(),
+                "contract=VISUAL-CONTEXT-001 case={case_id} fixture=production-adjacent-{case_id} \
+                     workflow_step=read_interact_executability \
+                 expected=enabled_x_binding_with_context_reducer actual_action={action:?}"
+            );
+            continue;
+        }
         assert!(
             !action.enabled && !reason.trim().is_empty(),
             "contract=VISUAL-CONTEXT-001 case={case_id} fixture=production-adjacent-{case_id} \
                  workflow_step=cross_check_preview_reachability \
                  expected=disabled_preview_with_truthful_reason actual_action={action:?}"
         );
-        if action.label == "Interact" {
-            assert_eq!(
-                action.key_hint, "unbound",
-                "contract=VISUAL-CONTEXT-001 case={case_id} fixture=owner-locked-bindings \
-                     workflow_step=read_interact_preview expected=unbound_hint \
-                     actual_action={action:?}"
-            );
-        } else if action.label.contains("Set Production") {
+        if action.label.contains("Set Production") {
             assert!(
                 reason.contains("Coming later"),
                 "contract=VISUAL-CONTEXT-001 case={case_id} \

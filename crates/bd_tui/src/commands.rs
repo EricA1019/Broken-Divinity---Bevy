@@ -49,6 +49,9 @@ pub enum InteractionMode {
     Build,
     TaskManagement,
     StationStaffing,
+    /// UI9-D paused Context menu opened through the Interact key on a nearby
+    /// target. While active, only context navigation/invoke/cancel keys route.
+    ContextMenu,
     GameOver,
 }
 
@@ -179,11 +182,11 @@ impl Default for CommandBindings {
                 (UiCommand::AssignTask, KeyCode::Char('c')),
                 (UiCommand::AssignStation, KeyCode::Char('e')),
                 (UiCommand::Build, KeyCode::Char('b')),
-                // No physical Interact binding: Section 17.2 of the UI9 plan
-                // owner-locks the interaction key. `e` stays station staffing
-                // and the projection reports the semantic action as unbound
-                // until the later input/menu-shell contract records the
-                // decision.
+                // UI9-D owner lock (Section 17.2): `x` is the dedicated
+                // Interact key that opens the Context menu on the focused
+                // nearby target. `e` stays station staffing and `c` stays
+                // task assignment; the Context reducer routes through `x`.
+                (UiCommand::Interact, KeyCode::Char('x')),
                 (UiCommand::Save, KeyCode::F(5)),
                 (UiCommand::Load, KeyCode::F(9)),
                 (UiCommand::Quit, KeyCode::Char('q')),
@@ -239,6 +242,7 @@ impl CommandBindings {
             (GameMode::Outpost, InteractionMode::Normal),
             (GameMode::Tactical, InteractionMode::Normal),
             (GameMode::Outpost, InteractionMode::Build),
+            (GameMode::Outpost, InteractionMode::ContextMenu),
             (GameMode::GameOver, InteractionMode::GameOver),
         ];
         let mut conflicts = Vec::new();
@@ -344,6 +348,7 @@ fn command_order(mode: GameMode, interaction: InteractionMode) -> &'static [UiCo
         UiCommand::Quit,
     ];
     const MANAGEMENT: &[UiCommand] = &[];
+    const CONTEXT: &[UiCommand] = &[UiCommand::Interact, UiCommand::Quit];
     const TITLE: &[UiCommand] = &[UiCommand::Load, UiCommand::Quit];
     const COLONY: &[UiCommand] = &[
         UiCommand::Travel,
@@ -358,6 +363,7 @@ fn command_order(mode: GameMode, interaction: InteractionMode) -> &'static [UiCo
         UiCommand::Wait,
         UiCommand::AssignTask,
         UiCommand::AssignStation,
+        UiCommand::Interact,
         UiCommand::Help,
         UiCommand::Save,
         UiCommand::Load,
@@ -390,6 +396,7 @@ fn command_order(mode: GameMode, interaction: InteractionMode) -> &'static [UiCo
     match interaction {
         InteractionMode::Build => BUILD,
         InteractionMode::TaskManagement | InteractionMode::StationStaffing => MANAGEMENT,
+        InteractionMode::ContextMenu => CONTEXT,
         InteractionMode::GameOver => GAME_OVER,
         InteractionMode::Normal => match mode {
             GameMode::Title => TITLE,
@@ -822,6 +829,20 @@ pub fn footer_control_lines(
             line.push_str(token);
         }
         line
+    }
+
+    if interaction == InteractionMode::ContextMenu {
+        return FooterControlLines {
+            contextual: pack(
+                &[
+                    "1-9:select".into(),
+                    "Enter:confirm".into(),
+                    "x/Esc:cancel".into(),
+                ],
+                width as usize,
+            ),
+            global: String::new(),
+        };
     }
 
     if matches!(

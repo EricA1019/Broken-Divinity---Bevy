@@ -94,6 +94,8 @@ pub struct StatsViewModel {
     pub management: Option<ManagementMenuVm>,
     /// Active nearby-target identity shown by the Context panel.
     pub context_target: Option<ContextTargetVm>,
+    /// UI9-D paused Context menu projection (present while Context is open).
+    pub context_menu: Option<ContextMenuVm>,
     /// Compact faction standings: (label, value, status_text).
     pub faction_standings: Vec<(String, i32, String)>,
 }
@@ -103,7 +105,6 @@ impl Default for StatsViewModel {
         Self {
             supplies_max: COLONY_SUPPLIES_CAP,
             supplies_gauge: None,
-            context_target: None,
             hp_current: 0,
             hp_max: 0,
             ap_current: 0,
@@ -124,6 +125,8 @@ impl Default for StatsViewModel {
             next_day_forecast: String::new(),
             latest_daily_summary: Vec::new(),
             management: None,
+            context_target: None,
+            context_menu: None,
             faction_standings: Vec::new(),
         }
     }
@@ -209,6 +212,49 @@ pub struct ContextTargetVm {
     pub target_count: usize,
     /// Player-facing position cue of the focused target.
     pub position: (i32, i32),
+}
+
+/// UI9-D paused Context menu projection. The screen owner renders the target
+/// picker (many nearby targets) or the focused Context menu from this single
+/// shared representation; the input reducer reads the same projection so the
+/// category/action applicability rule is owned in exactly one place.
+#[derive(Debug, Clone)]
+pub struct ContextMenuVm {
+    pub phase: crate::ContextMenuPhase,
+    /// Every nearby target for the picker, in deterministic projection order.
+    pub targets: Vec<ContextMenuTargetVm>,
+    /// Index of the target this menu is currently focused on.
+    pub focused_index: usize,
+    pub target_name: String,
+    pub category: String,
+    pub detail: String,
+    /// Invocable preview actions for the focused target (Inspect/Interact are
+    /// presented by the header and the opener key, not as menu rows).
+    pub actions: Vec<ContextMenuActionVm>,
+    pub selected: Option<usize>,
+}
+
+#[derive(Debug, Clone)]
+pub struct ContextMenuTargetVm {
+    pub name: String,
+    pub category: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct ContextMenuActionVm {
+    pub label: String,
+    pub key_hint: String,
+    pub enabled: bool,
+    pub denial_reason: Option<String>,
+    /// Where confirming this action routes. `None` keeps it a disabled preview.
+    pub route: ContextActionRoute,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContextActionRoute {
+    None,
+    StationStaffing,
+    TaskAssignment,
 }
 
 #[derive(Resource, Debug, Clone, Default)]
@@ -969,6 +1015,12 @@ mod stabilization_tests {
     }
 }
 
+#[derive(SystemParam)]
+struct ContextProjectionState<'w> {
+    nearby: Res<'w, bd_core::colony::proximity::NearbyInteractables>,
+    context: Res<'w, crate::ContextMenuState>,
+}
+
 #[allow(clippy::type_complexity, clippy::too_many_arguments)] // One read-only projection over distinct ECS owners.
 fn build_action_list_vm(
     player: Query<
@@ -1015,10 +1067,11 @@ fn build_action_list_vm(
     game_time: Res<bd_core::time::GameTime>,
     bindings: Res<crate::commands::CommandBindings>,
     station_catalog: Res<bd_core::colony::stations::StationCatalog>,
-    nearby: Res<bd_core::colony::proximity::NearbyInteractables>,
+    context_projection: ContextProjectionState,
     mut vm: ResMut<ActionListViewModel>,
     mut stats_vm: ResMut<StatsViewModel>,
 ) {
+    let ContextProjectionState { nearby, context } = context_projection;
     let Some((player_entity, pp, pools, _)) = player
         .iter()
         .find(|(_, _, _, scope)| scope_active(*scope, *mode))
@@ -1120,21 +1173,27 @@ fn build_action_list_vm(
     // normal-world actions are advertised while the context owns input, and no
     // second nearby target's actions are flattened into the focused feed.
     if *mode == bd_core::spatial::GameMode::Outpost && !nearby.is_empty() {
-        let focused = &nearby.targets[0];
+        // The passive feed focuses the deterministic first target; while the
+        // UI9-D Context menu is open, the picked target owns both the feed and
+        // the menu so the projection and the reducer agree on one target.
+        let focused_index = if context.active {
+            context.selected_target.min(nearby.targets.len() - 1)
+        } else {
+            0
+        };
+        let focused = &nearby.targets[focused_index];
         let interact_key = bindings
             .key_for(crate::commands::UiCommand::Interact)
             .map(crate::commands::config_key_name);
-        // Interact is a semantic command with no owner-approved Context reducer
-        // route yet (UI9-D is not authorized). A configured binding alone does
-        // not make it executable, so it stays disabled with a truthful route
-        // reason; an unbound Interact keeps the "unbound" hint. UI9-C preview
-        // actions are likewise disabled until the Context menu reducer exists.
+        // UI9-D: with a configured Interact binding and the Context reducer
+        // route present, Interact is executable while a nearby target exists.
+        // An unbound Interact keeps the truthful "unbound" hint.
         let interact = match &interact_key {
             Some(key) => ActionItemVm {
                 label: "Interact".into(),
                 key_hint: key.clone(),
-                enabled: false,
-                denial_reason: Some("No Context route".into()),
+                enabled: true,
+                denial_reason: None,
             },
             None => ActionItemVm {
                 label: "Interact".into(),
@@ -1223,12 +1282,55 @@ fn build_action_list_vm(
             category: category_label,
             status,
             title,
-            focus_index: 1,
+            focus_index: focused_index + 1,
             target_count: nearby.targets.len(),
             position: (focused.position.x, focused.position.y),
         });
+        // UI9-D paused Context menu: derive the invocable rows from the same
+        // category/action projection used by the feed (single owner). Interact
+        // is the opener key and Inspect is the header detail, so neither is a
+        // menu row; routable previews are enabled here and Set Production stays
+        // a disabled "Coming later" placeholder.
+        stats_vm.context_menu = context.active.then(|| ContextMenuVm {
+            phase: context.phase,
+            targets: nearby
+                .targets
+                .iter()
+                .map(|target| ContextMenuTargetVm {
+                    name: target.name.clone(),
+                    category: target.category.label().to_string(),
+                })
+                .collect(),
+            focused_index,
+            target_name: focused.name.clone(),
+            category: focused.category.label().to_string(),
+            detail: focused.detail.clone(),
+            actions: items
+                .iter()
+                .filter(|action| {
+                    action.label != "Interact" && !action.label.starts_with("Inspect ")
+                })
+                .enumerate()
+                .map(|(index, action)| ContextMenuActionVm {
+                    label: action.label.clone(),
+                    key_hint: (index + 1).to_string(),
+                    enabled: matches!(
+                        action.label.as_str(),
+                        "Assign Worker" | "Assign Gatherer" | "Assign Task"
+                    ),
+                    denial_reason: action.denial_reason.clone(),
+                    route: match action.label.as_str() {
+                        "Assign Worker" => ContextActionRoute::StationStaffing,
+                        "Assign Gatherer" | "Assign Task" => ContextActionRoute::TaskAssignment,
+                        _ => ContextActionRoute::None,
+                    },
+                })
+                .collect(),
+            selected: context.selected_action,
+        });
     } else {
         stats_vm.context_target = None;
+        stats_vm.context_menu = None;
     }
 
     vm.actions = items;
@@ -1709,6 +1811,8 @@ mod tests {
         app.add_plugins(bd_core::BdCorePlugin);
         app.insert_resource(bd_core::colony::production::ColonyResources::default());
         app.insert_resource(crate::commands::CommandBindings::default());
+        app.init_resource::<crate::ContextMenuState>();
+        app.insert_resource(bd_core::colony::proximity::NearbyInteractables::default());
         *app.world_mut().resource_mut::<bd_core::spatial::GameMode>() =
             bd_core::spatial::GameMode::Tactical;
         // Insert all view model resources

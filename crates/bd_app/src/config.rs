@@ -570,13 +570,15 @@ mod tests {
         use bd_tui::commands::UiCommand;
         use crossterm::event::KeyCode;
 
+        // `x` is the UI9-D Interact binding, so a custom quit key must use a
+        // free key to avoid a contextual-binding conflict.
         let kb = KeyBindingConfig {
-            quit: "x".into(),
+            quit: "z".into(),
             ..KeyBindingConfig::default()
         };
         let bindings = kb.command_bindings().unwrap();
         assert_eq!(
-            bindings.command_for_key(&KeyCode::Char('x')),
+            bindings.command_for_key(&KeyCode::Char('z')),
             Some(UiCommand::Quit)
         );
         assert_ne!(

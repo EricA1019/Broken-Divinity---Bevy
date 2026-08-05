@@ -80,6 +80,29 @@ pub(crate) enum ManagementMenuKind {
     StationStaffing,
 }
 
+/// UI9-D paused Context interaction. Opening through Interact on a nearby
+/// target enters either the target picker (multiple nearby targets) or the
+/// focused Context menu; while active, only context keys route and every
+/// normal-world input is paused.
+#[derive(bevy_ecs::prelude::Resource, Debug, Clone, Copy, Default)]
+pub(crate) struct ContextMenuState {
+    pub(crate) active: bool,
+    pub(crate) phase: ContextMenuPhase,
+    pub(crate) selected_target: usize,
+    pub(crate) selected_action: Option<usize>,
+}
+
+/// UI9-D phase of the paused Context interaction: either the target picker
+/// (multiple nearby targets) or the focused Context menu.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub enum ContextMenuPhase {
+    /// Multiple nearby targets: numbers pick which target to open.
+    #[default]
+    Picker,
+    /// One focused target: numbers select an action, Enter confirms it.
+    Menu,
+}
+
 impl Plugin for BdTuiPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<commands::CommandBindings>();
@@ -87,6 +110,7 @@ impl Plugin for BdTuiPlugin {
         app.init_resource::<RenderInvalidation>();
         app.init_resource::<GameplayInputQueue>();
         app.init_resource::<ManagementMenuState>();
+        app.init_resource::<ContextMenuState>();
         app.insert_resource(SymbolRegistry::phase5_defaults());
         app.insert_resource(ThemeRegistry::phase5_defaults());
 
@@ -272,6 +296,9 @@ struct ColonyInteractionState<'w> {
     pending_station_assignment: ResMut<'w, bd_core::colony::stations::PendingStationAssignment>,
     build: ResMut<'w, bd_core::colony::stations::BuildInteraction>,
     management: ResMut<'w, ManagementMenuState>,
+    context: ResMut<'w, ContextMenuState>,
+    nearby: Res<'w, bd_core::colony::proximity::NearbyInteractables>,
+    stats: Res<'w, StatsViewModel>,
     pending_recipe: ResMut<'w, bd_core::colony::logistics::PendingRecipeAssignment>,
     outpost: Res<'w, bd_core::spatial::OutpostState>,
     foundation_content: Option<Res<'w, bd_core::content::FoundationContent>>,
@@ -310,6 +337,85 @@ fn management_choice_for_index(
         ManagementMenuKind::StationStaffing => {
             stations.get(index).copied().map(ManagementChoice::Station)
         }
+    }
+}
+
+fn route_context_key(
+    key: crossterm::event::KeyCode,
+    context: &mut ContextMenuState,
+    nearby: &bd_core::colony::proximity::NearbyInteractables,
+    menu: &view_models::ContextMenuVm,
+    management: &mut ManagementMenuState,
+) {
+    use crossterm::event::KeyCode;
+
+    match key {
+        key if key == KeyCode::Esc || key == KeyCode::Char('x') => {
+            context.active = false;
+            context.phase = ContextMenuPhase::default();
+            context.selected_target = 0;
+            context.selected_action = None;
+        }
+        KeyCode::Char(choice @ '1'..='9') => {
+            let index = (choice as u8 - b'1') as usize;
+            match context.phase {
+                ContextMenuPhase::Picker => {
+                    if index < nearby.targets.len() {
+                        context.selected_target = index;
+                        context.selected_action = None;
+                        context.phase = ContextMenuPhase::Menu;
+                    }
+                }
+                ContextMenuPhase::Menu => {
+                    if index < menu.actions.len() {
+                        context.selected_action = Some(index);
+                    }
+                }
+            }
+        }
+        KeyCode::Enter => {
+            let Some(selected) = context.selected_action else {
+                // Picker phase Enter keeps the currently focused target and
+                // opens its Context menu.
+                if context.phase == ContextMenuPhase::Picker {
+                    context.phase = ContextMenuPhase::Menu;
+                    context.selected_action = None;
+                }
+                return;
+            };
+            let Some(action) = menu.actions.get(selected) else {
+                return;
+            };
+            if !action.enabled {
+                return;
+            }
+            match action.route {
+                view_models::ContextActionRoute::StationStaffing => {
+                    context.active = false;
+                    context.phase = ContextMenuPhase::default();
+                    context.selected_target = 0;
+                    context.selected_action = None;
+                    management.active = true;
+                    management.kind = ManagementMenuKind::StationStaffing;
+                    management.selected_survivor = None;
+                    management.selected_choice = None;
+                    management.selected_recipe = None;
+                }
+                view_models::ContextActionRoute::TaskAssignment => {
+                    context.active = false;
+                    context.phase = ContextMenuPhase::default();
+                    context.selected_target = 0;
+                    context.selected_action = None;
+                    management.active = true;
+                    management.kind = ManagementMenuKind::TaskAssignment;
+                    management.selected_survivor = None;
+                    management.selected_choice = None;
+                    management.selected_recipe = None;
+                }
+                view_models::ContextActionRoute::None => {}
+            }
+        }
+        _ => {}
     }
 }
 
@@ -474,6 +580,9 @@ fn map_input_to_intents(
         mut pending_station_assignment,
         mut build,
         mut management,
+        mut context,
+        nearby,
+        stats,
         mut pending_recipe,
         outpost,
         foundation_content,
@@ -568,6 +677,24 @@ fn map_input_to_intents(
         // Player not spawned yet (spawn_outpost_player runs after Input set).
         return;
     };
+
+    // UI9-D paused Context interaction: while the Context menu or target
+    // picker is open, only context navigation/invoke/cancel keys route and
+    // every normal-world input is paused.
+    if context.active {
+        input_queue.clear();
+        let Some(menu) = stats.context_menu.as_ref() else {
+            // The Context menu projection has not been built yet; stay paused.
+            return;
+        };
+        for key in messages
+            .read()
+            .filter(|key| key.kind == KeyEventKind::Press)
+        {
+            route_context_key(key.code, &mut context, &nearby, menu, &mut management);
+        }
+        return;
+    }
 
     if management.active {
         input_queue.clear();
@@ -669,7 +796,9 @@ fn map_input_to_intents(
         let opens_management = command.is_some_and(|command| {
             matches!(
                 command,
-                commands::UiCommand::AssignTask | commands::UiCommand::AssignStation
+                commands::UiCommand::AssignTask
+                    | commands::UiCommand::AssignStation
+                    | commands::UiCommand::Interact
             )
         });
         if opens_management {
@@ -1085,6 +1214,22 @@ fn map_input_to_intents(
                     management.selected_recipe = None;
                 }
             }
+            // UI9-D: open the paused Context menu on the focused nearby target.
+            (Some(commands::UiCommand::Interact), _) => {
+                if *mode == bd_core::spatial::GameMode::Outpost && !nearby.targets.is_empty() {
+                    input_queue.clear();
+                    context.active = true;
+                    context.selected_target = 0;
+                    context.selected_action = None;
+                    context.phase = if nearby.targets.len() > 1 {
+                        ContextMenuPhase::Picker
+                    } else {
+                        ContextMenuPhase::Menu
+                    };
+                } else {
+                    game_log.push("No nearby target to interact with.", LogLevel::Warn);
+                }
+            }
             // Build mode toggle (outpost mode only)
             (Some(commands::UiCommand::Build), _) => {
                 if *mode != bd_core::spatial::GameMode::Outpost {
@@ -1282,9 +1427,12 @@ fn frame_interaction(
     mode: bd_core::spatial::GameMode,
     build_active: bool,
     management: Option<view_models::ManagementMenuKind>,
+    context_active: bool,
 ) -> commands::InteractionMode {
     if mode == bd_core::spatial::GameMode::GameOver {
         commands::InteractionMode::GameOver
+    } else if context_active {
+        commands::InteractionMode::ContextMenu
     } else if let Some(kind) = management {
         match kind {
             view_models::ManagementMenuKind::TaskAssignment => {
@@ -1341,6 +1489,7 @@ fn draw_ui(
         *runtime.mode,
         runtime.build.is_active(),
         stats_vm.management.as_ref().map(|menu| menu.kind),
+        stats_vm.context_menu.is_some(),
     );
     let frame_data = UiFrameData {
         definition: def,
@@ -1610,6 +1759,7 @@ fn render_footer(
         commands::InteractionMode::Build => "BUILD".to_owned(),
         commands::InteractionMode::TaskManagement => "TASK MANAGEMENT".to_owned(),
         commands::InteractionMode::StationStaffing => "STATION STAFFING".to_owned(),
+        commands::InteractionMode::ContextMenu => "CONTEXT".to_owned(),
         commands::InteractionMode::GameOver => "GAME OVER".to_owned(),
         commands::InteractionMode::Normal => screen_id.replace('_', " ").to_ascii_uppercase(),
     };
@@ -2036,6 +2186,7 @@ mod tests {
             mode,
             map.build_menu.is_some() || map.build_ghost.is_some(),
             stats.management.as_ref().map(|menu| menu.kind),
+            stats.context_menu.is_some(),
         );
         let data = UiFrameData {
             definition,
