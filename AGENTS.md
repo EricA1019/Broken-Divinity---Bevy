@@ -10,8 +10,12 @@ Before changing behavior, read the relevant sections of:
 2. [`Kernel.md`](Kernel.md) — technical architecture;
 3. [`docs/authority/DECISIONS-TO-LOCK.md`](docs/authority/DECISIONS-TO-LOCK.md) — locked scope and behavior;
 4. [`docs/authority/AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md`](docs/authority/AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md) — test design, evidence, metrics, and execution protocol;
-5. [`testing/foundation-contracts.ron`](testing/foundation-contracts.ron) — machine-readable contract ownership;
-6. the current implementation and tests.
+5. [`docs/active/FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md`](docs/active/FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md) — active Foundation behavior and colony UX implementation authority;
+6. [`docs/active/FOUNDATION-BASIC-COLONY-LOOP-PLAN.md`](docs/active/FOUNDATION-BASIC-COLONY-LOOP-PLAN.md) — owner-approved D-20 colony-loop implementation;
+7. [`docs/active/FOUNDATION-UI-IMPROVEMENT-PLAN.md`](docs/active/FOUNDATION-UI-IMPROVEMENT-PLAN.md) — Foundation Ratatui improvement sequence and UI phase gates;
+8. [`testing/foundation-contracts.ron`](testing/foundation-contracts.ron) — machine-readable contract ownership;
+9. [`docs/README.md`](docs/README.md) — full documentation hub and navigation;
+10. the current implementation and tests.
 
 For test planning, writing, strengthening, review, or red-to-green handoff,
 also load and follow the project-agnostic global skill
