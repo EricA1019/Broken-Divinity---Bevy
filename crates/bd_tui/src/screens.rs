@@ -232,12 +232,12 @@ pub fn default_screen_registry() -> ScreenRegistry {
             },
             PanelDefinition {
                 id: "log".into(),
-                layout: PanelLayout::Bottom { height_pct: 30 },
+                layout: PanelLayout::Bottom { height_pct: 25 },
                 view_model: "LogViewModel".into(),
             },
             PanelDefinition {
                 id: "actions".into(),
-                layout: PanelLayout::Bottom { height_pct: 30 },
+                layout: PanelLayout::Bottom { height_pct: 35 },
                 view_model: "ActionListViewModel".into(),
             },
             PanelDefinition {
@@ -405,7 +405,7 @@ pub fn compact_screen_definition(definition: &ScreenDefinition) -> ScreenDefinit
                     // Context needs three inner rows so the longest station
                     // action set (Inspect/Assign/Set Production + reason) stays
                     // legible without clipping.
-                    "actions" => panel.layout = PanelLayout::Bottom { height_pct: 37 },
+                    "actions" => panel.layout = PanelLayout::Bottom { height_pct: 38 },
                     // Chronicle needs two inner rows so a wrapped NEARBY fact
                     // never loses its target name or Interact hint.
                     "log" => panel.layout = PanelLayout::Bottom { height_pct: 25 },
@@ -1552,19 +1552,18 @@ fn render_actions_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContex
             ));
         }
         // Concise status stays with the context feed so the focused target's
-        // category/status never rely on glyph inference. The global Interact
-        // entry command is not a target action and is omitted from the feed.
+        // category/status never rely on glyph inference.
         spans.push(ratatui::text::Span::styled(
             format!("{} ", target.status),
             style(ctx.theme, UiTone::KeyHint),
         ));
     }
-    // Action rows carry their key hint and label; the shared disabled-preview
-    // reasons are then appended once each as compact bare tokens so the wrapped
-    // feed keeps every action row, disabled reason, and detail visible inside
-    // the three compact inner rows. Separators stay single-space so the ratatui
-    // word wrapper packs without clipping.
-    let mut rendered_reasons: Vec<&str> = Vec::new();
+    // Action rows carry their key hint, label, and any denial reason inline
+    // so compact wrapping keeps each action+reason pair together. Each action
+    // is one span so the wrapper never separates a label from its reason.
+    // Action rows carry their key hint, label, and any denial reason inline
+    // so compact wrapping keeps each action+reason pair together. Each action
+    // is one span so the wrapper never separates a label from its reason.
     for action in ctx
         .actions
         .actions
@@ -1582,19 +1581,12 @@ fn render_actions_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContex
                 key_style,
             ));
         }
-        spans.push(ratatui::text::Span::raw(action.label.to_string()));
-        spans.push(ratatui::text::Span::raw(" "));
-        if let Some(reason) = action.denial_reason.as_deref() {
-            if !rendered_reasons.contains(&reason) {
-                rendered_reasons.push(reason);
-            }
-        }
-    }
-    for reason in rendered_reasons {
-        spans.push(ratatui::text::Span::styled(
-            format!("{reason} "),
-            style(ctx.theme, UiTone::Danger),
-        ));
+        let text = if let Some(reason) = action.denial_reason.as_deref() {
+            format!("{}({}) ", action.label, reason)
+        } else {
+            format!("{} ", action.label)
+        };
+        spans.push(ratatui::text::Span::raw(text));
     }
 
     let para = ratatui::widgets::Paragraph::new(ratatui::text::Line::from(spans))

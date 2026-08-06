@@ -14,7 +14,7 @@ edges:
     condition: when setting up the dev environment or running the project for the first time
   - target: patterns/INDEX.md
     condition: when starting a task — check the pattern index for a matching pattern file
-last_updated: 2026-04-21
+last_updated: 2026-08-06
 ---
 
 # Session Bootstrap
@@ -25,9 +25,16 @@ Then read this file fully before doing anything else in this session.
 
 ## Current Project State
 
+> **Note (2026-08-06):** Much of the detail below describes the legacy
+> Bevy 0.14 + egui prototype (now archived in `legacy/src/`). The active
+> Bevy 0.18 + Ratatui workspace lives in `crates/`. See `AGENTS.md`,
+> `Kernel.md`, and `docs/GAME-STATUS-2026-08-01.md` for current state.
+> This router has not yet been fully rewritten for the new architecture.
+
 **Working:**
 - Project scaffold and build system (Cargo workspace compiles)
-- Cargo project initialized with `Cargo.toml`, `src/main.rs`, `src/lib.rs`, `src/core/state.rs`, and initial `src/game/` module skeletons
+- Cargo workspace with 5 crates (`bd_app`, `bd_core`, `bd_tui`, `bd_data`, `bd_test_support`) under `crates/`
+- Legacy Bevy 0.14 + egui prototype archived to `legacy/src/` (2026-08-06) — does not compile under the current workspace
 - Copilot skill suite: 35+ skills covering all game domains (lore, combat, AI, colony, procgen, ECS patterns, etc.) — audited Apr 2026: broken refs fixed (procgen, colony-management, enemy-roster), overlap tightened (change-docs↔conventional-commit), progressive disclosure applied to top 5 bloated skills (graphify, gameplay-mechanics, rust-bevy-patterns, node-structure, procgen)
 - Copilot CLI MCP servers: 6 configured locally for this environment (bevy-brp, pantheon, sequential-thinking, memory, mermaid, second-brain)
 - Local `graphify/` checkout is installed in editable mode as `graphifyy 0.4.1`, and the Copilot CLI graphify skill is registered in the local assistant environment
@@ -99,8 +106,8 @@ Then read this file fully before doing anything else in this session.
 
 **Known issues:**
 - Package name in Cargo.toml may need adjustment when workspace is initialized
-- The documented 5-tier dependency graph has live violations in `src/core/items.rs`, `src/core/movement.rs`, and `src/core/save.rs`
-- Some UI registrations in `src/main.rs` still run without explicit AppState gating (`gamelog_panel`, parts of `gameover`)
+- The documented 5-tier dependency graph violations in the legacy `src/` codebase are moot — that code is archived in `legacy/src/`
+- System registration is now in `crates/bd_core/src/lib.rs` (`BdCorePlugin` / `BdFoundationPlugin`) with explicit `BdSet` ordering
 - 27 clippy warnings remain (mostly `too_many_arguments` and `type_complexity` — known Bevy-isms, allowed in gate script)
 
 ## Routing Table

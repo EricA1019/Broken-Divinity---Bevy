@@ -16,13 +16,14 @@ and requires a separate owner-approved plan.
 Project authority:
 
 1. [Product GDD](GDD.md)
-2. [Locked decisions](docs/DECISIONS-TO-LOCK.md)
-3. [Foundation MVP scenario](docs/MVP-SCENARIO.md)
-4. [Foundation Test and Colony UX Hardening Plan](docs/FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md) — active behavior work
-5. [Authoritative Testing Standard](docs/AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md) — active evidence and migration work
-6. [Foundation MVP Correction Plan](docs/FOUNDATION-MVP-CORRECTION-PLAN.md) — completed historical evidence
-7. [Foundation Stabilization Plan](docs/FOUNDATION-STABILIZATION-PLAN.md) — completed historical evidence
-8. [Foundation Recovery Plan](docs/FOUNDATION-RECOVERY-PLAN.md) — completed historical evidence
+2. [Locked decisions](docs/authority/DECISIONS-TO-LOCK.md)
+3. [Foundation MVP scenario](docs/authority/MVP-SCENARIO.md)
+4. [Foundation Test and Colony UX Hardening Plan](docs/active/FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md) — active behavior work
+5. [Authoritative Testing Standard](docs/authority/AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md) — active evidence and migration work
+6. [Foundation Basic Colony Loop Plan](docs/active/FOUNDATION-BASIC-COLONY-LOOP-PLAN.md) — active colony vertical-slice work
+7. [Foundation UI Improvement Plan](docs/active/FOUNDATION-UI-IMPROVEMENT-PLAN.md) — active presentation work
+8. [Documentation hub](docs/README.md) — full doc inventory and navigation
+9. [Completed Foundation plans](docs/archive/) — historical evidence records
 
 ## Quick Start
 
@@ -106,11 +107,13 @@ broken-divinity/
 │   ├── bd_tui/             # Terminal UI (Ratatui widgets)
 │   └── bd_test_support/    # Test helpers
 ├── docs/
-│   ├── README.md           # Repository documentation index
+│   ├── README.md           # Documentation inventory
 │   ├── ARCHITECTURE_GUARDRAILS.md
 │   ├── DEPENDENCY_MATRIX.md
-│   ├── archive/            # Superseded local GDD/dev plan
+│   ├── archive/            # Completed plans + legacy GDD/dev-plan
 │   └── decisions/          # Historical technical decisions
+├── legacy/                 # Archived Bevy 0.14 + egui prototype
+│   └── README.md           # Explains what this is and why it's preserved
 ```
 
 ## Configuration

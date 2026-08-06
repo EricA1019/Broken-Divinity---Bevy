@@ -1,2 +1,9 @@
 /target/
 *.log
+
+# Generated artifacts
+.artifacts/
+
+# Python artifacts
+__pycache__/
+*.pyc

@@ -13,7 +13,7 @@ edges:
     condition: when a convention depends on understanding the system structure
   - target: context/stack.md
     condition: when checking which API or library version to use
-last_updated: 2026-04-06
+last_updated: 2026-08-06
 ---
 
 # Conventions
@@ -32,7 +32,8 @@ last_updated: 2026-04-06
 
 - All shared components in `components.rs` (Tier 0) — never define components locally in higher-tier modules
 - All shared resources in `resources.rs` (Tier 0) — module-private resources may live in their own module
-- States in `src/core/state.rs` and `src/core/turn.rs` — `AppState` lives in `state.rs`; `TurnPhase` and turn-flow resources live in `turn.rs`
+- States in `crates/bd_core/src/spatial.rs` — `GameMode` owns the authoritative game-mode enum (migrated from legacy `AppState`)
+- System ordering in `crates/bd_core/src/lib.rs` — `BdSet` and `BdMutationSet` define the execution pipeline (migrated from legacy `TurnPhase`)
 - Game data files in `native/assets/data/rosters.ron` and sibling `.ron` files — loaded via `OnceLock` at first access
 - System registration in `main.rs` grouped by AppState lifecycle, NOT by source module
 - egui UI uses draw/process split: draw system in `EguiPrimaryContextPass`, process system (handling UiAction) in `Update`

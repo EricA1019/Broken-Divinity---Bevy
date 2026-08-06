@@ -1,8 +1,14 @@
 # UI Design Architecture
 
-> **RECONCILE — NOT IMPLEMENTATION AUTHORITY**
-> Current UI execution is governed by [Kernel.md](../../Kernel.md) and the
-> [Foundation Recovery Plan](../FOUNDATION-RECOVERY-PLAN.md).
+> **ARCHIVED REFERENCE — NOT IMPLEMENTATION AUTHORITY**
+>
+> This document describes the **original Bevy 0.14 + egui** UI architecture.
+> The current implementation uses Bevy 0.18 + Ratatui via `bevy_ratatui`.
+> `bevy_egui`, `bevy_ecs_tilemap`, and `AppState` are no longer used.
+> Current UI execution is governed by [`Kernel.md`](../../Kernel.md) and the
+> [`FOUNDATION-UI-IMPROVEMENT-PLAN.md`](../FOUNDATION-UI-IMPROVEMENT-PLAN.md).
+> The wireframes, element inventories, and keybind designs below remain useful
+> for UI intent, but all framework references are historical.
 
 ## Overview
 This document outlines the UI architecture for Broken Divinity MVP using `bevy_egui`.

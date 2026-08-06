@@ -2,15 +2,15 @@
 
 **Status:** Active documentation authority map
 
-**Inventoried:** 2026-08-01
+**Inventoried:** 2026-08-06
 
 **Active testing-governance plan:** [AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md](AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md).
 
-**Active behavior implementation plan:** [FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md](FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md).
+**Active behavior implementation plan:** [../active/FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md](../active/FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md).
 
-**Active colony implementation plan:** [FOUNDATION-BASIC-COLONY-LOOP-PLAN.md](FOUNDATION-BASIC-COLONY-LOOP-PLAN.md).
+**Active colony implementation plan:** [../active/FOUNDATION-BASIC-COLONY-LOOP-PLAN.md](../active/FOUNDATION-BASIC-COLONY-LOOP-PLAN.md).
 
-**Active UI implementation plan:** [FOUNDATION-UI-IMPROVEMENT-PLAN.md](FOUNDATION-UI-IMPROVEMENT-PLAN.md).
+**Active UI implementation plan:** [../active/FOUNDATION-UI-IMPROVEMENT-PLAN.md](../active/FOUNDATION-UI-IMPROVEMENT-PLAN.md).
 
 The plans have non-overlapping authority: the testing plan owns evidence,
 metrics, and suite migration; the hardening plan owns behavior and
@@ -20,14 +20,13 @@ vertical-slice sequence after the owner approved its Phase C0 defaults on
 without changing gameplay behavior. Product P2 still requires a separate
 owner-approved plan.
 
-**Completed Foundation correction record:** [FOUNDATION-MVP-CORRECTION-PLAN.md](FOUNDATION-MVP-CORRECTION-PLAN.md)
+**Completed Foundation plans (archived):** See [`../archive/`](../archive/) for
+`FOUNDATION-RECOVERY-PLAN.md`, `FOUNDATION-STABILIZATION-PLAN.md`, and
+`FOUNDATION-MVP-CORRECTION-PLAN.md`. These are completed chronological
+evidence records, not active implementation authority.
 
 **Storage policy:** Preserve its type/content and disable construction until it
 has an implemented Foundation effect.
-
-**Completed Foundation recovery record:** [FOUNDATION-RECOVERY-PLAN.md](FOUNDATION-RECOVERY-PLAN.md)
-
-**Completed Foundation stabilization record:** [FOUNDATION-STABILIZATION-PLAN.md](FOUNDATION-STABILIZATION-PLAN.md)
 
 ## Classification meanings
 
@@ -45,17 +44,17 @@ has an implemented Foundation effect.
 | `Kernel.md` | Active | Technical architecture authority |
 | `Kernel-direction.md` | Active | Technical appendix subordinate to `Kernel.md` |
 | `docs/README.md` | Active | Documentation hub and reading order |
-| `docs/DECISIONS-TO-LOCK.md` | Active | Locked product decisions |
-| `docs/MIGRATION-AND-DEPRECATION.md` | Active | Preservation and deprecation policy |
-| `docs/MVP-SCENARIO.md` | Active | Canonical Foundation acceptance scenario |
-| `docs/AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md` | Active plan | Foundation testing policy, evidence sufficiency, metrics, and suite-migration authority |
-| `docs/FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md` | Active plan | Foundation behavior and colony UX implementation-order authority |
-| `docs/FOUNDATION-BASIC-COLONY-LOOP-PLAN.md` | Active plan | Owner-approved D-20 test-first colony vertical-slice implementation and evidence sequence |
-| `docs/FOUNDATION-UI-IMPROVEMENT-PLAN.md` | Active plan | Owner-approved test-first Ratatui presentation sequence; implementation pending |
-| `docs/FOUNDATION-MVP-CORRECTION-PLAN.md` | Active record | Completed owner-authorized Foundation correction evidence; affected UX/test gates were later reopened |
-| `docs/FOUNDATION-STABILIZATION-PLAN.md` | Active record | Completed stabilization evidence; its acceptance was reopened and superseded by the accepted correction record |
-| `docs/FOUNDATION-RECOVERY-PLAN.md` | Active record | Completed earlier recovery evidence; final result is linked to stabilization |
-| `docs/DOCUMENT-INVENTORY.md` | Active | Documentation classification and ownership map |
+| `docs/authority/DECISIONS-TO-LOCK.md` | Active | Locked product decisions |
+| `docs/authority/MIGRATION-AND-DEPRECATION.md` | Active | Preservation and deprecation policy |
+| `docs/authority/MVP-SCENARIO.md` | Active | Canonical Foundation acceptance scenario |
+| `docs/authority/AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md` | Active plan | Foundation testing policy, evidence sufficiency, metrics, and suite-migration authority |
+| `docs/active/FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md` | Active plan | Foundation behavior and colony UX implementation-order authority |
+| `docs/active/FOUNDATION-BASIC-COLONY-LOOP-PLAN.md` | Active plan | Owner-approved D-20 test-first colony vertical-slice implementation and evidence sequence |
+| `docs/active/FOUNDATION-UI-IMPROVEMENT-PLAN.md` | Active plan | Owner-approved test-first Ratatui presentation sequence |
+| `docs/archive/FOUNDATION-MVP-CORRECTION-PLAN.md` | Historical | Completed owner-authorized Foundation correction evidence |
+| `docs/archive/FOUNDATION-STABILIZATION-PLAN.md` | Historical | Completed stabilization evidence |
+| `docs/archive/FOUNDATION-RECOVERY-PLAN.md` | Historical | Completed earlier recovery evidence |
+| `docs/authority/DOCUMENT-INVENTORY.md` | Active | Documentation classification and ownership map |
 
 No other file may claim product or implementation authority.
 

@@ -1,8 +1,16 @@
 # Technical Architecture
 
-> **RECONCILE — NOT TECHNICAL AUTHORITY**
-> The current technical authority is [Kernel.md](../../Kernel.md). This
-> document may describe superseded graphical dependencies.
+> **ARCHIVED REFERENCE — NOT TECHNICAL AUTHORITY**
+> 
+> This document describes the **original Bevy 0.14 + egui + tilemap** technical
+> architecture from April 2026. The current technical authority is
+> [`Kernel.md`](../../Kernel.md). The active implementation uses Bevy 0.18 +
+> Ratatui via `bevy_ratatui`; `bevy_egui` and `bevy_ecs_tilemap` are not used.
+> See [`DEPENDENCY_MATRIX.md`](../DEPENDENCY_MATRIX.md) for the current
+> dependency inventory.
+>
+> The dependency tables and rendering pipeline below are **historical**.
+> They do not reflect the current terminal-first architecture.
 
 This document defines the technology stack, crate dependencies, project structure, rendering pipeline, procedural generation strategy, and scalability approach for Broken Divinity. Every version listed was verified against crates.io as of April 2026.
 

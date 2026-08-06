@@ -8,8 +8,8 @@ Before changing behavior, read the relevant sections of:
 
 1. [`GDD.md`](GDD.md) — product intent and player experience;
 2. [`Kernel.md`](Kernel.md) — technical architecture;
-3. [`docs/DECISIONS-TO-LOCK.md`](docs/DECISIONS-TO-LOCK.md) — locked scope and behavior;
-4. [`docs/AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md`](docs/AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md) — test design, evidence, metrics, and execution protocol;
+3. [`docs/authority/DECISIONS-TO-LOCK.md`](docs/authority/DECISIONS-TO-LOCK.md) — locked scope and behavior;
+4. [`docs/authority/AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md`](docs/authority/AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md) — test design, evidence, metrics, and execution protocol;
 5. [`testing/foundation-contracts.ron`](testing/foundation-contracts.ron) — machine-readable contract ownership;
 6. the current implementation and tests.
 
