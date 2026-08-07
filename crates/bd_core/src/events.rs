@@ -84,142 +84,12 @@ impl CurrentEvent {
     }
 }
 
-// ── Default event registry (empty — populated in E-5 for Gabriel) ──
+// ── Default event registry (populated from content RON at startup) ──
 
-/// Create the default event registry.
+/// Create an empty default event registry.
+/// Events are loaded from `content/events/foundation.ron` and registered at startup.
 pub fn default_event_registry() -> EventRegistry {
-    let mut reg = EventRegistry::default();
-
-    // ── Raid event ──
-    reg.register(EventDefinition {
-        id: "event.raid".into(),
-        start_node: "start".into(),
-        nodes: HashMap::from([(
-            "start".into(),
-            EventNode {
-                speaker: "Scout".into(),
-                text: "Shapes move in the darkness beyond the shelter. Raiders!\n\nThey are closing in.".into(),
-                choices: vec![
-                    Choice {
-                        label: "Stand and fight!".into(),
-                        conditions: vec![Condition::Always],
-                        effects: vec![],
-                        next_node: None,
-                    },
-                ],
-                on_enter_effects: vec![],
-                on_exit_effects: vec![],
-            },
-        )]),
-        spawn_on_enter: vec![
-            Effect::SpawnBlueprintAt {
-                blueprint_id: "blueprint.raid_rat".into(),
-                x: 3,
-                y: 2,
-                mutators: vec![],
-            },
-            Effect::SpawnBlueprintAt {
-                blueprint_id: "blueprint.raid_rat".into(),
-                x: 16,
-                y: 2,
-                mutators: vec![],
-            },
-        ],
-    });
-
-    // ── Gabriel first encounter ──
-    reg.register(EventDefinition {
-        id: "gabriel.first_encounter".into(),
-        start_node: "start".into(),
-        nodes: HashMap::from([(
-            "start".into(),
-            EventNode {
-                speaker: "Gabriel".into(),
-                text: "You have walked far, mortal. I have watched you since the Sundering.\n\nI offer you my witness. Carry it, and you shall never face the dark alone.\n\nDo you accept?".into(),
-                choices: vec![
-                    Choice {
-                        label: "Accept the witness".into(),
-                        conditions: vec![Condition::Always],
-                        effects: vec![
-                            Effect::ApplyStatus("status.gabriels_witness".into()),
-                            Effect::Flag("gabriel.accepted".into(), true),
-                            Effect::PoolDelta {
-                                kind: PoolKind::Faith,
-                                amount: 10,
-                                tags: vec![],
-                                reason: "accepted Gabriel's witness".into(),
-                            },
-                            Effect::PoolDelta {
-                                kind: PoolKind::Temperance,
-                                amount: 2,
-                                tags: vec![],
-                                reason: "accepted Gabriel's witness".into(),
-                            },
-                            Effect::PoolDelta {
-                                kind: PoolKind::RepPuritans,
-                                amount: -5,
-                                tags: vec![],
-                                reason: "consorting with the mysterious".into(),
-                            },
-                            Effect::Log("Gabriel's presence settles over you like a mantle. You are no longer alone.".into(), crate::gamelog::LogLevel::Info),
-                        ],
-                        next_node: None,
-                    },
-                    Choice {
-                        label: "Reject the offer".into(),
-                        conditions: vec![Condition::Always],
-                        effects: vec![
-                            Effect::PoolDelta {
-                                kind: PoolKind::Prudence,
-                                amount: 2,
-                                tags: vec![],
-                                reason: "rejected the unknown".into(),
-                            },
-                            Effect::PoolDelta {
-                                kind: PoolKind::Fortitude,
-                                amount: 1,
-                                tags: vec![],
-                                reason: "stood firm against temptation".into(),
-                            },
-                            Effect::PoolDelta {
-                                kind: PoolKind::RepPuritans,
-                                amount: 3,
-                                tags: vec![],
-                                reason: "rejected mysterious entity".into(),
-                            },
-                            Effect::Log("Gabriel's form flickers with something like disappointment. 'As you wish.' He fades.".into(), crate::gamelog::LogLevel::Info),
-                        ],
-                        next_node: None,
-                    },
-                    Choice {
-                        label: "Defer — ask for time".into(),
-                        conditions: vec![Condition::Always],
-                        effects: vec![
-                            Effect::PoolDelta {
-                                kind: PoolKind::Justice,
-                                amount: 1,
-                                tags: vec![],
-                                reason: "sought wisdom before deciding".into(),
-                            },
-                            Effect::PoolDelta {
-                                kind: PoolKind::Metis,
-                                amount: 1,
-                                tags: vec![],
-                                reason: "displayed caution".into(),
-                            },
-                            Effect::Log("'Time is the one thing I have in abundance.' Gabriel lingers, waiting.".into(), crate::gamelog::LogLevel::Info),
-                        ],
-                        next_node: None,
-                    },
-                ],
-                on_enter_effects: vec![],
-                on_exit_effects: vec![],
-            },
-        )]),
-        spawn_on_enter: vec![],
-    });
-
-    reg
+    EventRegistry::default()
 }
 
 // ── Systems ──
@@ -853,9 +723,36 @@ mod tests {
     use crate::gabriel::GabrielState;
     use crate::spatial::GameMode;
 
+    /// Register a minimal Gabriel event so tests work without default_event_registry().
+    fn register_gabriel_event(app: &mut App) {
+        app.world_mut()
+            .resource_mut::<EventRegistry>()
+            .register(EventDefinition {
+                id: GABRIEL_EVENT_ID.into(),
+                start_node: "start".into(),
+                nodes: HashMap::from([(
+                    "start".into(),
+                    EventNode {
+                        speaker: "Gabriel".into(),
+                        text: "I am Gabriel.".into(),
+                        choices: vec![Choice {
+                            label: "Acknowledge".into(),
+                            conditions: vec![Condition::Always],
+                            effects: vec![],
+                            next_node: None,
+                        }],
+                        on_enter_effects: vec![],
+                        on_exit_effects: vec![],
+                    },
+                )]),
+                spawn_on_enter: vec![],
+            });
+    }
+
     #[test]
     fn gabriel_triggers_on_tactical_entry() {
         let mut app = test_app();
+        register_gabriel_event(&mut app);
         app.world_mut()
             .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
         app.world_mut()

@@ -88,7 +88,18 @@ fn run_application() -> Result<(), String> {
     app.insert_resource(bd_core::factory::BlueprintCatalog::new(
         application_content.foundation.blueprints.clone(),
     ));
+    let events = application_content.foundation.events.clone();
     app.insert_resource(application_content.foundation);
+
+    // Register events from RON-loaded FoundationContent into EventRegistry
+    {
+        let mut registry = app
+            .world_mut()
+            .resource_mut::<bd_core::events::EventRegistry>();
+        for event in &events {
+            registry.register(event.clone());
+        }
+    }
 
     app.add_plugins(bd_tui::BdTuiPlugin);
     app.insert_resource(bd_tui::view_models::SaveAvailability {
