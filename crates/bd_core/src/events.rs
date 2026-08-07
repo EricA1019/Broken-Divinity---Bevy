@@ -495,7 +495,7 @@ mod tests {
     // ── E-2 tests: process_event_triggers ──
 
     use crate::{
-        components::{Player, Position, Tile},
+        components::{Name, Player, Position, Tile},
         gamelog::GameLog,
         map::SmokeMap,
         pools::Pools,
@@ -707,5 +707,320 @@ mod tests {
         // Gabriel should NOT trigger again
         let ev = app.world().resource::<CurrentEvent>();
         assert!(!ev.is_active());
+    }
+
+    // ── Phase 3: spawn_on_enter + on_exit_effects tests ──
+
+    use crate::factory::BlueprintCatalog;
+    use crate::factory::EntityBlueprint;
+    use crate::signals::PoolKind;
+
+    /// App with BlueprintCatalog containing a rat blueprint.
+    fn spawn_event_test_app() -> App {
+        let mut app = test_app();
+        app.world_mut().insert_resource(BlueprintCatalog::new(vec![
+            EntityBlueprint {
+                id: "blueprint.rat".into(),
+                label: "Rat".into(),
+                is_player: false,
+                blocks_movement: true,
+                pools: vec![(PoolKind::Health, 11, 0, 11), (PoolKind::ActionPoints, 2, 0, 2)],
+                statuses: vec![],
+                visual: Some("Enemy".into()),
+                markers: vec![],
+            },
+        ]));
+        app
+    }
+
+    /// Register an event with spawn_on_enter + optional on_exit on the start node.
+    fn register_spawn_event(
+        app: &mut App,
+        event_id: &str,
+        spawn_effects: Vec<Effect>,
+        on_exit_effects: Vec<Effect>,
+        has_second_node: bool,
+    ) {
+        let mut nodes = HashMap::from([(
+            "start".into(),
+            EventNode {
+                speaker: "Test".into(),
+                text: "Spawn event.".into(),
+                choices: vec![Choice {
+                    label: "Done".into(),
+                    conditions: vec![Condition::Always],
+                    effects: vec![],
+                    next_node: if has_second_node {
+                        Some("node2".into())
+                    } else {
+                        None
+                    },
+                }],
+                on_enter_effects: vec![],
+                on_exit_effects,
+            },
+        )]);
+
+        if has_second_node {
+            nodes.insert(
+                "node2".into(),
+                EventNode {
+                    speaker: "Test".into(),
+                    text: "Second node.".into(),
+                    choices: vec![Choice {
+                        label: "End".into(),
+                        conditions: vec![Condition::Always],
+                        effects: vec![],
+                        next_node: None,
+                    }],
+                    on_enter_effects: vec![],
+                    on_exit_effects: vec![],
+                },
+            );
+        }
+
+        app.world_mut()
+            .resource_mut::<EventRegistry>()
+            .register(EventDefinition {
+                id: event_id.into(),
+                start_node: "start".into(),
+                nodes,
+                spawn_on_enter: spawn_effects,
+            });
+    }
+
+    /// Trigger an event and return a reference to the player entity.
+    fn trigger_event(app: &mut App, event_id: &str) -> Entity {
+        let player = app
+            .world_mut()
+            .spawn((Player, Position { x: 1, y: 1 }, Pools::new(vec![])))
+            .id();
+        app.world_mut()
+            .resource_mut::<bevy_ecs::message::Messages<EventTrigger>>()
+            .write(EventTrigger {
+                actor: player,
+                event_id: event_id.into(),
+            });
+        app.update();
+        player
+    }
+
+    #[test]
+    fn spawn_on_enter_creates_entities() {
+        let mut app = spawn_event_test_app();
+        app.world_mut()
+            .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
+
+        register_spawn_event(
+            &mut app,
+            "test.spawn",
+            vec![Effect::SpawnBlueprintAt {
+                blueprint_id: "blueprint.rat".into(),
+                x: 2,
+                y: 2,
+                mutators: vec![],
+            }],
+            vec![],
+            false,
+        );
+
+        trigger_event(&mut app, "test.spawn");
+
+        let ev = app.world().resource::<CurrentEvent>();
+        assert!(ev.is_active(), "event must be active after spawn_on_enter");
+
+        // Entity at (2,2) with Name "Rat"
+        let rat = app
+            .world()
+            .query_filtered::<(Entity, &Position), Without<Player>>()
+            .iter(app.world())
+            .find(|(_, pos)| pos.x == 2 && pos.y == 2);
+
+        assert!(rat.is_some(), "spawn_on_enter must create entity at (2,2)");
+        let (rat_entity, _) = rat.unwrap();
+        let name = app.world().get::<Name>(rat_entity).unwrap();
+        assert_eq!(name.0, "Rat");
+    }
+
+    #[test]
+    fn on_exit_fires_on_event_end() {
+        let mut app = spawn_event_test_app();
+        app.world_mut()
+            .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
+
+        register_spawn_event(
+            &mut app,
+            "test.onexit_end",
+            vec![],
+            vec![Effect::SpawnBlueprintAt {
+                blueprint_id: "blueprint.rat".into(),
+                x: 3,
+                y: 3,
+                mutators: vec![],
+            }],
+            false, // no second node → choice ends event
+        );
+
+        let player = trigger_event(&mut app, "test.onexit_end");
+        assert!(app.world().resource::<CurrentEvent>().is_active());
+
+        // Select choice to end event
+        app.world_mut()
+            .resource_mut::<bevy_ecs::message::Messages<EventSelected>>()
+            .write(EventSelected {
+                actor: player,
+                choice_index: 0,
+            });
+        app.update();
+
+        let ev = app.world().resource::<CurrentEvent>();
+        assert!(!ev.is_active(), "event must end after choice");
+
+        // on_exit should have spawned entity at (3,3)
+        let rat = app
+            .world()
+            .query_filtered::<(Entity, &Position), Without<Player>>()
+            .iter(app.world())
+            .find(|(_, pos)| pos.x == 3 && pos.y == 3);
+
+        assert!(rat.is_some(), "on_exit_effects must spawn entity at (3,3)");
+    }
+
+    #[test]
+    fn on_exit_fires_on_node_transition() {
+        let mut app = spawn_event_test_app();
+        app.world_mut()
+            .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
+
+        register_spawn_event(
+            &mut app,
+            "test.onexit_trans",
+            vec![],
+            vec![Effect::SpawnBlueprintAt {
+                blueprint_id: "blueprint.rat".into(),
+                x: 4,
+                y: 4,
+                mutators: vec![],
+            }],
+            true, // has second node → choice advances to node2
+        );
+
+        let player = trigger_event(&mut app, "test.onexit_trans");
+        assert_eq!(
+            app.world().resource::<CurrentEvent>().node_id,
+            "start"
+        );
+
+        // Select choice → transition to node2
+        app.world_mut()
+            .resource_mut::<bevy_ecs::message::Messages<EventSelected>>()
+            .write(EventSelected {
+                actor: player,
+                choice_index: 0,
+            });
+        app.update();
+
+        // on_exit from start node should have spawned entity at (4,4)
+        let rat = app
+            .world()
+            .query_filtered::<(Entity, &Position), Without<Player>>()
+            .iter(app.world())
+            .find(|(_, pos)| pos.x == 4 && pos.y == 4);
+
+        assert!(
+            rat.is_some(),
+            "on_exit must fire on node transition, entity at (4,4)"
+        );
+
+        // Event should still be active, now on node2
+        let ev = app.world().resource::<CurrentEvent>();
+        assert!(ev.is_active(), "event must still be active after transition");
+        assert_eq!(ev.node_id, "node2");
+    }
+
+    #[test]
+    fn mixed_effects_in_spawn_on_enter() {
+        let mut app = spawn_event_test_app();
+        app.world_mut()
+            .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
+
+        register_spawn_event(
+            &mut app,
+            "test.mixed",
+            vec![
+                Effect::Log("spawning...".into(), crate::gamelog::LogLevel::Info),
+                Effect::SpawnBlueprintAt {
+                    blueprint_id: "blueprint.rat".into(),
+                    x: 5,
+                    y: 5,
+                    mutators: vec![],
+                },
+            ],
+            vec![],
+            false,
+        );
+
+        trigger_event(&mut app, "test.mixed");
+
+        // Both effects must have resolved: log message + entity
+        let log = app.world().resource::<GameLog>();
+        assert!(
+            log.iter().any(|e| e.message.contains("spawning...")),
+            "Log effect must be applied from spawn_on_enter"
+        );
+
+        let rat = app
+            .world()
+            .query_filtered::<(Entity, &Position), Without<Player>>()
+            .iter(app.world())
+            .find(|(_, pos)| pos.x == 5 && pos.y == 5);
+        assert!(
+            rat.is_some(),
+            "SpawnBlueprintAt must be applied from spawn_on_enter alongside Log"
+        );
+    }
+
+    #[test]
+    fn invalid_blueprint_in_event_does_not_crash() {
+        let mut app = spawn_event_test_app();
+        app.world_mut()
+            .insert_resource(SmokeMap::new(10, 10, Tile::Floor));
+
+        register_spawn_event(
+            &mut app,
+            "test.bad_bp",
+            vec![Effect::SpawnBlueprintAt {
+                blueprint_id: "blueprint.nonexistent".into(),
+                x: 9,
+                y: 9,
+                mutators: vec![],
+            }],
+            vec![],
+            false,
+        );
+
+        trigger_event(&mut app, "test.bad_bp");
+
+        // Event must still be active (missing blueprint doesn't block event)
+        let ev = app.world().resource::<CurrentEvent>();
+        assert!(
+            ev.is_active(),
+            "event must be active despite invalid blueprint"
+        );
+
+        // No entity at (9,9)
+        let rat = app
+            .world()
+            .query_filtered::<(Entity, &Position), Without<Player>>()
+            .iter(app.world())
+            .find(|(_, pos)| pos.x == 9 && pos.y == 9);
+        assert!(rat.is_none(), "no entity must be spawned for invalid blueprint");
+
+        // Warning logged
+        let log = app.world().resource::<GameLog>();
+        assert!(
+            log.iter().any(|e| e.level == crate::gamelog::LogLevel::Warn),
+            "warning must be logged for invalid blueprint"
+        );
     }
 }
