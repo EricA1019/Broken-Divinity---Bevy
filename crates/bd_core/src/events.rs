@@ -90,6 +90,43 @@ impl CurrentEvent {
 pub fn default_event_registry() -> EventRegistry {
     let mut reg = EventRegistry::default();
 
+    // ── Raid event ──
+    reg.register(EventDefinition {
+        id: "event.raid".into(),
+        start_node: "start".into(),
+        nodes: HashMap::from([(
+            "start".into(),
+            EventNode {
+                speaker: "Scout".into(),
+                text: "Shapes move in the darkness beyond the shelter. Raiders!\n\nThey are closing in.".into(),
+                choices: vec![
+                    Choice {
+                        label: "Stand and fight!".into(),
+                        conditions: vec![Condition::Always],
+                        effects: vec![],
+                        next_node: None,
+                    },
+                ],
+                on_enter_effects: vec![],
+                on_exit_effects: vec![],
+            },
+        )]),
+        spawn_on_enter: vec![
+            Effect::SpawnBlueprintAt {
+                blueprint_id: "blueprint.raid_rat".into(),
+                x: 3,
+                y: 2,
+                mutators: vec![],
+            },
+            Effect::SpawnBlueprintAt {
+                blueprint_id: "blueprint.raid_rat".into(),
+                x: 16,
+                y: 2,
+                mutators: vec![],
+            },
+        ],
+    });
+
     // ── Gabriel first encounter ──
     reg.register(EventDefinition {
         id: "gabriel.first_encounter".into(),
@@ -814,7 +851,7 @@ mod tests {
         let mut app = test_app();
         app.world_mut().insert_resource(BlueprintCatalog::new(vec![
             EntityBlueprint {
-                id: "blueprint.rat".into(),
+                id: "blueprint.raid_rat".into(),
                 label: "Rat".into(),
                 is_player: false,
                 blocks_movement: true,
@@ -917,7 +954,7 @@ mod tests {
             &mut app,
             "test.spawn",
             vec![Effect::SpawnBlueprintAt {
-                blueprint_id: "blueprint.rat".into(),
+                blueprint_id: "blueprint.raid_rat".into(),
                 x: 2,
                 y: 2,
                 mutators: vec![],
@@ -965,7 +1002,7 @@ mod tests {
             "test.onexit_end",
             vec![],
             vec![Effect::SpawnBlueprintAt {
-                blueprint_id: "blueprint.rat".into(),
+                blueprint_id: "blueprint.raid_rat".into(),
                 x: 3,
                 y: 3,
                 mutators: vec![],
@@ -1009,7 +1046,7 @@ mod tests {
             "test.onexit_trans",
             vec![],
             vec![Effect::SpawnBlueprintAt {
-                blueprint_id: "blueprint.rat".into(),
+                blueprint_id: "blueprint.raid_rat".into(),
                 x: 4,
                 y: 4,
                 mutators: vec![],
@@ -1067,7 +1104,7 @@ mod tests {
                     reason: "test".into(),
                 },
                 Effect::SpawnBlueprintAt {
-                    blueprint_id: "blueprint.rat".into(),
+                    blueprint_id: "blueprint.raid_rat".into(),
                     x: 5,
                     y: 5,
                     mutators: vec![],

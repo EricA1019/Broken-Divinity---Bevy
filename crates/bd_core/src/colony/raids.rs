@@ -138,7 +138,7 @@ mod tests {
 
     fn make_rat_bp() -> crate::factory::EntityBlueprint {
         crate::factory::EntityBlueprint {
-            id: "blueprint.rat".into(),
+            id: "blueprint.raid_rat".into(),
             label: "Rat".into(),
             is_player: false,
             blocks_movement: true,
@@ -179,7 +179,7 @@ mod tests {
                     },
                 )]),
                 spawn_on_enter: vec![crate::actions::Effect::SpawnBlueprintAt {
-                    blueprint_id: "blueprint.rat".into(),
+                    blueprint_id: "blueprint.raid_rat".into(),
                     x: 3,
                     y: 2,
                     mutators: vec![],
@@ -257,7 +257,7 @@ mod tests {
                     },
                 )]),
                 spawn_on_enter: vec![crate::actions::Effect::SpawnBlueprintAt {
-                    blueprint_id: "blueprint.rat".into(),
+                    blueprint_id: "blueprint.raid_rat".into(),
                     x: 3,
                     y: 2,
                     mutators: vec![],
@@ -322,7 +322,7 @@ mod tests {
                     },
                 )]),
                 spawn_on_enter: vec![crate::actions::Effect::SpawnBlueprintAt {
-                    blueprint_id: "blueprint.rat".into(),
+                    blueprint_id: "blueprint.raid_rat".into(),
                     x: 3,
                     y: 2,
                     mutators: vec![],

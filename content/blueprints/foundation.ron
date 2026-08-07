@@ -1,5 +1,6 @@
 [
     EntityBlueprint(id: "blueprint.player", label: "Player", is_player: true, blocks_movement: false, pools: [(Health, 30, 0, 30), (ActionPoints, 3, 0, 3), (Temperance, 0, 0, 100), (Justice, 0, 0, 100), (Prudence, 0, 0, 100), (Fortitude, 0, 0, 100), (Thumos, 0, 0, 100), (Metis, 0, 0, 100), (Kleos, 0, 0, 100)], statuses: [], visual: Some("Player")),
-    EntityBlueprint(id: "blueprint.rat", label: "Rat", is_player: false, blocks_movement: true, pools: [(Health, 11, 0, 11), (ActionPoints, 2, 0, 2)], statuses: [], visual: Some("Enemy")),
+    EntityBlueprint(id: "blueprint.rat", label: "Rat", is_player: false, blocks_movement: true, pools: [(Health, 11, 0, 11), (ActionPoints, 2, 0, 2)], statuses: [], visual: Some("Enemy"), markers: []),
+    EntityBlueprint(id: "blueprint.raid_rat", label: "Rat", is_player: false, blocks_movement: true, pools: [(Health, 11, 0, 11), (ActionPoints, 2, 0, 2)], statuses: [], visual: Some("Enemy"), markers: ["RaidEnemy"]),
     EntityBlueprint(id: "blueprint.healing_potion", label: "Healing Potion", is_player: false, blocks_movement: false, pools: [], statuses: [], visual: Some("Item")),
 ]
