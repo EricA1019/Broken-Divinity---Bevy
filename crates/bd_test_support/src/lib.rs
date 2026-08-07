@@ -76,6 +76,9 @@ pub fn foundation_app() -> App {
     app.insert_resource(bd_core::colony::stations::StationCatalog::new(
         content.stations.clone(),
     ));
+    app.insert_resource(bd_core::factory::BlueprintCatalog::new(
+        content.blueprints.clone(),
+    ));
     app.insert_resource(content);
     app
 }
@@ -1040,7 +1043,6 @@ impl FoundationDriver {
         bd_core::save::restore_snapshot_into(
             self.app.world_mut(),
             &checkpoint.snapshot,
-            &HashMap::new(),
         )?;
         Ok(())
     }
@@ -1071,7 +1073,7 @@ impl FoundationDriver {
 
     pub fn load_manual_slot(&mut self, save_dir: &std::path::Path) -> Result<(), ScenarioError> {
         let snapshot = bd_core::save::load_manual_slot(save_dir)?;
-        bd_core::save::restore_snapshot_into(self.app.world_mut(), &snapshot, &HashMap::new())?;
+        bd_core::save::restore_snapshot_into(self.app.world_mut(), &snapshot)?;
         Ok(())
     }
 

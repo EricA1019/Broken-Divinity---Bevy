@@ -190,6 +190,7 @@ fn register_foundation(app: &mut App, foundation: bool) {
     app.init_resource::<crate::colony::stations::PendingStationAssignment>();
     app.init_resource::<crate::colony::stations::BuildInteraction>();
     app.init_resource::<crate::colony::stations::StationCatalog>();
+    app.init_resource::<crate::factory::BlueprintCatalog>();
     app.insert_resource(crate::colony::production::ColonyResources::default());
     app.init_resource::<crate::colony::production::ColonyStorage>();
     app.init_resource::<crate::colony::production::DailyCycleDraft>();

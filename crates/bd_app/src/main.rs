@@ -5,7 +5,6 @@
 
 use std::time::Duration;
 use std::{
-    collections::HashMap,
     path::{Path, PathBuf},
 };
 
@@ -85,6 +84,9 @@ fn run_application() -> Result<(), String> {
     .map_err(|error| format!("content error: {error}"))?;
     app.insert_resource(bd_core::colony::stations::StationCatalog::new(
         application_content.foundation.stations.clone(),
+    ));
+    app.insert_resource(bd_core::factory::BlueprintCatalog::new(
+        application_content.foundation.blueprints.clone(),
     ));
     app.insert_resource(application_content.foundation);
 
@@ -169,7 +171,7 @@ fn process_persistence_requests(world: &mut bevy_ecs::world::World) {
     if load_requested {
         let path = bd_core::save::manual_slot_path(&save_dir);
         match bd_core::save::load_manual_slot(&save_dir).and_then(|snapshot| {
-            bd_core::save::restore_snapshot_into(world, &snapshot, &HashMap::new())
+            bd_core::save::restore_snapshot_into(world, &snapshot)
                 .map(|_| snapshot)
         }) {
             Ok(snapshot) => {
@@ -325,6 +327,9 @@ mod application_tests {
         app.add_plugins(bd_core::BdFoundationPlugin);
         app.insert_resource(bd_core::colony::stations::StationCatalog::new(
             content.foundation.stations.clone(),
+        ));
+        app.insert_resource(bd_core::factory::BlueprintCatalog::new(
+            content.foundation.blueprints.clone(),
         ));
         app.insert_resource(content.foundation);
         app.add_plugins(bd_tui::BdTuiPlugin);
@@ -638,7 +643,9 @@ mod application_tests {
         let content = load_application_content(&content_dir()).unwrap();
         let mut app = bevy_app::App::new();
         app.add_plugins(bd_core::BdFoundationPlugin);
+        let blueprints = content.foundation.blueprints.clone();
         app.insert_resource(content.foundation);
+        app.insert_resource(bd_core::factory::BlueprintCatalog::new(blueprints));
         *app.world_mut().resource_mut::<bd_core::spatial::GameMode>() =
             bd_core::spatial::GameMode::Outpost;
         app.world_mut()

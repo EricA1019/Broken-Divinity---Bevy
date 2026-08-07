@@ -386,11 +386,10 @@ fn validate_snapshot(snapshot: &RunSnapshot) -> Result<(), SaveError> {
 /// Returns the restored World and the seed.
 pub fn load_world(
     path: &PathBuf,
-    _blueprints: &HashMap<String, EntityBlueprint>,
 ) -> Result<(World, u64), SaveError> {
     let snapshot = load_snapshot(path)?;
 
-    let (world, _) = restore_world(&snapshot, _blueprints)?;
+    let (world, _) = restore_world(&snapshot)?;
     Ok((world, snapshot.seed))
 }
 
@@ -638,10 +637,9 @@ fn build_snapshot(world: &mut World, seed: u64, turn: u64) -> RunSnapshot {
 /// Restore a world from a snapshot.
 fn restore_world(
     snapshot: &RunSnapshot,
-    _blueprints: &HashMap<String, EntityBlueprint>,
 ) -> Result<(World, HashMap<SaveId, Entity>), SaveError> {
     let mut world = World::new();
-    let mapping = restore_snapshot_into(&mut world, snapshot, _blueprints)?;
+    let mapping = restore_snapshot_into(&mut world, snapshot)?;
     Ok((world, mapping))
 }
 
@@ -650,7 +648,6 @@ fn restore_world(
 pub fn restore_snapshot_into(
     world: &mut World,
     snapshot: &RunSnapshot,
-    _blueprints: &HashMap<String, EntityBlueprint>,
 ) -> Result<HashMap<SaveId, Entity>, SaveError> {
     // Validate every reference before mutating the live application world.
     validate_snapshot(snapshot)?;
@@ -1001,7 +998,7 @@ mod tests {
 
         let mut restored = App::new();
         restored.add_plugins(crate::BdCorePlugin);
-        restore_snapshot_into(restored.world_mut(), &snapshot, &HashMap::new()).unwrap();
+        restore_snapshot_into(restored.world_mut(), &snapshot).unwrap();
         let entries = restored
             .world()
             .resource::<GameLog>()
@@ -1068,11 +1065,10 @@ mod tests {
     fn content_version_mismatch_errors() {
         let mut snap = test_snapshot();
         snap.content_version = "wrong".into();
-        let blueprints = HashMap::new();
         let ron = ron::ser::to_string(&snap).unwrap();
         let path = std::env::temp_dir().join("test_mismatch.ron");
         std::fs::write(&path, &ron).unwrap();
-        let result = load_world(&path, &blueprints);
+        let result = load_world(&path);
         assert!(result.is_err());
         let _ = std::fs::remove_file(&path);
     }
@@ -1142,8 +1138,7 @@ mod tests {
             .id();
 
         let snap = build_snapshot(&mut world, 42, 0);
-        let blueprints = HashMap::new();
-        let (restored, mapping) = restore_world(&snap, &blueprints).unwrap();
+        let (restored, mapping) = restore_world(&snap).unwrap();
         let saved_id = snap
             .entities
             .iter()
@@ -1176,7 +1171,7 @@ mod tests {
             .contains
             .push(SaveId(999_999));
 
-        let error = match restore_world(&snap, &HashMap::new()) {
+        let error = match restore_world(&snap) {
             Ok(_) => panic!("invalid entity reference should fail safely"),
             Err(error) => error,
         };
@@ -1190,7 +1185,7 @@ mod tests {
         let ron = ron::ser::to_string(&snap).unwrap();
         let path = std::env::temp_dir().join("test_invalid_map.ron");
         std::fs::write(&path, ron).unwrap();
-        let error = load_world(&path, &HashMap::new()).unwrap_err();
+        let error = load_world(&path).unwrap_err();
         assert!(error.to_string().contains("invalid map"));
         let _ = std::fs::remove_file(path);
     }
@@ -1256,8 +1251,7 @@ mod tests {
         world.entity_mut(item).insert(OwnedBy(player));
 
         let snap = build_snapshot(&mut world, 42, 0);
-        let blueprints = HashMap::new();
-        let (restored, mapping) = restore_world(&snap, &blueprints).unwrap();
+        let (restored, mapping) = restore_world(&snap).unwrap();
 
         // Find the restored item
         let item_data = snap
@@ -1383,9 +1377,8 @@ mod tests {
             hp.current = 5;
         }
 
-        // Load saved state (empty blueprints — player uses components directly)
-        let blueprints = HashMap::new();
-        let (mut loaded_world, _loaded_seed) = load_world(&saved_path, &blueprints).unwrap();
+        // Load saved state
+        let (mut loaded_world, _loaded_seed) = load_world(&saved_path).unwrap();
 
         // Verify restored position — the saved world has exactly one entity (player)
         let all_entities: Vec<Entity> =
@@ -1433,7 +1426,7 @@ mod tests {
         app.world_mut()
             .entity_mut(player)
             .insert(Position { x: 9, y: 9 });
-        restore_snapshot_into(app.world_mut(), &snapshot, &HashMap::new()).unwrap();
+        restore_snapshot_into(app.world_mut(), &snapshot).unwrap();
 
         let restored_position = app
             .world_mut()

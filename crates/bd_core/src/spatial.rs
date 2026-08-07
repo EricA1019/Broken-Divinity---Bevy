@@ -214,6 +214,7 @@ fn process_transitions(
     mut transition_complete: bevy_ecs::message::MessageWriter<TransitionComplete>,
     foundation: Option<Res<crate::session::FoundationRuntime>>,
     foundation_content: Option<Res<crate::content::FoundationContent>>,
+    blueprint_catalog: Option<Res<crate::factory::BlueprintCatalog>>,
     player_query: Query<Entity, With<Player>>,
     mut extraction: ExtractionContext,
 ) {
@@ -321,10 +322,24 @@ fn process_transitions(
                 session.begin_dungeon(node_name);
                 if foundation.is_some() {
                     if let Some(content) = foundation_content.as_deref() {
+                        let catalog = blueprint_catalog
+                            .as_deref()
+                            .unwrap_or_else(|| {
+                                // If no catalog is registered, create an empty fallback
+                                // (should never happen in production; content loading
+                                // always registers the catalog)
+                                static EMPTY: std::sync::LazyLock<
+                                    crate::factory::BlueprintCatalog,
+                                > = std::sync::LazyLock::new(
+                                    crate::factory::BlueprintCatalog::default,
+                                );
+                                &*EMPTY
+                            });
                         spawn_fixed_dungeon(
                             &mut commands,
                             &mut map,
                             content,
+                            catalog,
                             &player_query,
                             node_name,
                         );
@@ -357,6 +372,7 @@ fn spawn_fixed_dungeon(
     commands: &mut Commands,
     map: &mut ResMut<SmokeMap>,
     content: &crate::content::FoundationContent,
+    catalog: &crate::factory::BlueprintCatalog,
     player_query: &Query<Entity, With<Player>>,
     dungeon_id: &str,
 ) {
@@ -378,10 +394,14 @@ fn spawn_fixed_dungeon(
             EntityScope::RunPersistent,
             PersistentEntity,
         ));
-    } else if let Some(blueprint) = content
-        .blueprints
-        .iter()
-        .find(|bp| bp.id == "blueprint.player")
+    } else if let Some(blueprint) = catalog
+        .get("blueprint.player")
+        .or_else(|| {
+            content
+                .blueprints
+                .iter()
+                .find(|bp| bp.id == "blueprint.player")
+        })
     {
         let player = spawn_from_blueprint(blueprint, Some(dungeon.entrance), &[], commands);
         commands.entity(player).insert((
@@ -392,10 +412,14 @@ fn spawn_fixed_dungeon(
     }
 
     for placement in &dungeon.enemy_placements {
-        if let Some(blueprint) = content
-            .blueprints
-            .iter()
-            .find(|bp| bp.id == placement.content_id)
+        if let Some(blueprint) = catalog
+            .get(&placement.content_id)
+            .or_else(|| {
+                content
+                    .blueprints
+                    .iter()
+                    .find(|bp| bp.id == placement.content_id)
+            })
         {
             let enemy = spawn_from_blueprint(blueprint, Some(placement.position), &[], commands);
             commands
@@ -417,10 +441,14 @@ fn spawn_fixed_dungeon(
         else {
             continue;
         };
-        let Some(blueprint) = content
-            .blueprints
-            .iter()
-            .find(|bp| bp.id == item_def.blueprint_id)
+        let Some(blueprint) = catalog
+            .get(&item_def.blueprint_id)
+            .or_else(|| {
+                content
+                    .blueprints
+                    .iter()
+                    .find(|bp| bp.id == item_def.blueprint_id)
+            })
         else {
             continue;
         };
@@ -454,96 +482,6 @@ fn spawn_fixed_dungeon(
     ));
 }
 
-/// Legacy procedural location constructor retained for later products.
-///
-/// It is intentionally not registered or called by the foundation transition
-/// path. The MVP fixed-location provider will replace this boundary later.
-#[allow(dead_code)]
-fn spawn_dungeon_location(
-    commands: &mut Commands,
-    map: &mut ResMut<SmokeMap>,
-    player_query: &Query<Entity, With<Player>>,
-    seed: u64,
-) {
-    use crate::components::{BlocksMovement, ExitTile, Name, Position, Tile};
-    use crate::factory::{BlueprintRegistry, spawn_from_blueprint};
-    use crate::map::SmokeMap;
-    use crate::procgen::{LocationTemplate, generate_location};
-
-    let registry = BlueprintRegistry::phase18_defaults();
-    let template = LocationTemplate::ruin();
-    let plan = generate_location(&template, seed);
-
-    **map = SmokeMap::from_tiles(plan.width, plan.height, &plan.tiles);
-    map.set(plan.entrance.x, plan.entrance.y, Tile::Door);
-
-    // Move existing player to dungeon entrance instead of creating duplicate
-    if let Some(existing_player) = player_query.iter().next() {
-        commands.entity(existing_player).insert(plan.entrance);
-    } else if let Some(bp) = registry.get("blueprint.player") {
-        let entity = spawn_from_blueprint(bp, Some(plan.entrance), &[], commands);
-        commands.entity(entity).insert(PersistentEntity);
-    }
-
-    let enemy_blueprints = ["blueprint.rat", "blueprint.skeleton"];
-    for (i, zone) in plan.spawn_zones.iter().enumerate() {
-        let bp_id = enemy_blueprints[i % enemy_blueprints.len()];
-        if let Some(bp) = registry.get(bp_id) {
-            let entity = spawn_from_blueprint(bp, Some(*zone), &[], commands);
-            commands.entity(entity).insert(TransientEntity);
-        }
-    }
-
-    let item_bps = [
-        "blueprint.healing_potion",
-        "blueprint.sword",
-        "blueprint.shield",
-        "blueprint.smite_scroll",
-        "blueprint.gold_pile",
-    ];
-    for (i, bp_id) in item_bps.iter().enumerate() {
-        if let Some(room) = plan.rooms.get((i + 1) % plan.rooms.len()) {
-            let pos = Position {
-                x: room.x + 1,
-                y: room.y + 1 + i as i32 % 2,
-            };
-            if map.is_walkable(pos.x, pos.y) {
-                if let Some(bp) = registry.get(bp_id) {
-                    let entity = spawn_from_blueprint(bp, Some(pos), &[], commands);
-                    commands.entity(entity).insert(BlocksMovement);
-                    commands.entity(entity).remove::<BlocksMovement>();
-                }
-            }
-        }
-    }
-
-    // Spawn a SanityPressure entity deeper in the dungeon
-    if let Some(room) = plan.rooms.get(3.min(plan.rooms.len() - 1)) {
-        let sp_pos = Position {
-            x: room.center().x,
-            y: room.center().y,
-        };
-        if map.is_walkable(sp_pos.x, sp_pos.y) {
-            commands.spawn((
-                Position {
-                    x: sp_pos.x,
-                    y: sp_pos.y,
-                },
-                crate::sanity::SanityPressure {
-                    radius: 2,
-                    drain_per_turn: 5,
-                },
-                Name("Aura of Dread".into()),
-            ));
-        }
-    }
-
-    if let Some(exit_pos) = plan.exits.first() {
-        map.set(exit_pos.x, exit_pos.y, Tile::Door);
-        commands.spawn((ExitTile, *exit_pos, Name("Exit".into())));
-    }
-}
-
 // ---------------------------------------------------------------------------
 // Registration
 // ---------------------------------------------------------------------------
@@ -563,6 +501,7 @@ pub fn initialize_outpost(
     mut game_log: ResMut<GameLog>,
     mut map: ResMut<SmokeMap>,
     content: OutpostInitializationContent,
+    blueprint_catalog: Res<crate::factory::BlueprintCatalog>,
     player_query: Query<Entity, With<Player>>,
 ) {
     if *content.mode != GameMode::Outpost {
@@ -573,12 +512,19 @@ pub fn initialize_outpost(
     // have been cleaned up on defeat. Recreate exactly one player before the
     // one-time colony initialization guard.
     if player_query.iter().next().is_none() {
-        if let Some(blueprint) = content.foundation.as_deref().and_then(|content| {
-            content
-                .blueprints
-                .iter()
-                .find(|blueprint| blueprint.id == "blueprint.player")
-        }) {
+        if let Some(blueprint) = blueprint_catalog
+            .get("blueprint.player")
+            .or_else(|| {
+                // Fallback: if the catalog hasn't been populated yet (e.g. in
+                // tests that use init_resource without content), scan FoundationContent.
+                content.foundation.as_deref().and_then(|foundation| {
+                    foundation
+                        .blueprints
+                        .iter()
+                        .find(|bp| bp.id == "blueprint.player")
+                })
+            })
+        {
             let player = crate::factory::spawn_from_blueprint(
                 blueprint,
                 Some(crate::colony::shelter::SHELTER_RETURN_SPAWN),
