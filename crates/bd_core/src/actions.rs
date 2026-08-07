@@ -100,7 +100,15 @@ pub enum Effect {
     /// Placeholder: apply a status (Phase 9).
     ApplyStatus(String),
     /// Spawn an entity from a blueprint at the target position.
+    /// DEPRECATED: prefer SpawnBlueprintAt for entity spawning. This variant is specialized for station construction.
     SpawnEntity(String),
+    /// Spawn an entity from a blueprint at absolute map coordinates.
+    SpawnBlueprintAt {
+        blueprint_id: String,
+        x: i32,
+        y: i32,
+        mutators: Vec<crate::factory::Mutator>,
+    },
     /// Set a survivor's task.
     SetSurvivorTask(String),
     /// Set a named flag (event state, global markers).
@@ -1047,6 +1055,7 @@ fn compile_action_costs(
 pub(crate) struct ActionResolutionLocation<'w, 's> {
     mode: Res<'w, crate::spatial::GameMode>,
     foundation: Option<Res<'w, crate::session::FoundationRuntime>>,
+    blueprint_catalog: Res<'w, crate::factory::BlueprintCatalog>,
     actors: Query<
         'w,
         's,
@@ -1298,6 +1307,42 @@ pub(crate) fn resolve_action_effects(
                         );
                     }
                 }
+                Effect::SpawnBlueprintAt {
+                    blueprint_id,
+                    x,
+                    y,
+                    mutators,
+                } => {
+                    let Some(blueprint) = location.blueprint_catalog.get(blueprint_id) else {
+                        if player_flag.is_some() {
+                            game_log.push(
+                                format!("Unknown blueprint: {blueprint_id}"),
+                                LogLevel::Warn,
+                            );
+                        }
+                        continue;
+                    };
+                    let spawn_pos = Position { x: *x, y: *y };
+                    let entity = crate::factory::spawn_from_blueprint(
+                        blueprint,
+                        Some(spawn_pos),
+                        mutators,
+                        &mut commands,
+                    );
+                    let scope = match *location.mode {
+                        crate::spatial::GameMode::Outpost => {
+                            crate::spatial::EntityScope::ColonyPersistent
+                        }
+                        _ => crate::spatial::EntityScope::DungeonTransient,
+                    };
+                    commands.entity(entity).insert(scope);
+                    if player_flag.is_some() {
+                        game_log.push(
+                            format!("A {} appears.", blueprint.label),
+                            LogLevel::Info,
+                        );
+                    }
+                }
                 Effect::SetSurvivorTask(task) => {
                     // Set the survivor's task based on the parameter string
                     if let Some(target) = pending.target {
@@ -1544,7 +1589,7 @@ mod tests {
             .id();
         send_action(&mut app, p, "ability.move", Some(Direction::East), None);
         app.update();
-        assert_eq!(app.world().get::<Position>(p).unwrap().x, 5);
+        assert_eq!(app.world_mut().get::<Position>(p).unwrap().x, 5);
     }
 
     #[test]
@@ -1556,7 +1601,7 @@ mod tests {
         let p = spawn_player(&mut app, 5, 5);
         send_action(&mut app, p, "ability.move", Some(Direction::East), None);
         app.update();
-        assert_eq!(app.world().get::<Position>(p).unwrap().x, 5);
+        assert_eq!(app.world_mut().get::<Position>(p).unwrap().x, 5);
     }
 
     #[test]
@@ -1568,7 +1613,7 @@ mod tests {
         send_action(&mut app, p, "ability.move", Some(Direction::East), None);
         app.update();
         let ap = app
-            .world()
+            .world_mut()
             .get::<Pools>(p)
             .unwrap()
             .get(PoolKind::ActionPoints)
@@ -1595,7 +1640,7 @@ mod tests {
         app.update();
         app.update(); // second frame: TurnJustAdvanced consumed, AP regen fires
         let ap = app
-            .world()
+            .world_mut()
             .get::<Pools>(p)
             .unwrap()
             .get(PoolKind::ActionPoints)
@@ -1615,7 +1660,7 @@ mod tests {
         app.update();
         // Player HP should be unchanged (no self-damage)
         let hp = app
-            .world()
+            .world_mut()
             .get::<Pools>(p)
             .unwrap()
             .get(PoolKind::Health)
@@ -1623,7 +1668,7 @@ mod tests {
             .current;
         assert_eq!(hp, 20, "attack with no target must not damage self");
         // Game log should contain the denial hint
-        let log = app.world().resource::<GameLog>();
+        let log = app.world_mut().resource::<GameLog>();
         let has_denial = log.iter().any(|e| e.message.contains("No target"));
         assert!(
             has_denial,
@@ -1643,7 +1688,7 @@ mod tests {
         app.update();
         // Dummy HP should be unchanged
         let hp = app
-            .world()
+            .world_mut()
             .get::<Pools>(dummy)
             .unwrap()
             .get(PoolKind::Health)
@@ -1668,7 +1713,7 @@ mod tests {
         app.update();
 
         assert_eq!(
-            *app.world().resource::<crate::spatial::GameMode>(),
+            *app.world_mut().resource::<crate::spatial::GameMode>(),
             crate::spatial::GameMode::Outpost
         );
     }
@@ -1685,7 +1730,7 @@ mod tests {
         app.update(); // second frame to process pool deltas from action effects
         // Damage goes to enemy, not self
         let dummy_hp = app
-            .world()
+            .world_mut()
             .get::<Pools>(dummy)
             .unwrap()
             .get(PoolKind::Health)
@@ -1703,7 +1748,7 @@ mod tests {
         );
         assert!(dummy_hp < 10, "dummy should take some damage, HP still 10");
         let player_hp = app
-            .world()
+            .world_mut()
             .get::<Pools>(p)
             .unwrap()
             .get(PoolKind::Health)
@@ -1722,7 +1767,7 @@ mod tests {
         app.update();
         // Should not panic, AP should be spent
         let ap = app
-            .world()
+            .world_mut()
             .get::<Pools>(p)
             .unwrap()
             .get(PoolKind::ActionPoints)
@@ -1774,7 +1819,7 @@ mod tests {
                 target: None,
             });
         app.update();
-        let log = app.world().resource::<GameLog>();
+        let log = app.world_mut().resource::<GameLog>();
         let has_hint = log.iter().any(|e| e.message.contains("Wait (.)"));
         assert!(
             has_hint,
@@ -1814,7 +1859,7 @@ mod tests {
         send_action(&mut app, p, "ability.move", Some(Direction::East), None);
         app.update();
 
-        let log = app.world().resource::<GameLog>();
+        let log = app.world_mut().resource::<GameLog>();
         let has_pickup = log.iter().any(|e| e.message.contains("Healing Potion"));
         assert!(
             has_pickup,
@@ -1835,12 +1880,12 @@ mod tests {
             .insert_resource(crate::spatial::GameMode::Tactical);
         let p = spawn_player(&mut app, 5, 5);
 
-        let turn_before = app.world().resource::<GameTime>().turn;
+        let turn_before = app.world_mut().resource::<GameTime>().turn;
 
         // Move — accepted gameplay action advances one turn.
         send_action(&mut app, p, "ability.move", Some(Direction::East), None);
         app.update();
-        let turn_after_move = app.world().resource::<GameTime>().turn;
+        let turn_after_move = app.world_mut().resource::<GameTime>().turn;
         assert_eq!(
             turn_after_move,
             turn_before + 1,
@@ -1856,7 +1901,7 @@ mod tests {
         // Wait — also advances exactly one turn.
         send_action(&mut app, p, "ability.wait", None, None);
         app.update();
-        let turn_after_wait = app.world().resource::<GameTime>().turn;
+        let turn_after_wait = app.world_mut().resource::<GameTime>().turn;
         assert_eq!(
             turn_after_wait,
             turn_before + 2,
@@ -1919,6 +1964,7 @@ mod tests {
             .world_mut()
             .resource_mut::<ActionRegistry>();
         registry.register(def);
+        drop(registry); // release mutable borrow before further app operations
 
         send_action(app, actor, "test.spawn", None, None);
         app.update(); // validation frame
@@ -1926,9 +1972,9 @@ mod tests {
 
         // Find the spawned entity (not the actor, at the spawn position)
         let spawned = app
-            .world()
+            .world_mut()
             .query_filtered::<(Entity, &Position), Without<Player>>()
-            .iter(app.world())
+            .iter(app.world_mut())
             .find(|(e, pos)| *e != actor && pos.x == x && pos.y == y)
             .map(|(e, _)| e);
         spawned
@@ -1942,17 +1988,17 @@ mod tests {
         let spawned = submit_spawn_action(&mut app, player, "blueprint.rat", 5, 3, vec![]);
         assert!(spawned.is_some(), "spawn action must create an entity");
 
-        let pos = app.world().get::<Position>(spawned.unwrap()).unwrap();
+        let pos = app.world_mut().get::<Position>(spawned.unwrap()).unwrap();
         assert_eq!(pos.x, 5, "spawned entity must be at specified x");
         assert_eq!(pos.y, 3, "spawned entity must be at specified y");
 
-        let has_blocks = app.world().get::<BlocksMovement>(spawned.unwrap()).is_some();
+        let has_blocks = app.world_mut().get::<BlocksMovement>(spawned.unwrap()).is_some();
         assert!(has_blocks, "rat blueprint must attach BlocksMovement");
 
-        let has_player = app.world().get::<Player>(spawned.unwrap()).is_some();
+        let has_player = app.world_mut().get::<Player>(spawned.unwrap()).is_some();
         assert!(!has_player, "spawned rat must NOT be a player");
 
-        let name = app.world().get::<Name>(spawned.unwrap()).unwrap();
+        let name = app.world_mut().get::<Name>(spawned.unwrap()).unwrap();
         assert_eq!(name.0, "Rat", "spawned entity must have Name from blueprint");
     }
 
@@ -1971,7 +2017,7 @@ mod tests {
         );
         assert!(spawned.is_some());
 
-        let pools = app.world().get::<Pools>(spawned.unwrap()).unwrap();
+        let pools = app.world_mut().get::<Pools>(spawned.unwrap()).unwrap();
         let hp = pools.get(PoolKind::Health).unwrap();
         // Rat base Health = (11, 0, 11), Elite = 1.5x max → 11 * 1.5 = 16.5, truncated to 16
         assert_eq!(hp.max, 16, "Elite mutator must scale Health max to 1.5x");
@@ -1986,7 +2032,7 @@ mod tests {
         assert!(spawned.is_none(), "missing blueprint must not create entity");
 
         // Verify a blueprint-related warning was logged
-        let log = app.world().resource::<GameLog>();
+        let log = app.world_mut().resource::<GameLog>();
         let logged_warning = log
             .iter()
             .any(|e| e.level == LogLevel::Warn && e.message.to_lowercase().contains("blueprint"));
@@ -2005,7 +2051,7 @@ mod tests {
             let spawned = submit_spawn_action(&mut app, player, "blueprint.rat", 5, 3, vec![]);
             assert!(spawned.is_some());
             let scope = app
-                .world()
+                .world_mut()
                 .get::<crate::spatial::EntityScope>(spawned.unwrap())
                 .unwrap();
             assert_eq!(
@@ -2025,7 +2071,7 @@ mod tests {
             let spawned = submit_spawn_action(&mut app, player, "blueprint.rat", 5, 3, vec![]);
             assert!(spawned.is_some());
             let scope = app
-                .world()
+                .world_mut()
                 .get::<crate::spatial::EntityScope>(spawned.unwrap())
                 .unwrap();
             assert_eq!(

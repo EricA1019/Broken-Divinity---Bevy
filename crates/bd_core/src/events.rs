@@ -29,6 +29,9 @@ pub struct EventNode {
     /// Effects applied when entering this node (before choices are shown).
     #[serde(default)]
     pub on_enter_effects: Vec<Effect>,
+    /// Effects applied when leaving this node (on transition or event end).
+    #[serde(default)]
+    pub on_exit_effects: Vec<Effect>,
 }
 
 /// A complete event with named nodes and a start node.
@@ -37,6 +40,9 @@ pub struct EventDefinition {
     pub id: String,
     pub start_node: String,
     pub nodes: HashMap<String, EventNode>,
+    /// Effects applied when the event starts (entity creation).
+    #[serde(default)]
+    pub spawn_on_enter: Vec<Effect>,
 }
 
 // ── Registry (data-driven, mirrors ActionRegistry) ──
@@ -170,8 +176,10 @@ pub fn default_event_registry() -> EventRegistry {
                     },
                 ],
                 on_enter_effects: vec![],
+                on_exit_effects: vec![],
             },
         )]),
+        spawn_on_enter: vec![],
     });
 
     reg
@@ -217,7 +225,11 @@ pub fn process_event_triggers(
     registry: Res<EventRegistry>,
     mut current: ResMut<CurrentEvent>,
     player: Query<&Pools, With<Player>>,
+    player_entity: Query<Entity, With<Player>>,
     mut game_log: ResMut<GameLog>,
+    mut commands: Commands,
+    blueprint_catalog: Res<crate::factory::BlueprintCatalog>,
+    mut delta_writer: bevy_ecs::message::MessageWriter<PoolDeltaRequested>,
 ) {
     let player_pools = player.single().ok();
 
@@ -268,6 +280,100 @@ pub fn process_event_triggers(
             format!("Event started: {}", trigger.event_id),
             crate::gamelog::LogLevel::Info,
         );
+
+        // Apply on_enter_effects from the start node
+        let player_entity = player_entity.single().ok();
+        for effect in &start_node.on_enter_effects {
+            resolve_event_effect(
+                effect,
+                player_entity,
+                &mut game_log,
+                &mut commands,
+                &blueprint_catalog,
+                &mut delta_writer,
+            );
+        }
+
+        // Apply spawn_on_enter from the event definition
+        for effect in &event_def.spawn_on_enter {
+            resolve_event_effect(
+                effect,
+                player_entity,
+                &mut game_log,
+                &mut commands,
+                &blueprint_catalog,
+                &mut delta_writer,
+            );
+        }
+    }
+}
+
+/// Resolve a single Effect in event context (shared by triggers and choices).
+fn resolve_event_effect(
+    effect: &Effect,
+    player_entity: Option<Entity>,
+    game_log: &mut GameLog,
+    commands: &mut Commands,
+    blueprint_catalog: &crate::factory::BlueprintCatalog,
+    delta_writer: &mut bevy_ecs::message::MessageWriter<PoolDeltaRequested>,
+) {
+    match effect {
+        Effect::PoolDelta {
+            kind,
+            amount,
+            tags,
+            reason,
+        } => {
+            if let Some(player) = player_entity {
+                delta_writer.write(PoolDeltaRequested {
+                    source: None,
+                    target: player,
+                    kind: *kind,
+                    amount: *amount,
+                    tags: tags.clone(),
+                    reason: reason.clone(),
+                });
+            }
+        }
+        Effect::Log(msg, level) => {
+            game_log.push(msg.clone(), *level);
+        }
+        Effect::ApplyStatus(status_id) => {
+            if let Some(player) = player_entity {
+                let defs = crate::statuses::default_status_definitions();
+                crate::statuses::apply_status(player, status_id, 3, None, commands, &defs);
+            }
+        }
+        Effect::Flag(name, value) => {
+            game_log.push(
+                format!("Flag '{}' set to {}", name, value),
+                crate::gamelog::LogLevel::Info,
+            );
+        }
+        Effect::SpawnBlueprintAt {
+            blueprint_id,
+            x,
+            y,
+            mutators,
+        } => {
+            let Some(blueprint) = blueprint_catalog.get(blueprint_id) else {
+                game_log.push(
+                    format!("Unknown blueprint: {blueprint_id}"),
+                    crate::gamelog::LogLevel::Warn,
+                );
+                return;
+            };
+            let entity = crate::factory::spawn_from_blueprint(
+                blueprint,
+                Some(crate::components::Position { x: *x, y: *y }),
+                mutators,
+                commands,
+            );
+            commands
+                .entity(entity)
+                .insert(crate::spatial::EntityScope::ColonyPersistent);
+        }
+        _ => {} // MoveEntity, SpawnEntity, SetSurvivorTask: no-op in event context
     }
 }
 
@@ -280,6 +386,7 @@ pub fn process_event_choices(
     mut game_log: ResMut<GameLog>,
     mut commands: Commands,
     player_query: Query<Entity, With<Player>>,
+    blueprint_catalog: Res<crate::factory::BlueprintCatalog>,
 ) {
     let Ok(player_entity) = player_query.single() else {
         return;
@@ -313,46 +420,28 @@ pub fn process_event_choices(
 
         let choice = &available[selection.choice_index];
 
-        // Apply the choice's effects
+        // Apply the choice's effects via shared resolver
         for effect in &choice.effects {
-            match effect {
-                Effect::PoolDelta {
-                    kind,
-                    amount,
-                    tags: _,
-                    reason: _,
-                } => {
-                    delta_writer.write(PoolDeltaRequested {
-                        source: None,
-                        target: player_entity,
-                        kind: *kind,
-                        amount: *amount,
-                        tags: vec![],
-                        reason: "event choice".into(),
-                    });
-                }
-                Effect::Log(msg, level) => {
-                    game_log.push(msg.clone(), *level);
-                }
-                Effect::ApplyStatus(status_id) => {
-                    let defs = crate::statuses::default_status_definitions();
-                    crate::statuses::apply_status(
-                        player_entity,
-                        status_id,
-                        3,
-                        None,
-                        &mut commands,
-                        &defs,
-                    );
-                }
-                Effect::Flag(name, value) => {
-                    game_log.push(
-                        format!("Flag '{}' set to {}", name, value),
-                        crate::gamelog::LogLevel::Info,
-                    );
-                }
-                _ => {} // MoveEntity, SpawnEntity, SetSurvivorTask: no-op in event context
-            }
+            resolve_event_effect(
+                effect,
+                Some(player_entity),
+                &mut game_log,
+                &mut commands,
+                &blueprint_catalog,
+                &mut delta_writer,
+            );
+        }
+
+        // Apply on_exit_effects from the current node (fires on both transition and event end)
+        for effect in &node.on_exit_effects {
+            resolve_event_effect(
+                effect,
+                Some(player_entity),
+                &mut game_log,
+                &mut commands,
+                &blueprint_catalog,
+                &mut delta_writer,
+            );
         }
 
         // Advance or end
@@ -451,8 +540,10 @@ mod tests {
                     text: "Hello.".into(),
                     choices: vec![],
                     on_enter_effects: vec![],
+                    on_exit_effects: vec![],
                 },
             )]),
+            spawn_on_enter: vec![],
         };
         reg.register(ev);
         let found = reg.get("test.event");
@@ -488,6 +579,7 @@ mod tests {
                 "entered".into(),
                 crate::gamelog::LogLevel::Info,
             )],
+            on_exit_effects: vec![],
         };
         assert_eq!(node.on_enter_effects.len(), 1);
     }
@@ -527,8 +619,10 @@ mod tests {
                             next_node: None,
                         }],
                         on_enter_effects: vec![],
+                        on_exit_effects: vec![],
                     },
                 )]),
+                spawn_on_enter: vec![],
             });
     }
 
@@ -551,7 +645,7 @@ mod tests {
             });
 
         app.update();
-        let ev = app.world().resource::<CurrentEvent>();
+        let ev = app.world_mut().resource::<CurrentEvent>();
         assert!(ev.is_active());
         assert_eq!(ev.event_id, "test.event");
     }
@@ -574,9 +668,9 @@ mod tests {
             });
 
         app.update();
-        let ev = app.world().resource::<CurrentEvent>();
+        let ev = app.world_mut().resource::<CurrentEvent>();
         assert!(!ev.is_active());
-        let log = app.world().resource::<GameLog>();
+        let log = app.world_mut().resource::<GameLog>();
         assert!(log.iter().any(|e| e.message.contains("Unknown event")));
     }
 
@@ -603,7 +697,7 @@ mod tests {
                 event_id: "test.event".into(),
             });
         app.update();
-        assert!(app.world().resource::<CurrentEvent>().is_active());
+        assert!(app.world_mut().resource::<CurrentEvent>().is_active());
 
         // Select the only choice (which has next_node=None → event ends)
         app.world_mut()
@@ -614,7 +708,7 @@ mod tests {
             });
         app.update();
 
-        let ev = app.world().resource::<CurrentEvent>();
+        let ev = app.world_mut().resource::<CurrentEvent>();
         assert!(!ev.is_active());
     }
 
@@ -648,10 +742,10 @@ mod tests {
         app.update();
 
         // Event should still be active (invalid index was silently ignored)
-        let ev = app.world().resource::<CurrentEvent>();
+        let ev = app.world_mut().resource::<CurrentEvent>();
         assert!(ev.is_active());
 
-        let log = app.world().resource::<GameLog>();
+        let log = app.world_mut().resource::<GameLog>();
         assert!(!log.iter().any(|e| e.message.contains("Event ended")));
     }
 
@@ -672,22 +766,22 @@ mod tests {
 
         // Verify state before update
         assert!(
-            !app.world().resource::<GabrielState>().appeared,
+            !app.world_mut().resource::<GabrielState>().appeared,
             "Gabriel should not have appeared yet"
         );
-        assert_eq!(*app.world().resource::<GameMode>(), GameMode::Tactical);
+        assert_eq!(*app.world_mut().resource::<GameMode>(), GameMode::Tactical);
 
         app.update();
         // After first update, trigger_gabriel_encounter should have fired
         assert!(
-            app.world().resource::<GabrielState>().appeared,
+            app.world_mut().resource::<GabrielState>().appeared,
             "Gabriel should have appeared after first update"
         );
 
         app.update(); // second frame: process_event_triggers reads the message
 
         // Gabriel event should have been triggered
-        let ev = app.world().resource::<CurrentEvent>();
+        let ev = app.world_mut().resource::<CurrentEvent>();
         assert!(ev.is_active(), "Event should be active");
         assert_eq!(ev.event_id, GABRIEL_EVENT_ID);
     }
@@ -705,7 +799,7 @@ mod tests {
         app.update();
 
         // Gabriel should NOT trigger again
-        let ev = app.world().resource::<CurrentEvent>();
+        let ev = app.world_mut().resource::<CurrentEvent>();
         assert!(!ev.is_active());
     }
 
@@ -790,7 +884,8 @@ mod tests {
     }
 
     /// Trigger an event and return a reference to the player entity.
-    fn trigger_event(app: &mut App, event_id: &str) -> Entity {
+    /// Returns the player entity so tests can submit choice selections.
+    fn trigger_event_in(app: &mut App, event_id: &str) -> Entity {
         let player = app
             .world_mut()
             .spawn((
@@ -830,22 +925,32 @@ mod tests {
             vec![],
             false,
         );
+        // Spawn player + trigger event (inline to avoid borrow issues)
+        let player = app
+            .world_mut()
+            .spawn((Player, Position { x: 1, y: 1 }, Pools::new(vec![])))
+            .id();
+        app.world_mut()
+            .resource_mut::<bevy_ecs::message::Messages<EventTrigger>>()
+            .write(EventTrigger {
+                actor: player,
+                event_id: "test.spawn".into(),
+            });
+        app.update();
 
-        trigger_event(&mut app, "test.spawn");
-
-        let ev = app.world().resource::<CurrentEvent>();
+        let ev = app.world_mut().resource::<CurrentEvent>();
         assert!(ev.is_active(), "event must be active after spawn_on_enter");
 
         // Entity at (2,2) with Name "Rat"
         let rat = app
-            .world()
+            .world_mut()
             .query_filtered::<(Entity, &Position), Without<Player>>()
-            .iter(app.world())
+            .iter(app.world_mut())
             .find(|(_, pos)| pos.x == 2 && pos.y == 2);
 
         assert!(rat.is_some(), "spawn_on_enter must create entity at (2,2)");
         let (rat_entity, _) = rat.unwrap();
-        let name = app.world().get::<Name>(rat_entity).unwrap();
+        let name = app.world_mut().get::<Name>(rat_entity).unwrap();
         assert_eq!(name.0, "Rat");
     }
 
@@ -868,8 +973,8 @@ mod tests {
             false, // no second node → choice ends event
         );
 
-        let player = trigger_event(&mut app, "test.onexit_end");
-        assert!(app.world().resource::<CurrentEvent>().is_active());
+        let player = trigger_event_in(&mut app, "test.onexit_end");
+        assert!(app.world_mut().resource::<CurrentEvent>().is_active());
 
         // Select choice to end event
         app.world_mut()
@@ -880,14 +985,14 @@ mod tests {
             });
         app.update();
 
-        let ev = app.world().resource::<CurrentEvent>();
+        let ev = app.world_mut().resource::<CurrentEvent>();
         assert!(!ev.is_active(), "event must end after choice");
 
         // on_exit should have spawned entity at (3,3)
         let rat = app
-            .world()
+            .world_mut()
             .query_filtered::<(Entity, &Position), Without<Player>>()
-            .iter(app.world())
+            .iter(app.world_mut())
             .find(|(_, pos)| pos.x == 3 && pos.y == 3);
 
         assert!(rat.is_some(), "on_exit_effects must spawn entity at (3,3)");
@@ -912,9 +1017,9 @@ mod tests {
             true, // has second node → choice advances to node2
         );
 
-        let player = trigger_event(&mut app, "test.onexit_trans");
+        let player = trigger_event_in(&mut app, "test.onexit_trans");
         assert_eq!(
-            app.world().resource::<CurrentEvent>().node_id,
+            app.world_mut().resource::<CurrentEvent>().node_id,
             "start"
         );
 
@@ -929,9 +1034,9 @@ mod tests {
 
         // on_exit from start node should have spawned entity at (4,4)
         let rat = app
-            .world()
+            .world_mut()
             .query_filtered::<(Entity, &Position), Without<Player>>()
-            .iter(app.world())
+            .iter(app.world_mut())
             .find(|(_, pos)| pos.x == 4 && pos.y == 4);
 
         assert!(
@@ -940,7 +1045,7 @@ mod tests {
         );
 
         // Event should still be active, now on node2
-        let ev = app.world().resource::<CurrentEvent>();
+        let ev = app.world_mut().resource::<CurrentEvent>();
         assert!(ev.is_active(), "event must still be active after transition");
         assert_eq!(ev.node_id, "node2");
     }
@@ -972,10 +1077,10 @@ mod tests {
             false,
         );
 
-        let player = trigger_event(&mut app, "test.mixed");
+        let player = trigger_event_in(&mut app, "test.mixed");
 
         // PoolDelta effect must have applied (actor takes 1 Health damage)
-        let pools = app.world().get::<Pools>(player).unwrap();
+        let pools = app.world_mut().get::<Pools>(player).unwrap();
         let hp = pools.get(PoolKind::Health).unwrap();
         assert_eq!(
             hp.current, 19,
@@ -983,9 +1088,9 @@ mod tests {
         );
 
         let rat = app
-            .world()
+            .world_mut()
             .query_filtered::<(Entity, &Position), Without<Player>>()
-            .iter(app.world())
+            .iter(app.world_mut())
             .find(|(_, pos)| pos.x == 5 && pos.y == 5);
         assert!(
             rat.is_some(),
@@ -1012,10 +1117,10 @@ mod tests {
             false,
         );
 
-        trigger_event(&mut app, "test.bad_bp");
+        trigger_event_in(&mut app, "test.bad_bp");
 
         // Event must still be active (missing blueprint doesn't block event)
-        let ev = app.world().resource::<CurrentEvent>();
+        let ev = app.world_mut().resource::<CurrentEvent>();
         assert!(
             ev.is_active(),
             "event must be active despite invalid blueprint"
@@ -1023,14 +1128,14 @@ mod tests {
 
         // No entity at (9,9)
         let rat = app
-            .world()
+            .world_mut()
             .query_filtered::<(Entity, &Position), Without<Player>>()
-            .iter(app.world())
+            .iter(app.world_mut())
             .find(|(_, pos)| pos.x == 9 && pos.y == 9);
         assert!(rat.is_none(), "no entity must be spawned for invalid blueprint");
 
         // Warning logged about the invalid blueprint
-        let log = app.world().resource::<GameLog>();
+        let log = app.world_mut().resource::<GameLog>();
         assert!(
             log.iter().any(|e| e.level == crate::gamelog::LogLevel::Warn
                 && e.message.to_lowercase().contains("blueprint")),
