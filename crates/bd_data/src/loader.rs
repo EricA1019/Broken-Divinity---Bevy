@@ -66,6 +66,7 @@ pub fn load_foundation_content(
         "colony_placement_profiles",
         bd_core::content::ColonyPlacementProfile
     );
+    let events = load_items!("events", bd_core::events::EventDefinition);
 
     let bundle = FoundationContent {
         dungeons,
@@ -80,6 +81,7 @@ pub fn load_foundation_content(
         colony_recipes,
         colony_gather_tasks,
         colony_placement_profiles,
+        events,
     };
     validate_foundation_content(&bundle)?;
     Ok(bundle)

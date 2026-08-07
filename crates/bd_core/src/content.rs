@@ -142,6 +142,7 @@ pub struct FoundationContent {
     pub colony_recipes: Vec<ColonyRecipeDefinition>,
     pub colony_gather_tasks: Vec<DirectGatherDefinition>,
     pub colony_placement_profiles: Vec<ColonyPlacementProfile>,
+    pub events: Vec<crate::events::EventDefinition>,
 }
 
 impl FoundationContent {
