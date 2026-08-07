@@ -1474,7 +1474,7 @@ fn is_turn_action(action_id: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::components::{BlocksMovement, Player, Tile};
+    use crate::components::{BlocksMovement, Name, Player, Tile};
     use crate::map::SmokeMap;
     use crate::pools::Pool;
     use bevy_app::App;
@@ -1951,6 +1951,9 @@ mod tests {
 
         let has_player = app.world().get::<Player>(spawned.unwrap()).is_some();
         assert!(!has_player, "spawned rat must NOT be a player");
+
+        let name = app.world().get::<Name>(spawned.unwrap()).unwrap();
+        assert_eq!(name.0, "Rat", "spawned entity must have Name from blueprint");
     }
 
     #[test]
@@ -1982,11 +1985,11 @@ mod tests {
         let spawned = submit_spawn_action(&mut app, player, "blueprint.missing", 5, 3, vec![]);
         assert!(spawned.is_none(), "missing blueprint must not create entity");
 
-        // Verify a warning was logged (exact message format is implementation detail)
+        // Verify a blueprint-related warning was logged
         let log = app.world().resource::<GameLog>();
         let logged_warning = log
             .iter()
-            .any(|e| e.level == LogLevel::Warn);
+            .any(|e| e.level == LogLevel::Warn && e.message.to_lowercase().contains("blueprint"));
         assert!(logged_warning, "game log must warn about missing blueprint");
     }
 

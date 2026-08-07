@@ -793,7 +793,14 @@ mod tests {
     fn trigger_event(app: &mut App, event_id: &str) -> Entity {
         let player = app
             .world_mut()
-            .spawn((Player, Position { x: 1, y: 1 }, Pools::new(vec![])))
+            .spawn((
+                Player,
+                Position { x: 1, y: 1 },
+                Pools::new(vec![
+                    crate::pools::Pool::new(PoolKind::Health, 20, 0, 20),
+                    crate::pools::Pool::new(PoolKind::ActionPoints, 3, 0, 3),
+                ]),
+            ))
             .id();
         app.world_mut()
             .resource_mut::<bevy_ecs::message::Messages<EventTrigger>>()
@@ -948,7 +955,12 @@ mod tests {
             &mut app,
             "test.mixed",
             vec![
-                Effect::Log("spawning...".into(), crate::gamelog::LogLevel::Info),
+                Effect::PoolDelta {
+                    kind: PoolKind::Health,
+                    amount: -1,
+                    tags: vec![],
+                    reason: "test".into(),
+                },
                 Effect::SpawnBlueprintAt {
                     blueprint_id: "blueprint.rat".into(),
                     x: 5,
@@ -960,13 +972,14 @@ mod tests {
             false,
         );
 
-        trigger_event(&mut app, "test.mixed");
+        let player = trigger_event(&mut app, "test.mixed");
 
-        // Both effects must have resolved: log message + entity
-        let log = app.world().resource::<GameLog>();
-        assert!(
-            log.iter().any(|e| e.message.contains("spawning...")),
-            "Log effect must be applied from spawn_on_enter"
+        // PoolDelta effect must have applied (actor takes 1 Health damage)
+        let pools = app.world().get::<Pools>(player).unwrap();
+        let hp = pools.get(PoolKind::Health).unwrap();
+        assert_eq!(
+            hp.current, 19,
+            "PoolDelta from spawn_on_enter must apply (20 - 1 = 19)"
         );
 
         let rat = app
@@ -1016,10 +1029,11 @@ mod tests {
             .find(|(_, pos)| pos.x == 9 && pos.y == 9);
         assert!(rat.is_none(), "no entity must be spawned for invalid blueprint");
 
-        // Warning logged
+        // Warning logged about the invalid blueprint
         let log = app.world().resource::<GameLog>();
         assert!(
-            log.iter().any(|e| e.level == crate::gamelog::LogLevel::Warn),
+            log.iter().any(|e| e.level == crate::gamelog::LogLevel::Warn
+                && e.message.to_lowercase().contains("blueprint")),
             "warning must be logged for invalid blueprint"
         );
     }
