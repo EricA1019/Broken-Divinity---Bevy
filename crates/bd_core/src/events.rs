@@ -621,6 +621,68 @@ mod tests {
         assert_eq!(node.on_enter_effects.len(), 1);
     }
 
+    // ── Session 2: EVT-RON-001 — events load from RON ──
+
+    #[test]
+    fn ron_loads_all_required_events() {
+        let content_root = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("content");
+        let ron_path = content_root.join("events").join("foundation.ron");
+        let raw = std::fs::read_to_string(&ron_path)
+            .expect("events/foundation.ron must exist and be readable");
+        let events: Vec<EventDefinition> =
+            ron::from_str(&raw).expect("events/foundation.ron must be valid RON");
+
+        assert!(
+            events.len() >= 3,
+            "must have at least 3 events, found {}",
+            events.len()
+        );
+
+        // All events must have non-empty id and valid start_node
+        for ev in &events {
+            assert!(!ev.id.is_empty(), "event must have non-empty id");
+            assert!(
+                ev.nodes.contains_key(&ev.start_node),
+                "event '{}' start_node '{}' must exist in nodes",
+                ev.id,
+                ev.start_node
+            );
+        }
+
+        // Required events
+        let find = |id: &str| events.iter().find(|ev| ev.id == id);
+
+        let small = find("event.raid.small").expect("must have event.raid.small");
+        assert_eq!(
+            small.spawn_on_enter.len(),
+            2,
+            "small raid must spawn 2 rats"
+        );
+
+        let medium = find("event.raid.medium").expect("must have event.raid.medium");
+        assert_eq!(
+            medium.spawn_on_enter.len(),
+            3,
+            "medium raid must spawn 3 rats"
+        );
+
+        let gabriel = find("gabriel.first_encounter").expect("must have gabriel.first_encounter");
+        let node = gabriel
+            .nodes
+            .get(&gabriel.start_node)
+            .expect("gabriel must have start node");
+        assert_eq!(
+            node.choices.len(),
+            3,
+            "gabriel must have 3 choices (Accept, Reject, Defer)"
+        );
+    }
+
     // ── E-2 tests: process_event_triggers ──
 
     use crate::{

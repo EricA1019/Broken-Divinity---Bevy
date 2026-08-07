@@ -1,1 +1,170 @@
-[]
+[
+    // ── Raid: small (1-2 enemies) ──
+    EventDefinition(
+        id: "event.raid.small",
+        start_node: "start",
+        nodes: {
+            "start": EventNode(
+                speaker: "Scout",
+                text: "Shapes move in the darkness beyond the shelter. Raiders!\n\nThey are closing in.",
+                choices: [
+                    Choice(
+                        label: "Stand and fight!",
+                        conditions: [Always],
+                        effects: [],
+                        next_node: None,
+                    ),
+                ],
+                on_enter_effects: [],
+                on_exit_effects: [],
+            ),
+        },
+        spawn_on_enter: [
+            SpawnBlueprintAt(
+                blueprint_id: "blueprint.raid_rat",
+                x: 3,
+                y: 2,
+                mutators: [],
+            ),
+            SpawnBlueprintAt(
+                blueprint_id: "blueprint.raid_rat",
+                x: 16,
+                y: 2,
+                mutators: [],
+            ),
+        ],
+    ),
+
+    // ── Raid: medium (3 enemies, Elite) ──
+    EventDefinition(
+        id: "event.raid.medium",
+        start_node: "start",
+        nodes: {
+            "start": EventNode(
+                speaker: "Scout",
+                text: "A larger force approaches! Elite raiders lead the charge.\n\nBrace yourselves!",
+                choices: [
+                    Choice(
+                        label: "Stand and fight!",
+                        conditions: [Always],
+                        effects: [],
+                        next_node: None,
+                    ),
+                ],
+                on_enter_effects: [],
+                on_exit_effects: [],
+            ),
+        },
+        spawn_on_enter: [
+            SpawnBlueprintAt(
+                blueprint_id: "blueprint.raid_rat",
+                x: 3,
+                y: 2,
+                mutators: [Elite],
+            ),
+            SpawnBlueprintAt(
+                blueprint_id: "blueprint.raid_rat",
+                x: 10,
+                y: 2,
+                mutators: [Elite],
+            ),
+            SpawnBlueprintAt(
+                blueprint_id: "blueprint.raid_rat",
+                x: 16,
+                y: 2,
+                mutators: [Elite],
+            ),
+        ],
+    ),
+
+    // ── Gabriel first encounter ──
+    EventDefinition(
+        id: "gabriel.first_encounter",
+        start_node: "start",
+        nodes: {
+            "start": EventNode(
+                speaker: "Gabriel",
+                text: "You have walked far, mortal. I have watched you since the Sundering.\n\nI offer you my witness. Carry it, and you shall never face the dark alone.\n\nDo you accept?",
+                choices: [
+                    Choice(
+                        label: "Accept the witness",
+                        conditions: [Always],
+                        effects: [
+                            ApplyStatus("status.gabriels_witness"),
+                            Flag("gabriel.accepted", true),
+                            PoolDelta(
+                                kind: Faith,
+                                amount: 10,
+                                tags: [],
+                                reason: "accepted Gabriel's witness",
+                            ),
+                            PoolDelta(
+                                kind: Temperance,
+                                amount: 2,
+                                tags: [],
+                                reason: "accepted Gabriel's witness",
+                            ),
+                            PoolDelta(
+                                kind: RepPuritans,
+                                amount: -5,
+                                tags: [],
+                                reason: "consorting with the mysterious",
+                            ),
+                            Log("Gabriel's presence settles over you like a mantle. You are no longer alone.", Info),
+                        ],
+                        next_node: None,
+                    ),
+                    Choice(
+                        label: "Reject the offer",
+                        conditions: [Always],
+                        effects: [
+                            PoolDelta(
+                                kind: Prudence,
+                                amount: 2,
+                                tags: [],
+                                reason: "rejected the unknown",
+                            ),
+                            PoolDelta(
+                                kind: Fortitude,
+                                amount: 1,
+                                tags: [],
+                                reason: "stood firm against temptation",
+                            ),
+                            PoolDelta(
+                                kind: RepPuritans,
+                                amount: 3,
+                                tags: [],
+                                reason: "rejected mysterious entity",
+                            ),
+                            Log("Gabriel's form flickers with something like disappointment. 'As you wish.' He fades.", Info),
+                        ],
+                        next_node: None,
+                    ),
+                    Choice(
+                        label: "Defer — ask for time",
+                        conditions: [Always],
+                        effects: [
+                            PoolDelta(
+                                kind: Justice,
+                                amount: 1,
+                                tags: [],
+                                reason: "sought wisdom before deciding",
+                            ),
+                            PoolDelta(
+                                kind: Metis,
+                                amount: 1,
+                                tags: [],
+                                reason: "displayed caution",
+                            ),
+                            Log("'Time is the one thing I have in abundance.' Gabriel lingers, waiting.", Info),
+                        ],
+                        next_node: None,
+                    ),
+                ],
+                on_enter_effects: [],
+                on_exit_effects: [],
+            ),
+        },
+        spawn_on_enter: [],
+    ),
+]
