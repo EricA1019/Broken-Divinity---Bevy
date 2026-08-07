@@ -120,3 +120,218 @@ pub fn register_raids(app: &mut bevy_app::App) {
     app.init_resource::<RaidState>();
     app.add_systems(bevy_app::Update, process_raids.in_set(BdSet::Mutation));
 }
+
+// ── Tests ──
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::events::{CurrentEvent, EventDefinition, EventNode, EventRegistry};
+    use crate::factory::BlueprintCatalog;
+    use bevy_app::App;
+    use std::collections::HashMap;
+
+    fn make_rat_bp() -> crate::factory::EntityBlueprint {
+        crate::factory::EntityBlueprint {
+            id: "blueprint.rat".into(),
+            label: "Rat".into(),
+            is_player: false,
+            blocks_movement: true,
+            pools: vec![
+                (PoolKind::Health, 11, 0, 11),
+                (PoolKind::ActionPoints, 2, 0, 2),
+            ],
+            statuses: vec![],
+            visual: Some("Enemy".into()),
+            markers: vec!["RaidEnemy".into()],
+        }
+    }
+
+    #[test]
+    fn raid_pushes_event_not_direct_spawn() {
+        let mut app = App::new();
+        app.add_plugins(crate::BdCorePlugin);
+        app.world_mut()
+            .insert_resource(BlueprintCatalog::new(vec![make_rat_bp()]));
+        app.world_mut()
+            .resource_mut::<EventRegistry>()
+            .register(EventDefinition {
+                id: "event.raid.test".into(),
+                start_node: "start".into(),
+                nodes: HashMap::from([(
+                    "start".into(),
+                    EventNode {
+                        speaker: "Scout".into(),
+                        text: "Raiders!".into(),
+                        choices: vec![crate::dialogue::Choice {
+                            label: "Defend".into(),
+                            conditions: vec![crate::dialogue::Condition::Always],
+                            effects: vec![],
+                            next_node: None,
+                        }],
+                        on_enter_effects: vec![],
+                        on_exit_effects: vec![],
+                    },
+                )]),
+                spawn_on_enter: vec![crate::actions::Effect::SpawnBlueprintAt {
+                    blueprint_id: "blueprint.rat".into(),
+                    x: 3,
+                    y: 2,
+                    mutators: vec![],
+                }],
+            });
+        app.world_mut()
+            .resource_mut::<crate::time::GameTime>()
+            .day = 5;
+        app.world_mut()
+            .resource_mut::<crate::time::GameTime>()
+            .turn = 50;
+        app.world_mut()
+            .resource_mut::<crate::colony::production::ColonyResources>()
+            .pools
+            .get_mut(PoolKind::Supplies)
+            .unwrap()
+            .current = 20;
+        app.update();
+
+        let w = app.world_mut();
+        let ev = w.resource::<CurrentEvent>();
+        assert!(
+            ev.is_active(),
+            "process_raids must push CurrentEvent instead of spawning"
+        );
+        assert_eq!(ev.event_id, "event.raid.test");
+        let markers = w.query::<&RaidEnemy>().iter(w).count();
+        assert_eq!(markers, 0, "no RaidEnemy before event resolution");
+    }
+
+    #[test]
+    fn raid_event_spawn_creates_raiders() {
+        let mut app = App::new();
+        app.add_plugins(crate::BdCorePlugin);
+        app.world_mut()
+            .insert_resource(BlueprintCatalog::new(vec![make_rat_bp()]));
+        app.world_mut()
+            .resource_mut::<EventRegistry>()
+            .register(EventDefinition {
+                id: "event.raid.spawn".into(),
+                start_node: "start".into(),
+                nodes: HashMap::from([(
+                    "start".into(),
+                    EventNode {
+                        speaker: "Scout".into(),
+                        text: "Raiders!".into(),
+                        choices: vec![crate::dialogue::Choice {
+                            label: "Defend".into(),
+                            conditions: vec![crate::dialogue::Condition::Always],
+                            effects: vec![],
+                            next_node: None,
+                        }],
+                        on_enter_effects: vec![],
+                        on_exit_effects: vec![],
+                    },
+                )]),
+                spawn_on_enter: vec![crate::actions::Effect::SpawnBlueprintAt {
+                    blueprint_id: "blueprint.rat".into(),
+                    x: 3,
+                    y: 2,
+                    mutators: vec![],
+                }],
+            });
+        app.world_mut()
+            .resource_mut::<crate::time::GameTime>()
+            .day = 5;
+        app.world_mut()
+            .resource_mut::<crate::time::GameTime>()
+            .turn = 50;
+        app.world_mut()
+            .resource_mut::<crate::colony::production::ColonyResources>()
+            .pools
+            .get_mut(PoolKind::Supplies)
+            .unwrap()
+            .current = 20;
+        app.world_mut().spawn((
+            crate::components::Player,
+            crate::components::Position { x: 1, y: 1 },
+            crate::pools::Pools::new(vec![]),
+        ));
+        app.update();
+        app.update();
+
+        let w = app.world_mut();
+        let ev = w.resource::<CurrentEvent>();
+        assert!(ev.is_active());
+        let raiders: Vec<_> = w
+            .query::<(Entity, &RaidEnemy, &crate::components::Position)>()
+            .iter(w)
+            .collect();
+        assert!(!raiders.is_empty());
+        let scope = w.get::<crate::spatial::EntityScope>(raiders[0].0);
+        assert!(scope.is_some());
+    }
+
+    #[test]
+    fn raid_spawn_uses_blueprint_pools() {
+        let mut app = App::new();
+        app.add_plugins(crate::BdCorePlugin);
+        app.world_mut()
+            .insert_resource(BlueprintCatalog::new(vec![make_rat_bp()]));
+        app.world_mut()
+            .resource_mut::<EventRegistry>()
+            .register(EventDefinition {
+                id: "event.raid.pools".into(),
+                start_node: "start".into(),
+                nodes: HashMap::from([(
+                    "start".into(),
+                    EventNode {
+                        speaker: "Scout".into(),
+                        text: "Raiders!".into(),
+                        choices: vec![crate::dialogue::Choice {
+                            label: "Defend".into(),
+                            conditions: vec![crate::dialogue::Condition::Always],
+                            effects: vec![],
+                            next_node: None,
+                        }],
+                        on_enter_effects: vec![],
+                        on_exit_effects: vec![],
+                    },
+                )]),
+                spawn_on_enter: vec![crate::actions::Effect::SpawnBlueprintAt {
+                    blueprint_id: "blueprint.rat".into(),
+                    x: 3,
+                    y: 2,
+                    mutators: vec![],
+                }],
+            });
+        app.world_mut()
+            .resource_mut::<crate::time::GameTime>()
+            .day = 5;
+        app.world_mut()
+            .resource_mut::<crate::time::GameTime>()
+            .turn = 50;
+        app.world_mut()
+            .resource_mut::<crate::colony::production::ColonyResources>()
+            .pools
+            .get_mut(PoolKind::Supplies)
+            .unwrap()
+            .current = 20;
+        app.world_mut().spawn((
+            crate::components::Player,
+            crate::components::Position { x: 1, y: 1 },
+            crate::pools::Pools::new(vec![]),
+        ));
+        app.update();
+        app.update();
+
+        let w = app.world_mut();
+        let (_, pools) = w
+            .query::<(&RaidEnemy, &crate::pools::Pools)>()
+            .iter(w)
+            .next()
+            .expect("must have RaidEnemy with pools");
+        let hp = pools.get(PoolKind::Health).unwrap();
+        assert_eq!(hp.max, 11);
+        let ap = pools.get(PoolKind::ActionPoints).unwrap();
+        assert_eq!(ap.max, 2);
+    }
+}
