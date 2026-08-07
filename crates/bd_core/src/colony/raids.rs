@@ -25,15 +25,19 @@ pub enum RaidState {
 #[derive(Component, Debug, Clone)]
 pub struct RaidEnemy;
 
-/// Roll for raid at day change. Spawn enemies if raid triggers.
+pub const RAID_EVENT_ID: &str = "event.raid";
+
+/// Roll for raid at day change. Emits an event instead of spawning directly.
 pub fn process_raids(
     mut raid_state: ResMut<RaidState>,
     mut colony_res: ResMut<crate::colony::production::ColonyResources>,
     game_time: Res<crate::time::GameTime>,
     mut last_day: Local<u64>,
-    mut commands: Commands,
     mut game_log: ResMut<crate::gamelog::GameLog>,
     raid_enemies: Query<Entity, With<RaidEnemy>>,
+    event_registry: Res<crate::events::EventRegistry>,
+    mut trigger_writer: bevy_ecs::message::MessageWriter<crate::signals::EventTrigger>,
+    player_query: Query<Entity, With<crate::components::Player>>,
 ) {
     // Only run on day change
     if game_time.day == *last_day || game_time.day == 0 {
@@ -69,34 +73,35 @@ pub fn process_raids(
     let enemy_count = (seed / 100 % (RAID_ENEMY_COUNT_MAX - RAID_ENEMY_COUNT_MIN + 1) as u64
         + RAID_ENEMY_COUNT_MIN as u64) as u32;
 
-    *raid_state = RaidState::Active {
-        turn_started: game_time.turn,
-        enemy_count,
-    };
-
-    // Spawn raiders at random positions on the shelter map edges
-    let positions: [(i32, i32); 3] = [(3, 2), (16, 2), (10, 10)];
-    for i in 0..enemy_count.min(3) {
-        let (x, y) = positions[i as usize];
-        commands.spawn((
-            crate::components::Position { x, y },
-            crate::components::Name(format!("Raider {}", i + 1)),
-            crate::components::BlocksMovement,
-            RaidEnemy,
-            crate::pools::Pools::new(vec![
-                crate::pools::Pool::new(PoolKind::Health, 8, 0, 8),
-                crate::pools::Pool::new(PoolKind::ActionPoints, 2, 0, 2),
-            ]),
-        ));
+    // Push an event instead of spawning directly.
+    // Event spawn_on_enter will create enemies via blueprint factory.
+    if let Some(actor) = player_query.iter().next() {
+        if event_registry.get(RAID_EVENT_ID).is_some() {
+            *raid_state = RaidState::Active {
+                turn_started: game_time.turn,
+                enemy_count,
+            };
+            trigger_writer.write(crate::signals::EventTrigger {
+                actor,
+                event_id: RAID_EVENT_ID.into(),
+            });
+            game_log.push(
+                format!(
+                    "Raiders attack the shelter! {} enemies sighted.",
+                    enemy_count
+                ),
+                crate::gamelog::LogLevel::Combat,
+            );
+        } else {
+            game_log.push(
+                format!(
+                    "Raid event '{}' not registered — skipping spawn.",
+                    RAID_EVENT_ID
+                ),
+                crate::gamelog::LogLevel::Warn,
+            );
+        }
     }
-
-    game_log.push(
-        format!(
-            "Raiders attack the shelter! {} enemies sighted.",
-            enemy_count
-        ),
-        crate::gamelog::LogLevel::Combat,
-    );
 
     // If player has no defenders, immediate supply loss
     if colony_res
@@ -156,7 +161,7 @@ mod tests {
         app.world_mut()
             .resource_mut::<EventRegistry>()
             .register(EventDefinition {
-                id: "event.raid.test".into(),
+                id: RAID_EVENT_ID.into(),
                 start_node: "start".into(),
                 nodes: HashMap::from([(
                     "start".into(),
@@ -192,17 +197,37 @@ mod tests {
             .get_mut(PoolKind::Supplies)
             .unwrap()
             .current = 20;
+        app.world_mut().spawn((
+            crate::components::Player,
+            crate::components::Position { x: 1, y: 1 },
+            crate::pools::Pools::new(vec![]),
+        ));
+        app.update();
+
+        // After one update: process_raids queued EventTrigger, but
+        // process_event_triggers (IntentCollection) ran earlier this frame.
+        // So event is not yet active and no entities spawned.
+        let w = app.world_mut();
+        let ev = w.resource::<CurrentEvent>();
+        assert!(
+            !ev.is_active(),
+            "event not yet active after raid trigger (processed next frame)"
+        );
+        let markers = w.query::<&RaidEnemy>().iter(w).count();
+        assert_eq!(markers, 0, "no RaidEnemy before event resolution");
+        drop(w);
+
+        // Second update: process_event_triggers reads the queued trigger,
+        // event becomes active, spawn_on_enter fires.
         app.update();
 
         let w = app.world_mut();
         let ev = w.resource::<CurrentEvent>();
         assert!(
             ev.is_active(),
-            "process_raids must push CurrentEvent instead of spawning"
+            "process_raids must push CurrentEvent (active after 2nd frame)"
         );
-        assert_eq!(ev.event_id, "event.raid.test");
-        let markers = w.query::<&RaidEnemy>().iter(w).count();
-        assert_eq!(markers, 0, "no RaidEnemy before event resolution");
+        assert_eq!(ev.event_id, RAID_EVENT_ID);
     }
 
     #[test]
@@ -214,7 +239,7 @@ mod tests {
         app.world_mut()
             .resource_mut::<EventRegistry>()
             .register(EventDefinition {
-                id: "event.raid.spawn".into(),
+                id: RAID_EVENT_ID.into(),
                 start_node: "start".into(),
                 nodes: HashMap::from([(
                     "start".into(),
@@ -279,7 +304,7 @@ mod tests {
         app.world_mut()
             .resource_mut::<EventRegistry>()
             .register(EventDefinition {
-                id: "event.raid.pools".into(),
+                id: RAID_EVENT_ID.into(),
                 start_node: "start".into(),
                 nodes: HashMap::from([(
                     "start".into(),
