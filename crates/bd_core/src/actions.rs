@@ -1865,4 +1865,171 @@ mod tests {
             turn_after_wait
         );
     }
+
+    // ── Phase 2: Effect::SpawnBlueprintAt tests ──
+
+    /// Test app with BlueprintCatalog + SmokeMap for spawn tests.
+    fn spawn_test_app() -> App {
+        let mut app = App::new();
+        app.add_plugins(crate::BdCorePlugin);
+        app.world_mut()
+            .insert_resource(SmokeMap::new(20, 20, Tile::Floor));
+        app.world_mut()
+            .insert_resource(crate::factory::BlueprintCatalog::new(vec![
+                crate::factory::EntityBlueprint {
+                    id: "blueprint.rat".into(),
+                    label: "Rat".into(),
+                    is_player: false,
+                    blocks_movement: true,
+                    pools: vec![
+                        (PoolKind::Health, 11, 0, 11),
+                        (PoolKind::ActionPoints, 2, 0, 2),
+                    ],
+                    statuses: vec![],
+                    visual: Some("Enemy".into()),
+                    markers: vec![],
+                },
+            ]));
+        app
+    }
+
+    /// Register a one-shot action that spawns, then submit it.
+    fn submit_spawn_action(
+        app: &mut App,
+        actor: Entity,
+        blueprint_id: &str,
+        x: i32,
+        y: i32,
+        mutators: Vec<crate::factory::Mutator>,
+    ) -> Option<Entity> {
+        // Register a disposable action definition
+        let def = ActionDefinition {
+            id: "test.spawn".into(),
+            label: "Spawn".into(),
+            requirements: vec![Requirement::EntityAlive],
+            cost_effects: vec![],
+            effects: vec![Effect::SpawnBlueprintAt {
+                blueprint_id: blueprint_id.into(),
+                x,
+                y,
+                mutators,
+            }],
+        };
+        let mut registry = app
+            .world_mut()
+            .resource_mut::<ActionRegistry>();
+        registry.register(def);
+
+        send_action(app, actor, "test.spawn", None, None);
+        app.update(); // validation frame
+        app.update(); // effect resolution frame
+
+        // Find the spawned entity (not the actor, at the spawn position)
+        let spawned = app
+            .world()
+            .query_filtered::<(Entity, &Position), Without<Player>>()
+            .iter(app.world())
+            .find(|(e, pos)| *e != actor && pos.x == x && pos.y == y)
+            .map(|(e, _)| e);
+        spawned
+    }
+
+    #[test]
+    fn spawn_blueprint_at_creates_entity_at_position() {
+        let mut app = spawn_test_app();
+        let player = spawn_player(&mut app, 1, 1);
+
+        let spawned = submit_spawn_action(&mut app, player, "blueprint.rat", 5, 3, vec![]);
+        assert!(spawned.is_some(), "spawn action must create an entity");
+
+        let pos = app.world().get::<Position>(spawned.unwrap()).unwrap();
+        assert_eq!(pos.x, 5, "spawned entity must be at specified x");
+        assert_eq!(pos.y, 3, "spawned entity must be at specified y");
+
+        let has_blocks = app.world().get::<BlocksMovement>(spawned.unwrap()).is_some();
+        assert!(has_blocks, "rat blueprint must attach BlocksMovement");
+
+        let has_player = app.world().get::<Player>(spawned.unwrap()).is_some();
+        assert!(!has_player, "spawned rat must NOT be a player");
+    }
+
+    #[test]
+    fn spawn_blueprint_at_applies_mutators() {
+        let mut app = spawn_test_app();
+        let player = spawn_player(&mut app, 1, 1);
+
+        let spawned = submit_spawn_action(
+            &mut app,
+            player,
+            "blueprint.rat",
+            5,
+            3,
+            vec![crate::factory::Mutator::Elite],
+        );
+        assert!(spawned.is_some());
+
+        let pools = app.world().get::<Pools>(spawned.unwrap()).unwrap();
+        let hp = pools.get(PoolKind::Health).unwrap();
+        // Rat base Health = (11, 0, 11), Elite = 1.5x max → 11 * 1.5 = 16.5, truncated to 16
+        assert_eq!(hp.max, 16, "Elite mutator must scale Health max to 1.5x");
+    }
+
+    #[test]
+    fn spawn_blueprint_at_missing_blueprint_warns() {
+        let mut app = spawn_test_app();
+        let player = spawn_player(&mut app, 1, 1);
+
+        let spawned = submit_spawn_action(&mut app, player, "blueprint.missing", 5, 3, vec![]);
+        assert!(spawned.is_none(), "missing blueprint must not create entity");
+
+        // Verify a warning was logged (exact message format is implementation detail)
+        let log = app.world().resource::<GameLog>();
+        let logged_warning = log
+            .iter()
+            .any(|e| e.level == LogLevel::Warn);
+        assert!(logged_warning, "game log must warn about missing blueprint");
+    }
+
+    #[test]
+    fn spawn_blueprint_at_sets_entity_scope_by_mode() {
+        // Tactical mode → EntityScope::Tactical (DungeonTransient)
+        {
+            let mut app = spawn_test_app();
+            app.world_mut()
+                .insert_resource(crate::spatial::GameMode::Tactical);
+            let player = spawn_player(&mut app, 1, 1);
+
+            let spawned = submit_spawn_action(&mut app, player, "blueprint.rat", 5, 3, vec![]);
+            assert!(spawned.is_some());
+            let scope = app
+                .world()
+                .get::<crate::spatial::EntityScope>(spawned.unwrap())
+                .unwrap();
+            assert_eq!(
+                *scope,
+                crate::spatial::EntityScope::DungeonTransient,
+                "Tactical mode must give DungeonTransient scope"
+            );
+        }
+
+        // Outpost mode → ColonyPersistent
+        {
+            let mut app = spawn_test_app();
+            app.world_mut()
+                .insert_resource(crate::spatial::GameMode::Outpost);
+            let player = spawn_player(&mut app, 1, 1);
+
+            let spawned = submit_spawn_action(&mut app, player, "blueprint.rat", 5, 3, vec![]);
+            assert!(spawned.is_some());
+            let scope = app
+                .world()
+                .get::<crate::spatial::EntityScope>(spawned.unwrap())
+                .unwrap();
+            assert_eq!(
+                *scope,
+                crate::spatial::EntityScope::ColonyPersistent,
+                "Outpost mode must give ColonyPersistent scope"
+            );
+        }
+    }
 }
