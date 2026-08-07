@@ -21,6 +21,13 @@ pub struct EntityBlueprint {
     pub visual: Option<String>,
     /// Marker components to insert on spawn.
     /// Convention: "ComponentName" for unit structs, "ComponentName:data" for tuple structs.
+    ///
+    /// **WARNING**: Adding a marker to a shared blueprint (e.g. putting `RaidEnemy` on
+    /// `blueprint.rat` which is used in both dungeons and raids) can silently break
+    /// unrelated tests. The extra component changes the Bevy archetype, which can alter
+    /// query result ordering for blockers/pathfinding. Use separate blueprints for
+    /// semantically different entity roles (e.g. `blueprint.rat` for dungeons,
+    /// `blueprint.raid_rat` for raids).
     #[serde(default)]
     pub markers: Vec<String>,
 }
