@@ -2,6 +2,7 @@
 resolver = "3"
 members = [
     "crates/bd_app",
+    "crates/bd_console",
     "crates/bd_core",
     "crates/bd_tui",
     "crates/bd_data",

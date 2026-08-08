@@ -14,6 +14,7 @@ path = "src/main.rs"
 bd_core = { path = "../bd_core" }
 bd_tui = { path = "../bd_tui" }
 bd_data = { path = "../bd_data" }
+bd_console = { path = "../bd_console" }
 
 bevy.workspace = true
 bevy_app.workspace = true
