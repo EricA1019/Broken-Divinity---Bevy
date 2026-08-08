@@ -99,4 +99,139 @@ mod tests {
         let state = app.world().resource::<ConsoleState>();
         assert!(!state.open, "console must start closed");
     }
+
+    // ── Phase 6 RED: system wiring tests ──
+    //
+    // These FAIL until capture_console_input, execute_console_command,
+    // and render_console are registered in BdConsolePlugin::build().
+
+    /// Backtick must toggle ConsoleState.open when capture system is registered.
+    #[test]
+    fn backtick_toggles_console_open() {
+        let mut app = App::new();
+        app.add_plugins(BdConsolePlugin);
+        app.add_message::<bevy_ratatui::event::KeyMessage>();
+
+        // Fire a backtick key event
+        {
+            use crossterm::event::{KeyEvent, KeyEventKind, KeyModifiers};
+            let mut msgs = app.world_mut()
+                .resource_mut::<bevy_ecs::message::Messages<bevy_ratatui::event::KeyMessage>>();
+            msgs.write(bevy_ratatui::event::KeyMessage(KeyEvent::new_with_kind(
+                crossterm::event::KeyCode::Char('`'),
+                KeyModifiers::NONE,
+                KeyEventKind::Press,
+            )));
+        }
+
+        app.update();
+
+        let state = app.world().resource::<ConsoleState>();
+        assert!(state.open, "backtick must open the console");
+    }
+
+    /// Typing populates buffer when console is open.
+    #[test]
+    fn typing_populates_buffer_when_open() {
+        let mut app = App::new();
+        app.add_plugins(BdConsolePlugin);
+        app.add_message::<bevy_ratatui::event::KeyMessage>();
+
+        // Open console with backtick
+        {
+            use crossterm::event::{KeyEvent, KeyEventKind, KeyModifiers};
+            let mut msgs = app.world_mut()
+                .resource_mut::<bevy_ecs::message::Messages<bevy_ratatui::event::KeyMessage>>();
+            msgs.write(bevy_ratatui::event::KeyMessage(KeyEvent::new_with_kind(
+                crossterm::event::KeyCode::Char('`'),
+                KeyModifiers::NONE,
+                KeyEventKind::Press,
+            )));
+            msgs.write(bevy_ratatui::event::KeyMessage(KeyEvent::new_with_kind(
+                crossterm::event::KeyCode::Char('s'),
+                KeyModifiers::NONE,
+                KeyEventKind::Press,
+            )));
+        }
+
+        app.update();
+
+        let state = app.world().resource::<ConsoleState>();
+        assert!(state.open, "console must be open after backtick");
+        assert_eq!(state.buffer, "s", "typing 's' must populate buffer");
+    }
+
+    /// Enter dispatches command to ConsoleState.pending.
+    #[test]
+    fn enter_dispatches_to_pending() {
+        let mut app = App::new();
+        app.add_plugins(BdConsolePlugin);
+        app.add_message::<bevy_ratatui::event::KeyMessage>();
+
+        // Open console, type command, press Enter
+        {
+            use crossterm::event::{KeyEvent, KeyEventKind, KeyModifiers};
+            let mut msgs = app.world_mut()
+                .resource_mut::<bevy_ecs::message::Messages<bevy_ratatui::event::KeyMessage>>();
+            msgs.write(bevy_ratatui::event::KeyMessage(KeyEvent::new_with_kind(
+                crossterm::event::KeyCode::Char('`'),
+                KeyModifiers::NONE,
+                KeyEventKind::Press,
+            )));
+            msgs.write(bevy_ratatui::event::KeyMessage(KeyEvent::new_with_kind(
+                crossterm::event::KeyCode::Char('h'),
+                KeyModifiers::NONE,
+                KeyEventKind::Press,
+            )));
+            msgs.write(bevy_ratatui::event::KeyMessage(KeyEvent::new_with_kind(
+                crossterm::event::KeyCode::Enter,
+                KeyModifiers::NONE,
+                KeyEventKind::Press,
+            )));
+        }
+
+        app.update();
+
+        let state = app.world().resource::<ConsoleState>();
+        assert!(state.open, "console must be open");
+        assert_eq!(state.pending.len(), 1, "Enter must push one command to pending");
+        assert_eq!(state.pending[0], "h", "pending must contain typed command");
+        assert!(state.buffer.is_empty(), "buffer must clear after Enter");
+    }
+
+    /// Escape closes console and clears buffer.
+    #[test]
+    fn escape_closes_console() {
+        let mut app = App::new();
+        app.add_plugins(BdConsolePlugin);
+        app.add_message::<bevy_ratatui::event::KeyMessage>();
+
+        // Open console, type something, press Escape
+        {
+            use crossterm::event::{KeyEvent, KeyEventKind, KeyModifiers};
+            let mut msgs = app.world_mut()
+                .resource_mut::<bevy_ecs::message::Messages<bevy_ratatui::event::KeyMessage>>();
+            msgs.write(bevy_ratatui::event::KeyMessage(KeyEvent::new_with_kind(
+                crossterm::event::KeyCode::Char('`'),
+                KeyModifiers::NONE,
+                KeyEventKind::Press,
+            )));
+            msgs.write(bevy_ratatui::event::KeyMessage(KeyEvent::new_with_kind(
+                crossterm::event::KeyCode::Char('x'),
+                KeyModifiers::NONE,
+                KeyEventKind::Press,
+            )));
+            msgs.write(bevy_ratatui::event::KeyMessage(KeyEvent::new_with_kind(
+                crossterm::event::KeyCode::Esc,
+                KeyModifiers::NONE,
+                KeyEventKind::Press,
+            )));
+        }
+
+        app.update();
+
+        let state = app.world().resource::<ConsoleState>();
+        assert!(!state.open, "Escape must close console");
+        assert!(state.buffer.is_empty(), "buffer must clear on close");
+    }
 }
