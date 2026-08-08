@@ -146,6 +146,9 @@ impl Plugin for BdTuiPlugin {
                 reset_transient_ui_after_restore
                     .before(map_input_to_intents)
                     .in_set(BdSet::Input),
+                console_input_guard
+                    .before(map_input_to_intents)
+                    .in_set(BdSet::Input),
                 map_input_to_intents.in_set(BdSet::Input),
                 screens::process_screen_intents.in_set(BdSet::IntentCollection),
                 draw_ui.in_set(BdSet::Render),
@@ -153,6 +156,91 @@ impl Plugin for BdTuiPlugin {
         );
 
         tracing::info!("BdTuiPlugin initialized");
+    }
+}
+
+/// When the debug console is open, route keys to console state instead of gameplay.
+fn console_input_guard(
+    console_state: Option<ResMut<bd_console::ConsoleState>>,
+    mut messages: MessageReader<KeyMessage>,
+) {
+    let Some(mut console_state) = console_state else {
+        return; // Console not available — skip (tests, headless, etc.)
+    };
+    use crossterm::event::KeyCode;
+
+    for key_msg in messages.read() {
+        let code = &key_msg.0.code;
+        // Backtick toggles console open/closed
+        if matches!(code, KeyCode::Char('`')) {
+            console_state.open = !console_state.open;
+            if console_state.open {
+                console_state.buffer.clear();
+                console_state.cursor = 0;
+                console_state.history_idx = None;
+            }
+            continue;
+        }
+        // When console is open, route all keys to buffer
+        if console_state.open {
+            match code {
+                KeyCode::Esc => {
+                    console_state.open = false;
+                    console_state.buffer.clear();
+                    console_state.cursor = 0;
+                    console_state.history_idx = None;
+                }
+                KeyCode::Enter => {
+                    let line = console_state.buffer.clone();
+                    console_state.history.push(line.clone());
+                    console_state.pending.push(line);
+                    console_state.buffer.clear();
+                    console_state.cursor = 0;
+                    console_state.history_idx = None;
+                }
+                KeyCode::Backspace => {
+                    if console_state.cursor > 0 {
+                        let pos = console_state.cursor - 1;
+                        console_state.buffer.remove(pos);
+                        console_state.cursor = pos;
+                    }
+                }
+                KeyCode::Up => {
+                    let len = console_state.history.len();
+                    if len == 0 { continue; }
+                    let idx = match console_state.history_idx {
+                        None => len.saturating_sub(1),
+                        Some(i) if i > 0 => i - 1,
+                        Some(_) => 0,
+                    };
+                    console_state.history_idx = Some(idx);
+                    console_state.buffer = console_state.history[idx].clone();
+                    console_state.cursor = console_state.buffer.len();
+                }
+                KeyCode::Down => {
+                    match console_state.history_idx {
+                        Some(i) if i + 1 < console_state.history.len() => {
+                            console_state.history_idx = Some(i + 1);
+                            console_state.buffer = console_state.history[i + 1].clone();
+                            console_state.cursor = console_state.buffer.len();
+                        }
+                        Some(_) => {
+                            console_state.history_idx = None;
+                            console_state.buffer.clear();
+                            console_state.cursor = 0;
+                        }
+                        None => {}
+                    }
+                }
+                KeyCode::Char(c) if c.is_ascii_graphic() || *c == ' ' => {
+                    let pos = console_state.cursor;
+                    console_state.buffer.insert(pos, *c);
+                    console_state.cursor = pos + 1;
+                }
+                _ => {}
+            }
+        }
+        // When console is closed, keys pass through to map_input_to_intents normally
     }
 }
 
@@ -214,6 +302,7 @@ fn sync_event_screen(
 #[derive(SystemParam)]
 #[allow(clippy::type_complexity)] // Input routing keeps each scoped gameplay query explicit.
 struct InputQueries<'w, 's> {
+    console_state: Option<Res<'w, bd_console::ConsoleState>>,
     player: Query<
         'w,
         's,
@@ -587,6 +676,11 @@ fn map_input_to_intents(
         outpost,
         foundation_content,
     } = colony_interaction;
+
+    // Debug console steals all input when open
+    if input.console_state.as_ref().map_or(false, |s| s.open) {
+        return;
+    }
 
     // Game over preserves the terminal outcome until the player explicitly
     // restarts, loads a save, or quits.

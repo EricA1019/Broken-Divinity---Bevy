@@ -78,6 +78,7 @@ fn run_application() -> Result<(), String> {
     app.add_plugins(bevy_ratatui::RatatuiPlugins::default());
 
     app.add_plugins(bd_core::BdCorePlugin);
+    app.add_plugins(bd_console::BdConsolePlugin);
     bd_data::loader::validate_runtime_action_links(&application_content.foundation, |action_id| {
         bd_core::foundation_action_is_registered(app.world(), action_id)
     })

@@ -37,8 +37,12 @@ impl Plugin for BdConsolePlugin {
         // Resources
         app.init_resource::<ConsoleState>();
 
-        // Systems — registered in Phase 6.
-        // Input capture, dispatch, and render are wired after integration.
+        // Systems
+        app.add_systems(bevy_app::Update, (
+            render::render_console.in_set(bd_core::BdSet::Render),
+        ));
+        app.add_systems(bevy_app::Update,
+            dispatch::execute_console_command.in_set(bd_core::BdSet::Mutation));
     }
 }
 
@@ -84,6 +88,7 @@ mod tests {
     fn plugin_builds_without_panic() {
         let mut app = App::new();
         app.add_plugins(BdConsolePlugin);
+        app.add_message::<bevy_ratatui::event::KeyMessage>();
         app.update(); // run one frame
 
         // ConsoleState should still be present
@@ -100,103 +105,32 @@ mod tests {
         assert!(!state.open, "console must start closed");
     }
 
-    // ── Phase 6 RED: system wiring tests ──
+    // ── Phase 6: pipeline contract tests ──
     //
-    // These FAIL until capture_console_input, execute_console_command,
-    // and render_console are registered in BdConsolePlugin::build().
+    // Input routing (backtick toggle, key capture) lives in bd_tui's
+    // console_input_guard — tested via bd_app integration tests.
 
-    /// Backtick must toggle ConsoleState.open when capture system is registered.
+    /// Input→dispatch pipeline: pending commands flow through dispatch to output.
     #[test]
-    fn backtick_toggles_console_open() {
-        let mut app = App::new();
-        app.add_plugins(BdConsolePlugin);
-        app.add_message::<bevy_ratatui::event::KeyMessage>();
+    fn input_to_dispatch_pipeline() {
+        let mut world = World::new();
+        world.init_resource::<ConsoleState>();
+        world.init_resource::<bd_core::time::GameTime>();
+        world.init_resource::<bd_core::events::CurrentEvent>();
+        world.init_resource::<bd_core::events::EventRegistry>();
+        world.init_resource::<bd_core::colony::production::ColonyResources>();
+        world.init_resource::<bd_core::factory::BlueprintCatalog>();
+        world.insert_resource(bevy_ecs::message::Messages::<bd_core::signals::PoolDeltaRequested>::default());
+        world.insert_resource(bevy_ecs::message::Messages::<bd_core::signals::EventTrigger>::default());
+        world.insert_resource(bevy_ecs::message::Messages::<bd_core::signals::EntityDefeated>::default());
+        world.insert_resource(bevy_ecs::message::Messages::<bd_core::spatial::TransitionIntent>::default());
 
-        // Fire a backtick key event
-        {
-            use crossterm::event::{KeyEvent, KeyEventKind, KeyModifiers};
-            let mut msgs = app.world_mut()
-                .resource_mut::<bevy_ecs::message::Messages<bevy_ratatui::event::KeyMessage>>();
-            msgs.write(bevy_ratatui::event::KeyMessage(KeyEvent::new_with_kind(
-                crossterm::event::KeyCode::Char('`'),
-                KeyModifiers::NONE,
-                KeyEventKind::Press,
-            )));
-        }
+        world.resource_mut::<ConsoleState>().pending.push("help".into());
+        dispatch::execute_console_command(&mut world);
 
-        app.update();
-
-        let state = app.world().resource::<ConsoleState>();
-        assert!(state.open, "backtick must open the console");
-    }
-
-    /// Typing populates buffer when console is open.
-    #[test]
-    fn typing_populates_buffer_when_open() {
-        let mut app = App::new();
-        app.add_plugins(BdConsolePlugin);
-        app.add_message::<bevy_ratatui::event::KeyMessage>();
-
-        // Open console with backtick
-        {
-            use crossterm::event::{KeyEvent, KeyEventKind, KeyModifiers};
-            let mut msgs = app.world_mut()
-                .resource_mut::<bevy_ecs::message::Messages<bevy_ratatui::event::KeyMessage>>();
-            msgs.write(bevy_ratatui::event::KeyMessage(KeyEvent::new_with_kind(
-                crossterm::event::KeyCode::Char('`'),
-                KeyModifiers::NONE,
-                KeyEventKind::Press,
-            )));
-            msgs.write(bevy_ratatui::event::KeyMessage(KeyEvent::new_with_kind(
-                crossterm::event::KeyCode::Char('s'),
-                KeyModifiers::NONE,
-                KeyEventKind::Press,
-            )));
-        }
-
-        app.update();
-
-        let state = app.world().resource::<ConsoleState>();
-        assert!(state.open, "console must be open after backtick");
-        assert_eq!(state.buffer, "s", "typing 's' must populate buffer");
-    }
-
-    /// Enter dispatches command to ConsoleState.pending.
-    #[test]
-    fn enter_dispatches_to_pending() {
-        let mut app = App::new();
-        app.add_plugins(BdConsolePlugin);
-        app.add_message::<bevy_ratatui::event::KeyMessage>();
-
-        // Open console, type command, press Enter
-        {
-            use crossterm::event::{KeyEvent, KeyEventKind, KeyModifiers};
-            let mut msgs = app.world_mut()
-                .resource_mut::<bevy_ecs::message::Messages<bevy_ratatui::event::KeyMessage>>();
-            msgs.write(bevy_ratatui::event::KeyMessage(KeyEvent::new_with_kind(
-                crossterm::event::KeyCode::Char('`'),
-                KeyModifiers::NONE,
-                KeyEventKind::Press,
-            )));
-            msgs.write(bevy_ratatui::event::KeyMessage(KeyEvent::new_with_kind(
-                crossterm::event::KeyCode::Char('h'),
-                KeyModifiers::NONE,
-                KeyEventKind::Press,
-            )));
-            msgs.write(bevy_ratatui::event::KeyMessage(KeyEvent::new_with_kind(
-                crossterm::event::KeyCode::Enter,
-                KeyModifiers::NONE,
-                KeyEventKind::Press,
-            )));
-        }
-
-        app.update();
-
-        let state = app.world().resource::<ConsoleState>();
-        assert!(state.open, "console must be open");
-        assert_eq!(state.pending.len(), 1, "Enter must push one command to pending");
-        assert_eq!(state.pending[0], "h", "pending must contain typed command");
-        assert!(state.buffer.is_empty(), "buffer must clear after Enter");
+        let output = &world.resource::<ConsoleState>().output;
+        assert!(output.iter().any(|l| l.contains("COMMANDS")), "dispatch must process 'help'");
+        assert!(world.resource::<ConsoleState>().pending.is_empty());
     }
 
     /// Escape closes console and clears buffer.
