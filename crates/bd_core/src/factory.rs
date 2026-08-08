@@ -78,6 +78,11 @@ impl BlueprintCatalog {
     pub fn get(&self, id: &str) -> Option<&EntityBlueprint> {
         self.entries.iter().find(|bp| bp.id == id)
     }
+
+    /// Return all blueprint IDs in insertion order.
+    pub fn blueprint_ids(&self) -> Vec<&str> {
+        self.entries.iter().map(|bp| bp.id.as_str()).collect()
+    }
 }
 
 impl Default for BlueprintCatalog {

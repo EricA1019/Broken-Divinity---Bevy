@@ -20,4 +20,6 @@ pub struct ConsoleState {
     pub output: Vec<String>,
     /// Scroll offset within the output log.
     pub scroll: usize,
+    /// Commands pending dispatch (pushed by input, consumed by dispatch each frame).
+    pub pending: Vec<String>,
 }

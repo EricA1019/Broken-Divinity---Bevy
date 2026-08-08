@@ -34,6 +34,10 @@ pub struct ExitTile;
 #[derive(Component, Debug, Default, Serialize, Deserialize)]
 pub struct Gabriel;
 
+/// Debug marker — entity ignores damage when present. Toggled via console `god on/off`.
+#[derive(Component, Debug, Default, Serialize, Deserialize)]
+pub struct GodMode;
+
 /// Resource node on the shelter map that survivors can gather from.
 #[derive(Component, Debug, Clone, Serialize, Deserialize)]
 pub struct ResourceNode {

@@ -61,6 +61,11 @@ impl EventRegistry {
     pub fn register(&mut self, def: EventDefinition) {
         self.definitions.push(def)
     }
+
+    /// Return all registered event IDs.
+    pub fn all_ids(&self) -> Vec<&str> {
+        self.definitions.iter().map(|d| d.id.as_str()).collect()
+    }
 }
 
 // ── Current event state (driver for the TUI event screen) ──
