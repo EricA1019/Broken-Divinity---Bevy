@@ -23,10 +23,7 @@ pub fn capture_console_input(
     mut messages: bevy_ecs::message::MessageReader<KeyMessage>,
     mut cmd_writer: bevy_ecs::message::MessageWriter<ConsoleCommand>,
 ) {
-    for key_msg in messages.read(
-        // Messages resource will be provided at registration time.
-        // The system signature will be finalized when registered.
-    ) {
+    for key_msg in messages.read() {
         let code = &key_msg.0.code;
 
         // Toggle with backtick
