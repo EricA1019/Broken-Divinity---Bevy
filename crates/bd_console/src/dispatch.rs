@@ -165,7 +165,7 @@ fn stats(world: &mut World) -> String {
     l.join("\n")
 }
 
-fn help_text() -> String { "COMMANDS: supplies/materials/faith/plants <n> | day/turn <n> | skip_day | event <id> | end_event | kill_all | heal | god on|off | survivor <name> | task <idx> idle|defending|resting | spawn <bp> <x> <y> | goto <x> <y> | shelter | blueprints | events | stats | help | clear".into() }
+fn help_text() -> String { "COMMANDS: s|supplies <n>  m|materials <n>  f|faith <n>  p|plants <n> | day/turn <n> | skip_day | event <id> | end_event | kill_all | heal | god on|off | survivor <name> | task <idx> idle|defending|resting | spawn <bp> <x> <y> | goto <x> <y> | shelter | blueprints | events | stats | help | clear".into() }
 
 fn clear_output(world: &mut World) { world.resource_mut::<ConsoleState>().output.clear(); }
 

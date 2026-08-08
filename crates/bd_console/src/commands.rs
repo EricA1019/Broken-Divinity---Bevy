@@ -38,10 +38,10 @@ pub fn parse(input: &str) -> DebugCommand {
     let args: Vec<&str> = parts.collect();
 
     match cmd {
-        "supplies" => parse_add_resource(PoolKind::Supplies, &args),
-        "materials" => parse_add_resource(PoolKind::Materials, &args),
-        "faith" => parse_add_resource(PoolKind::Faith, &args),
-        "plants" => parse_add_resource(PoolKind::WildPlants, &args),
+        "s" | "supplies" => parse_add_resource(PoolKind::Supplies, &args),
+        "m" | "materials" => parse_add_resource(PoolKind::Materials, &args),
+        "f" | "faith" => parse_add_resource(PoolKind::Faith, &args),
+        "p" | "plants" => parse_add_resource(PoolKind::WildPlants, &args),
         "day" => parse_u64(&args).map(DebugCommand::SetDay)
             .unwrap_or_else(|e| DebugCommand::Unknown(e)),
         "turn" => parse_u64(&args).map(DebugCommand::SetTurn)
