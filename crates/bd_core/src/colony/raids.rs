@@ -133,6 +133,7 @@ mod tests {
     use super::*;
     use crate::events::{CurrentEvent, EventDefinition, EventNode, EventRegistry};
     use crate::factory::BlueprintCatalog;
+    use crate::signals::EventTrigger;
     use bevy_app::App;
     use std::collections::HashMap;
 
@@ -358,5 +359,142 @@ mod tests {
         assert_eq!(hp.max, 11);
         let ap = pools.get(PoolKind::ActionPoints).unwrap();
         assert_eq!(ap.max, 2);
+    }
+
+    // ── Phase 4: tier selection tests ──
+
+    #[test]
+    fn raid_tier_constants_map_correctly() {
+        assert_eq!(RAID_EVENT_SMALL, "event.raid.small");
+        assert_eq!(RAID_EVENT_MEDIUM, "event.raid.medium");
+    }
+
+    #[test]
+    fn raid_tier_small_pushed_at_day_five() {
+        // Day 5: seed=13272178805, enemy_count=(132721788%3)+1 = 0+1 = 1
+        // enemy_count=1 → small tier
+        let mut app = App::new();
+        app.add_plugins(crate::BdCorePlugin);
+        app.world_mut()
+            .insert_resource(BlueprintCatalog::new(vec![make_rat_bp()]));
+        // Register only the SMALL event
+        app.world_mut()
+            .resource_mut::<EventRegistry>()
+            .register(EventDefinition {
+                id: RAID_EVENT_SMALL.into(),
+                start_node: "start".into(),
+                nodes: HashMap::from([(
+                    "start".into(),
+                    EventNode {
+                        speaker: "Scout".into(),
+                        text: "Raiders!".into(),
+                        choices: vec![crate::dialogue::Choice {
+                            label: "Defend".into(),
+                            conditions: vec![crate::dialogue::Condition::Always],
+                            effects: vec![],
+                            next_node: None,
+                        }],
+                        on_enter_effects: vec![],
+                        on_exit_effects: vec![],
+                    },
+                )]),
+                spawn_on_enter: vec![crate::actions::Effect::SpawnBlueprintAt {
+                    blueprint_id: "blueprint.raid_rat".into(),
+                    x: 3,
+                    y: 2,
+                    mutators: vec![],
+                }],
+            });
+        app.world_mut()
+            .resource_mut::<crate::time::GameTime>()
+            .day = 5;
+        app.world_mut()
+            .resource_mut::<crate::time::GameTime>()
+            .turn = 50;
+        app.world_mut()
+            .resource_mut::<crate::colony::production::ColonyResources>()
+            .pools
+            .get_mut(PoolKind::Supplies)
+            .unwrap()
+            .current = 20;
+        app.world_mut().spawn((
+            crate::components::Player,
+            crate::components::Position { x: 1, y: 1 },
+            crate::pools::Pools::new(vec![]),
+        ));
+        app.update();
+        app.update();
+
+        let ev = app.world_mut().resource::<CurrentEvent>();
+        assert!(ev.is_active(), "raid event must be active at day 5");
+        assert_eq!(
+            ev.event_id, RAID_EVENT_SMALL,
+            "enemy_count=1 must push small tier"
+        );
+    }
+
+    #[test]
+    fn raid_medium_event_spawns_elite_rats() {
+        // Register the medium event which has Elite mutators on its spawns
+        let mut app = App::new();
+        app.add_plugins(crate::BdCorePlugin);
+        app.world_mut()
+            .insert_resource(BlueprintCatalog::new(vec![make_rat_bp()]));
+        app.world_mut()
+            .resource_mut::<EventRegistry>()
+            .register(EventDefinition {
+                id: RAID_EVENT_MEDIUM.into(),
+                start_node: "start".into(),
+                nodes: HashMap::from([(
+                    "start".into(),
+                    EventNode {
+                        speaker: "Scout".into(),
+                        text: "Elite raiders!".into(),
+                        choices: vec![crate::dialogue::Choice {
+                            label: "Fight!".into(),
+                            conditions: vec![crate::dialogue::Condition::Always],
+                            effects: vec![],
+                            next_node: None,
+                        }],
+                        on_enter_effects: vec![],
+                        on_exit_effects: vec![],
+                    },
+                )]),
+                spawn_on_enter: vec![crate::actions::Effect::SpawnBlueprintAt {
+                    blueprint_id: "blueprint.raid_rat".into(),
+                    x: 3,
+                    y: 2,
+                    mutators: vec![crate::factory::Mutator::Elite],
+                }],
+            });
+        // Trigger the medium event directly
+        let player = app
+            .world_mut()
+            .spawn((
+                crate::components::Player,
+                crate::components::Position { x: 1, y: 1 },
+                crate::pools::Pools::new(vec![]),
+            ))
+            .id();
+        app.world_mut()
+            .resource_mut::<bevy_ecs::message::Messages<EventTrigger>>()
+            .write(EventTrigger {
+                actor: player,
+                event_id: RAID_EVENT_MEDIUM.into(),
+            });
+        app.update();
+
+        // Find the spawned rat — must have Elite mutator: Health 11 → 16
+        let (_, pools) = app
+            .world_mut()
+            .query::<(&RaidEnemy, &crate::pools::Pools)>()
+            .iter(app.world())
+            .next()
+            .expect("medium event must spawn a RaidEnemy");
+        let hp = pools.get(PoolKind::Health).unwrap();
+        assert_eq!(
+            hp.max, 16,
+            "Elite mutator must scale Health to 1.5x (11→16)"
+        );
     }
 }
