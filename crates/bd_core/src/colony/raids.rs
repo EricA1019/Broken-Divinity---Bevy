@@ -25,7 +25,8 @@ pub enum RaidState {
 #[derive(Component, Debug, Clone)]
 pub struct RaidEnemy;
 
-pub const RAID_EVENT_ID: &str = "event.raid";
+pub const RAID_EVENT_SMALL: &str = "event.raid.small";
+pub const RAID_EVENT_MEDIUM: &str = "event.raid.medium";
 
 /// Roll for raid at day change. Emits an event instead of spawning directly.
 pub fn process_raids(
@@ -73,17 +74,23 @@ pub fn process_raids(
     let enemy_count = (seed / 100 % (RAID_ENEMY_COUNT_MAX - RAID_ENEMY_COUNT_MIN + 1) as u64
         + RAID_ENEMY_COUNT_MIN as u64) as u32;
 
+    // Select tier based on enemy count: 1-2 → small, 3 → medium
+    let event_id = match enemy_count {
+        1 | 2 => RAID_EVENT_SMALL,
+        _ => RAID_EVENT_MEDIUM,
+    };
+
     // Push an event instead of spawning directly.
     // Event spawn_on_enter will create enemies via blueprint factory.
     if let Some(actor) = player_query.iter().next() {
-        if event_registry.get(RAID_EVENT_ID).is_some() {
+        if event_registry.get(event_id).is_some() {
             *raid_state = RaidState::Active {
                 turn_started: game_time.turn,
                 enemy_count,
             };
             trigger_writer.write(crate::signals::EventTrigger {
                 actor,
-                event_id: RAID_EVENT_ID.into(),
+                event_id: event_id.into(),
             });
             game_log.push(
                 format!(
@@ -96,7 +103,7 @@ pub fn process_raids(
             game_log.push(
                 format!(
                     "Raid event '{}' not registered — skipping spawn.",
-                    RAID_EVENT_ID
+                    event_id
                 ),
                 crate::gamelog::LogLevel::Warn,
             );
@@ -162,7 +169,7 @@ mod tests {
         app.world_mut()
             .resource_mut::<EventRegistry>()
             .register(EventDefinition {
-                id: RAID_EVENT_ID.into(),
+                id: RAID_EVENT_SMALL.into(),
                 start_node: "start".into(),
                 nodes: HashMap::from([(
                     "start".into(),
@@ -228,7 +235,7 @@ mod tests {
             ev.is_active(),
             "process_raids must push CurrentEvent (active after 2nd frame)"
         );
-        assert_eq!(ev.event_id, RAID_EVENT_ID);
+        assert_eq!(ev.event_id, RAID_EVENT_SMALL);
     }
 
     #[test]
@@ -240,7 +247,7 @@ mod tests {
         app.world_mut()
             .resource_mut::<EventRegistry>()
             .register(EventDefinition {
-                id: RAID_EVENT_ID.into(),
+                id: RAID_EVENT_SMALL.into(),
                 start_node: "start".into(),
                 nodes: HashMap::from([(
                     "start".into(),
@@ -305,7 +312,7 @@ mod tests {
         app.world_mut()
             .resource_mut::<EventRegistry>()
             .register(EventDefinition {
-                id: RAID_EVENT_ID.into(),
+                id: RAID_EVENT_SMALL.into(),
                 start_node: "start".into(),
                 nodes: HashMap::from([(
                     "start".into(),
