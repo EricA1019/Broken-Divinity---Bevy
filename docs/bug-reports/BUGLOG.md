@@ -7,7 +7,25 @@ hash.
 
 ## ACTIVE
 
-None.
+### STRUCT-002 — Effect::SpawnEntity is deprecated but misnamed for its sole remaining purpose
+**Severity:** 🟣 Structural
+**File:** `crates/bd_core/src/actions.rs` ~line 104 (variant definition), `crates/bd_core/src/colony/stations.rs` ~line 392 (sole call site)
+**Discovered:** 2026-08-07 during event-pipeline RON migration audit
+
+`Effect::SpawnEntity` carries a deprecation comment saying "prefer
+SpawnBlueprintAt for entity spawning." Its only remaining call site is
+`register_station_actions()` in `stations.rs`, where it is used to build
+station entities — a specialized code path that resolves `StationType` via
+`StationCatalog`, computes a build position from direction offset, and
+spawns with `Station` component bundle. The variant name `SpawnEntity` is
+misleading: it does not do generic entity spawning (that moved to
+`SpawnBlueprintAt`). It should be renamed to `BuildStation` or similar to
+match its actual behavior and eliminate confusion during future work.
+
+**Impact:** Developers reading the code may assume `SpawnEntity` is a
+still-viable generic spawn path or that it can be removed outright. Neither
+is true — it's a specialized station-construction effect that needs a name
+reflecting its purpose.
 
 ## HISTORY
 
