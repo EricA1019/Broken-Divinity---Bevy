@@ -198,7 +198,9 @@ fn console_input_guard(
                 }
                 KeyCode::Enter => {
                     let line = console_state.buffer.clone();
-                    console_state.history.push(line.clone());
+                    if !line.is_empty() {
+                        console_state.history.push(line.clone());
+                    }
                     console_state.pending.push(line);
                     console_state.buffer.clear();
                     console_state.cursor = 0;
@@ -211,43 +213,139 @@ fn console_input_guard(
                         console_state.cursor = pos;
                     }
                 }
+                KeyCode::Tab => {
+                    tab_complete(&mut console_state);
+                }
                 KeyCode::Up => {
-                    let len = console_state.history.len();
-                    if len == 0 { continue; }
-                    let idx = match console_state.history_idx {
-                        None => len.saturating_sub(1),
-                        Some(i) if i > 0 => i - 1,
-                        Some(_) => 0,
-                    };
-                    console_state.history_idx = Some(idx);
-                    console_state.buffer = console_state.history[idx].clone();
-                    console_state.cursor = console_state.buffer.len();
+                    history_search(&mut console_state, false);
                 }
                 KeyCode::Down => {
-                    match console_state.history_idx {
-                        Some(i) if i + 1 < console_state.history.len() => {
-                            console_state.history_idx = Some(i + 1);
-                            console_state.buffer = console_state.history[i + 1].clone();
-                            console_state.cursor = console_state.buffer.len();
-                        }
-                        Some(_) => {
-                            console_state.history_idx = None;
-                            console_state.buffer.clear();
-                            console_state.cursor = 0;
-                        }
-                        None => {}
-                    }
+                    history_search(&mut console_state, true);
                 }
                 KeyCode::Char(c) if c.is_ascii_graphic() || *c == ' ' => {
                     let pos = console_state.cursor;
                     console_state.buffer.insert(pos, *c);
                     console_state.cursor = pos + 1;
+                    // Reset history search position when typing
+                    console_state.history_idx = None;
                 }
                 _ => {}
             }
         }
         // When console is closed, keys pass through to map_input_to_intents normally
     }
+}
+
+/// All completable command names (including aliases).
+const COMMAND_NAMES: &[&str] = &[
+    "supplies", "materials", "faith", "plants",
+    "day", "turn", "skip_day",
+    "event", "end_event",
+    "kill_all", "heal", "god",
+    "survivor", "task",
+    "spawn", "goto", "shelter",
+    "blueprints", "events", "stats",
+    "help", "clear",
+    "s", "m", "f", "p",
+];
+
+/// Tab-complete the current buffer against known command names.
+fn tab_complete(state: &mut bd_console::ConsoleState) {
+    let prefix = state.buffer.trim();
+    if prefix.is_empty() {
+        // Show all top-level commands
+        state.output.push(format!(
+            "Commands: {}",
+            COMMAND_NAMES.iter()
+                .filter(|n| !n.len() == 1 || n.starts_with(|c: char| c.is_alphabetic())) // skip aliases in listing
+                .cloned()
+                .collect::<Vec<_>>()
+                .join(", ")
+        ));
+        return;
+    }
+
+    let matches: Vec<&&str> = COMMAND_NAMES
+        .iter()
+        .filter(|n| n.starts_with(prefix) && n.len() > 1) // skip single-char aliases unless exact
+        .collect();
+
+    match matches.len() {
+        0 => {
+            state.output.push(format!("No matches for '{}'", prefix));
+        }
+        1 => {
+            // Complete with a trailing space
+            state.buffer = format!("{} ", matches[0]);
+            state.cursor = state.buffer.len();
+        }
+        _ => {
+            // Show all matches
+            state.output.push(format!(
+                "{} matches: {}",
+                matches.len(),
+                matches.iter().map(|s| **s).collect::<Vec<_>>().join(", ")
+            ));
+            // Complete the common prefix
+            let strs: Vec<&str> = matches.iter().map(|s| **s).collect();
+            if let Some(common) = common_prefix(&strs) {
+                if common.len() > prefix.len() {
+                    state.buffer = common.to_string();
+                    state.cursor = state.buffer.len();
+                }
+            }
+        }
+    }
+}
+
+/// Navigate history filtered by the current buffer prefix.
+/// `forward`: false = Up (older), true = Down (newer).
+fn history_search(state: &mut bd_console::ConsoleState, forward: bool) {
+    let prefix = &state.buffer;
+    let matches: Vec<(usize, &String)> = state.history.iter().enumerate()
+        .filter(|(_, h)| h.starts_with(prefix.as_str()))
+        .collect();
+
+    if matches.is_empty() {
+        return;
+    }
+
+    let current_match = state.history_idx
+        .and_then(|idx| matches.iter().position(|(i, _)| *i == idx));
+
+    let new_pos = match (forward, current_match) {
+        // Down (forward): next match, or clear to fresh input
+        (true, Some(pos)) if pos + 1 < matches.len() => Some(matches[pos + 1].0),
+        (true, _) => {
+            // Past last match — clear to fresh input
+            state.history_idx = None;
+            state.buffer.clear();
+            state.cursor = 0;
+            return;
+        }
+        // Up (backward): previous match, or wrap to last
+        (false, Some(pos)) if pos > 0 => Some(matches[pos - 1].0),
+        (false, _) => {
+            // First Up press or at top — go to last match
+            matches.last().map(|(i, _)| *i)
+        }
+    };
+
+    if let Some(idx) = new_pos {
+        state.history_idx = Some(idx);
+        state.buffer = state.history[idx].clone();
+        state.cursor = state.buffer.len();
+    }
+}
+
+/// Find the longest common prefix among a list of strings.
+fn common_prefix<'a>(strings: &[&'a str]) -> Option<&'a str> {
+    let first = strings.first()?;
+    let mut end = first.len();
+    for s in strings.iter().skip(1) {
+        end = end.min(s.bytes().zip(first.bytes()).take_while(|(a, b)| a == b).count());
+    }
+    if end == 0 { None } else { Some(&first[..end]) }
 }
 
 fn reset_transient_ui_after_restore(
