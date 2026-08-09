@@ -1,7 +1,12 @@
-//! Pool system — unified signed delta pipeline for all stat pools.
+//! Pool system — unified signed delta pipeline for entity stat pools.
 //!
-//! All pool mutation (HP, AP, stress, etc.) goes through `PoolDeltaRequested`
-//! → `resolve_pool_deltas` → `PoolDeltaApplied`. No system mutates pools directly.
+//! All entity pool mutation (HP, AP, stress, etc.) goes through `PoolDeltaRequested`
+//! → `resolve_pool_deltas` → `PoolDeltaApplied`. No system mutates entity pools directly.
+//!
+//! Colony resource pools (Supplies, Materials, WildPlants, Faith) live on the
+//! `ColonyResources` Resource and are mutated directly by colony systems
+//! (production, logistics, gathering, raids, overworld travel). These use a
+//! separate mutation model because they are not entity-attached.
 
 use std::collections::HashSet;
 
@@ -311,6 +316,15 @@ pub fn register_cleanup(app: &mut bevy_app::App) {
 }
 
 /// Observes EntityDefeated messages and switches to GameOver when the player dies.
+///
+/// Directly mutates `GameMode` (rather than emitting `TransitionIntent`) because:
+/// 1. The player entity will be despawned by `cleanup_defeated_entities` before
+///    `process_transitions` runs in the next frame — the `Player` component query
+///    would fail after despawn.
+/// 2. Player death is unconditional — it must bypass the foundation transition
+///    guard in `process_transitions` (`allows_foundation_transition`).
+/// 3. The GameOver screen must appear in the same frame as death.
+///
 /// Runs before `cleanup_defeated_entities` (chained above) so the Player component
 /// is still readable before the entity is despawned.
 fn observe_player_defeat(

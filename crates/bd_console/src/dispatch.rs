@@ -44,13 +44,24 @@ fn find_player(world: &mut World) -> Option<Entity> {
 }
 
 fn add_resource(world: &mut World, kind: bd_core::signals::PoolKind, amount: i32) -> String {
-    match find_player(world) {
-        Some(p) => {
-            world.resource_mut::<bevy_ecs::message::Messages<bd_core::signals::PoolDeltaRequested>>()
-                .write(bd_core::signals::PoolDeltaRequested { source: None, target: p, kind, amount, tags: vec![], reason: format!("console: add {:?} {}", kind, amount) });
-            format!("OK: {:?} {}", kind, amount)
+    // Colony resources are mutated directly (matching every colony system).
+    // Entity pools (Health, AP, virtues) are NOT colony resources.
+    match kind {
+        bd_core::signals::PoolKind::Supplies
+        | bd_core::signals::PoolKind::Materials
+        | bd_core::signals::PoolKind::WildPlants
+        | bd_core::signals::PoolKind::Faith => {
+            let mut colony = world.resource_mut::<bd_core::colony::production::ColonyResources>();
+            match colony.pools.get_mut(kind) {
+                Some(pool) => {
+                    let before = pool.current;
+                    pool.current = (pool.current + amount).clamp(pool.min, pool.max);
+                    format!("OK: {:?} {} ({} -> {})", kind, amount, before, pool.current)
+                }
+                None => format!("ERROR: colony pool {:?} not initialized", kind),
+            }
         }
-        None => "ERROR: no player entity".into(),
+        _ => format!("ERROR: {:?} is an entity pool, not a colony resource — use 'heal' for entity pools", kind),
     }
 }
 
@@ -197,8 +208,8 @@ mod tests {
     fn r(world: &mut World) { execute_console_command(world); }
     fn has(world: &World, n: &str) -> bool { world.resource::<ConsoleState>().output.iter().any(|l| l.contains(n)) }
 
-    #[test] fn supplies_ok() { let mut w = w(); pl(&mut w); c(&mut w, "supplies 50"); r(&mut w); assert!(has(&w, "Supplies 50")); }
-    #[test] fn supplies_no_player() { let mut w = w(); c(&mut w, "supplies 50"); r(&mut w); assert!(has(&w, "ERROR")); }
+    #[test] fn supplies_ok() { let mut w = w(); c(&mut w, "supplies 50"); r(&mut w); assert!(has(&w, "Supplies 50")); let col = w.resource::<bd_core::colony::production::ColonyResources>(); assert!(col.pools.get(PoolKind::Supplies).unwrap().current >= 50); }
+    #[test] fn supplies_works_without_player() { let mut w = w(); c(&mut w, "supplies 50"); r(&mut w); assert!(has(&w, "Supplies 50")); } // Colony resources don't need player entity
     #[test] fn day_10() { let mut w = w(); c(&mut w, "day 10"); r(&mut w); assert_eq!(w.resource::<GameTime>().day, 10); }
     #[test] fn turn_42() { let mut w = w(); c(&mut w, "turn 42"); r(&mut w); assert_eq!(w.resource::<GameTime>().turn, 42); }
     #[test] fn skip_day_ok() { let mut w = w(); w.resource_mut::<GameTime>().day = 5; c(&mut w, "skip_day"); r(&mut w); assert_eq!(w.resource::<GameTime>().day, 6); }
