@@ -185,6 +185,7 @@ checksum = "72b3254f16251a8381aa12e40e3c4d2f0199f8c6508fbecb9d91f575e0fbb8c6"
 name = "bd_app"
 version = "0.1.0"
 dependencies = [
+ "bd_console",
  "bd_core",
  "bd_data",
  "bd_test_support",
@@ -201,6 +202,20 @@ dependencies = [
  "toml",
  "tracing",
  "tracing-subscriber",
+]
+
+[[package]]
+name = "bd_console"
+version = "0.1.0"
+dependencies = [
+ "bd_core",
+ "bevy_app",
+ "bevy_ecs",
+ "bevy_ratatui",
+ "crossterm",
+ "ratatui",
+ "serde",
+ "tracing",
 ]
 
 [[package]]
@@ -253,6 +268,7 @@ dependencies = [
 name = "bd_tui"
 version = "0.1.0"
 dependencies = [
+ "bd_console",
  "bd_core",
  "bd_test_support",
  "bevy",
