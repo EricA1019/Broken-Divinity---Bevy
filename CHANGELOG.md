@@ -2,6 +2,35 @@
 
 All notable changes to Broken Divinity are documented here.
 
+## [Unreleased] — 2026-08-09
+
+### Developer CLI Console (`bd_console` crate)
+
+#### Added
+- **`bd_console` crate** — quakelike developer console toggled with backtick (`), renders as a bottom-40% terminal overlay
+- **20+ debug commands**: supplies, materials, faith, plants (with `s`/`m`/`f`/`p` aliases), day, turn, skip_day, event, end_event, kill_all, heal, god on/off, survivor, task, spawn, goto, shelter, blueprints, events, stats, help, clear
+- **Tab completion** against 24 known command names with common-prefix completion and multi-match suggestions
+- **History search** (Up/Down) filtered by current buffer prefix
+- **Welcome message** on console open orienting users
+- **Signal-driven dispatch**: resource commands mutate `ColonyResources` directly; event/transition/spawn commands emit standard `EventTrigger`/`TransitionIntent`/`PoolDeltaRequested` messages
+- **Color-coded output**: ERROR=red, OK=green, prompt=yellow
+- **Entity completeness**: console-spawned survivors and entities include `EntityScope`, `PersistentEntity`, and blueprint `Statuses`
+- **`GodMode` component** — console `god on/off` inserts/removes a marker component for invincibility
+
+#### Changed
+- **`BlueprintCatalog::blueprint_ids()`** — new method exposing all blueprint IDs
+- **`EventRegistry::all_ids()`** — new method exposing all registered event IDs
+- **`pools.rs` doc comment** — clarified that entity pool mutation goes through `PoolDeltaRequested`; colony resources use a separate direct-mutation model
+- **`observe_player_defeat`** — documented the 3 reasons it bypasses `TransitionIntent` (entity despawn ordering, unconditional death, same-frame GameOver)
+
+#### Fixed
+- **Console resource commands were silent no-ops** — `supplies`/`materials`/`faith`/`plants` targeted the player entity (which lacks those pools) via `PoolDeltaRequested`, silently dropped by `resolve_pool_deltas`. Now mutates `ColonyResources.pools` directly.
+- **KeyEventKind::Press filter** — console no longer double-processes key events from Release/Repeat
+
+#### Tests
+- 99 tests in `bd_console` across parser, input, dispatch, render, and integration
+- Full workspace green (only pre-existing `contract_registry` seeded_registry failure)
+
 ## [Unreleased] — 2026-07-31
 
 ### Foundation Colony UX Hardening and UI Guide Evidence
