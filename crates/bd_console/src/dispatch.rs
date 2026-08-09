@@ -104,7 +104,16 @@ fn god_mode(world: &mut World, on: bool) -> String {
 }
 
 fn spawn_survivor(world: &mut World, name: &str) -> String {
-    world.spawn((bd_core::colony::survivors::Survivor, bd_core::components::Name(name.into()), bd_core::components::Position { x: 1, y: 1 }, bd_core::colony::survivors::default_survivor_pools(), bd_core::colony::survivors::SurvivorTask::Idle));
+    let pools = bd_core::colony::survivors::default_survivor_pools();
+    world.spawn((
+        bd_core::colony::survivors::Survivor,
+        bd_core::components::Name(name.into()),
+        bd_core::components::Position { x: 1, y: 1 },
+        pools,
+        bd_core::colony::survivors::SurvivorTask::Idle,
+        bd_core::spatial::EntityScope::ColonyPersistent,
+        bd_core::spatial::PersistentEntity,
+    ));
     format!("OK: spawned '{}'", name)
 }
 
@@ -124,6 +133,10 @@ fn spawn_entity(world: &mut World, id: &str, x: i32, y: i32) -> String {
     if bp.is_player { e.insert(bd_core::components::Player); }
     if bp.blocks_movement { e.insert(bd_core::components::BlocksMovement); }
     if !bp.pools.is_empty() { e.insert(bd_core::pools::Pools::new(bp.pools.iter().map(|&(k,c,mn,mx)| bd_core::pools::Pool::new(k,c,mn,mx)).collect())); }
+    if !bp.statuses.is_empty() { e.insert(bd_core::statuses::Statuses { instances: bp.statuses.iter().map(|(id, dur)| bd_core::statuses::StatusInstance { status_id: id.clone(), remaining_duration: *dur, stacks: 1, source: None }).collect() }); }
+    // Default scope: Tactical for dungeon spawns, ColonyPersistent otherwise
+    e.insert(bd_core::spatial::EntityScope::ColonyPersistent);
+    e.insert(bd_core::spatial::PersistentEntity);
     format!("OK: spawned '{}' at ({},{})", id, x, y)
 }
 
