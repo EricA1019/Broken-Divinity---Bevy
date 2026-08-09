@@ -167,9 +167,13 @@ fn console_input_guard(
     let Some(mut console_state) = console_state else {
         return; // Console not available — skip (tests, headless, etc.)
     };
-    use crossterm::event::KeyCode;
+    use crossterm::event::{KeyCode, KeyEventKind};
 
     for key_msg in messages.read() {
+        // Only process press events (ignore release/repeat)
+        if key_msg.0.kind != KeyEventKind::Press {
+            continue;
+        }
         let code = &key_msg.0.code;
         // Backtick toggles console open/closed
         if matches!(code, KeyCode::Char('`')) {
@@ -178,6 +182,8 @@ fn console_input_guard(
                 console_state.buffer.clear();
                 console_state.cursor = 0;
                 console_state.history_idx = None;
+                // Welcome message on open
+                console_state.output.push("— DEBUG CONSOLE — Type 'help' for available commands. Press ` or Esc to close.".into());
             }
             continue;
         }
