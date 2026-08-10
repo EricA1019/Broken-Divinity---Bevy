@@ -17,7 +17,7 @@ player-facing Ratatui feedback
 
 **Coordination:** This plan owns the proposed colony-loop task order after its
 Phase C0 decisions are locked.
-[AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md](AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md)
+[AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md](../authority/AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md)
 owns test policy, evidence sufficiency, metrics, contract registration, and
 test retirement.
 [FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md](FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md)
@@ -84,17 +84,17 @@ station damage, depletion balance, or Product P2 colony depth.
 
 Before changing any file for this plan, read:
 
-1. [README.md](README.md);
-2. root [GDD.md](../GDD.md), especially Shelter and Colony, Current Scope
+1. [README.md](../README.md);
+2. root [GDD.md](../../GDD.md), especially Shelter and Colony, Current Scope
    Anchors, and Minimum Colony Foundation;
-3. [DECISIONS-TO-LOCK.md](DECISIONS-TO-LOCK.md), especially D-09, D-12,
+3. [DECISIONS-TO-LOCK.md](../authority/DECISIONS-TO-LOCK.md), especially D-09, D-12,
    D-15, D-16, D-17, D-18, and D-19;
-4. root [Kernel.md](../Kernel.md), especially schedule discipline, content
+4. root [Kernel.md](../../Kernel.md), especially schedule discipline, content
    loading, stable IDs, semantic ASCII, view-model boundaries, and persistence;
-5. [MVP-SCENARIO.md](MVP-SCENARIO.md);
-6. [AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md](AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md);
+5. [MVP-SCENARIO.md](../authority/MVP-SCENARIO.md);
+6. [AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md](../authority/AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md);
 7. [FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md](FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md);
-8. [MIGRATION-AND-DEPRECATION.md](MIGRATION-AND-DEPRECATION.md);
+8. [MIGRATION-AND-DEPRECATION.md](../authority/MIGRATION-AND-DEPRECATION.md);
 9. `testing/foundation-contracts.ron`;
 10. the current implementation and affected tests.
 

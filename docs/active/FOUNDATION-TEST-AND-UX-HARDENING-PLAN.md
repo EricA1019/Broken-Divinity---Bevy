@@ -13,13 +13,13 @@ Section 22 F0–F9 failure-remediation program are complete
 legibility, and player-facing Ratatui behavior
 
 **Coordination:** This plan owns behavior and implementation order.
-[AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md](AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md)
+[AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md](../authority/AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md)
 owns test policy, contract registration, diagnostic quality, metrics, and
 suite migration. Both gates apply.
 
 **Supersedes:** No completed plan. This plan reopens only the affected test and
 colony UX acceptance gates from the completed
-[FOUNDATION-MVP-CORRECTION-PLAN.md](FOUNDATION-MVP-CORRECTION-PLAN.md).
+[FOUNDATION-MVP-CORRECTION-PLAN.md](../archive/FOUNDATION-MVP-CORRECTION-PLAN.md).
 
 **Does not authorize:** Product P2, procgen in the Foundation path, overworld
 expansion, raids, colony events, sanity, theology-driven mechanics, faction
@@ -66,17 +66,17 @@ approximation.
 Before changing any file, the implementation agent must read these documents
 in order:
 
-1. [README.md](README.md);
-2. root [GDD.md](../GDD.md), especially Sections 3, 6, 8, and 9;
-3. [DECISIONS-TO-LOCK.md](DECISIONS-TO-LOCK.md), especially D-02, D-09,
+1. [README.md](../README.md);
+2. root [GDD.md](../../GDD.md), especially Sections 3, 6, 8, and 9;
+3. [DECISIONS-TO-LOCK.md](../authority/DECISIONS-TO-LOCK.md), especially D-02, D-09,
    D-12, D-16, D-17, and D-18;
-4. root [Kernel.md](../Kernel.md), especially schedule discipline, semantic
+4. root [Kernel.md](../../Kernel.md), especially schedule discipline, semantic
    ASCII, view-model boundaries, data loading, and testing;
-5. [MVP-SCENARIO.md](MVP-SCENARIO.md);
+5. [MVP-SCENARIO.md](../authority/MVP-SCENARIO.md);
 6. this plan in full;
-7. [FOUNDATION-MVP-CORRECTION-PLAN.md](FOUNDATION-MVP-CORRECTION-PLAN.md) as
+7. [FOUNDATION-MVP-CORRECTION-PLAN.md](../archive/FOUNDATION-MVP-CORRECTION-PLAN.md) as
    completed evidence, not current instructions;
-8. [MIGRATION-AND-DEPRECATION.md](MIGRATION-AND-DEPRECATION.md);
+8. [MIGRATION-AND-DEPRECATION.md](../authority/MIGRATION-AND-DEPRECATION.md);
 9. current code, tests, and content.
 
 The GDD owns player experience. `Kernel.md` owns architecture. D-18 owns the

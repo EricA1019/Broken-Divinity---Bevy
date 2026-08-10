@@ -1,8 +1,8 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    components::{BlocksMovement, Name, Player, Position},
     colony::raids::RaidEnemy,
+    components::{BlocksMovement, Name, Player, Position},
     pools::{Pool, Pools},
     relationships::FactionMember,
     signals::PoolKind,
@@ -35,7 +35,7 @@ pub struct EntityBlueprint {
 /// Bevy Resource wrapping the blueprint catalog loaded from content RON.
 ///
 /// Use [`BlueprintCatalog::get`] to look up blueprints by ID at runtime.
-#[derive(Resource, Debug, Clone)]
+#[derive(Resource, Debug, Clone, Default)]
 pub struct BlueprintCatalog {
     entries: Vec<EntityBlueprint>,
 }
@@ -50,10 +50,7 @@ impl BlueprintCatalog {
         let mut seen = std::collections::HashSet::new();
         for bp in &blueprints {
             if !seen.insert(&bp.id) {
-                panic!(
-                    "BlueprintCatalog: duplicate blueprint ID '{}'",
-                    bp.id
-                );
+                panic!("BlueprintCatalog: duplicate blueprint ID '{}'", bp.id);
             }
         }
         // Validate: warn on unknown markers
@@ -63,8 +60,7 @@ impl BlueprintCatalog {
                 if !KNOWN_MARKERS.contains(&name) {
                     eprintln!(
                         "WARNING: BlueprintCatalog: blueprint '{}' has unknown marker '{}'",
-                        bp.id,
-                        marker
+                        bp.id, marker
                     );
                 }
             }
@@ -82,14 +78,6 @@ impl BlueprintCatalog {
     /// Return all blueprint IDs in insertion order.
     pub fn blueprint_ids(&self) -> Vec<&str> {
         self.entries.iter().map(|bp| bp.id.as_str()).collect()
-    }
-}
-
-impl Default for BlueprintCatalog {
-    fn default() -> Self {
-        Self {
-            entries: Vec::new(),
-        }
     }
 }
 
@@ -403,8 +391,7 @@ mod tests {
 
     #[test]
     fn catalog_get_unknown_returns_none() {
-        let catalog =
-            BlueprintCatalog::new(vec![make_test_bp("blueprint.player", "Player")]);
+        let catalog = BlueprintCatalog::new(vec![make_test_bp("blueprint.player", "Player")]);
         assert!(
             catalog.get("blueprint.nonexistent").is_none(),
             "unknown ID must return None"
@@ -451,7 +438,9 @@ mod tests {
         );
         app.update();
         assert!(
-            app.world().get::<crate::colony::raids::RaidEnemy>(e).is_some(),
+            app.world()
+                .get::<crate::colony::raids::RaidEnemy>(e)
+                .is_some(),
             "entity must have RaidEnemy component from marker"
         );
     }
@@ -479,10 +468,7 @@ mod tests {
     fn spawn_multiple_markers_with_data() {
         let mut app = test_app();
         let bp = EntityBlueprint {
-            markers: vec![
-                "RaidEnemy".into(),
-                "FactionMember:faction.demons".into(),
-            ],
+            markers: vec!["RaidEnemy".into(), "FactionMember:faction.demons".into()],
             ..make_rat_bp()
         };
         let e = spawn_from_blueprint(
@@ -520,13 +506,17 @@ mod tests {
             .unwrap()
             .join("content");
         let ron_path = content_root.join("blueprints").join("foundation.ron");
-        let raw = std::fs::read_to_string(&ron_path)
-            .expect("foundation.ron must exist and be readable");
+        let raw =
+            std::fs::read_to_string(&ron_path).expect("foundation.ron must exist and be readable");
         let blueprints: Vec<EntityBlueprint> =
             ron::from_str(&raw).expect("foundation.ron must be valid RON");
 
         // Required blueprints for gameplay
-        let required = ["blueprint.player", "blueprint.rat", "blueprint.healing_potion"];
+        let required = [
+            "blueprint.player",
+            "blueprint.rat",
+            "blueprint.healing_potion",
+        ];
         for id in &required {
             assert!(
                 blueprints.iter().any(|bp| bp.id == *id),
@@ -537,8 +527,11 @@ mod tests {
         // Structural integrity: all blueprints must have id and label
         for bp in &blueprints {
             assert!(!bp.id.is_empty(), "blueprint must have non-empty id");
-            assert!(!bp.label.is_empty(), "blueprint '{id}' must have non-empty label",
-                id = bp.id);
+            assert!(
+                !bp.label.is_empty(),
+                "blueprint '{id}' must have non-empty label",
+                id = bp.id
+            );
         }
 
         // No duplicate IDs

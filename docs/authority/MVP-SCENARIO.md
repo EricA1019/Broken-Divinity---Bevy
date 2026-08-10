@@ -5,7 +5,7 @@
 economy, and progression evidence from the completed correction gate remains
 accepted. Colony spatial safety, viewport visibility, physical worker
 activity, semantic presentation, compact completeness, and paused management
-must pass [FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md](FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md)
+must pass [FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md](../active/FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md)
 before Foundation MVP acceptance is restored without qualification.
 
 ## Purpose
@@ -270,7 +270,7 @@ the original scenario and terminal evidence did not prove:
 - a strict warning-free Clippy gate.
 
 The expanded acceptance contract and repair sequence live in
-[FOUNDATION-STABILIZATION-PLAN.md](FOUNDATION-STABILIZATION-PLAN.md). Foundation
+[FOUNDATION-STABILIZATION-PLAN.md](../archive/FOUNDATION-STABILIZATION-PLAN.md). Foundation
 is not accepted again until that plan's final gate passes.
 
 ## Stabilization progress — 2026-07-25
@@ -338,7 +338,7 @@ A subsequent clean discovery run reopened acceptance after proving:
   tactical choice.
 
 The proposed correction sequence and adverse acceptance matrix are in
-[FOUNDATION-MVP-CORRECTION-PLAN.md](FOUNDATION-MVP-CORRECTION-PLAN.md).
+[FOUNDATION-MVP-CORRECTION-PLAN.md](../archive/FOUNDATION-MVP-CORRECTION-PLAN.md).
 The owner approved execution and the disabled-Storage policy on 2026-07-25.
 
 ## Correction acceptance record — 2026-07-25
@@ -412,7 +412,7 @@ reopened the colony player-experience and test-trust gates after proving:
   stress behavior.
 
 D-18 locks the correction behavior.
-[FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md](FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md)
+[FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md](../active/FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md)
 owns behavior and implementation order.
 [AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md](AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md)
 owns test policy, evidence sufficiency, metrics, and suite migration. Both

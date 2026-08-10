@@ -42,10 +42,12 @@ pub fn parse(input: &str) -> DebugCommand {
         "m" | "materials" => parse_add_resource(PoolKind::Materials, &args),
         "f" | "faith" => parse_add_resource(PoolKind::Faith, &args),
         "p" | "plants" => parse_add_resource(PoolKind::WildPlants, &args),
-        "day" => parse_u64(&args).map(DebugCommand::SetDay)
-            .unwrap_or_else(|e| DebugCommand::Unknown(e)),
-        "turn" => parse_u64(&args).map(DebugCommand::SetTurn)
-            .unwrap_or_else(|e| DebugCommand::Unknown(e)),
+        "day" => parse_u64(&args)
+            .map(DebugCommand::SetDay)
+            .unwrap_or_else(DebugCommand::Unknown),
+        "turn" => parse_u64(&args)
+            .map(DebugCommand::SetTurn)
+            .unwrap_or_else(DebugCommand::Unknown),
         "skip_day" => DebugCommand::SkipDay,
         "event" => {
             if args.is_empty() {
@@ -57,13 +59,11 @@ pub fn parse(input: &str) -> DebugCommand {
         "end_event" => DebugCommand::EndEvent,
         "kill_all" => DebugCommand::KillAllEnemies,
         "heal" => DebugCommand::Heal,
-        "god" => {
-            match args.first().copied() {
-                Some("on") => DebugCommand::GodMode(true),
-                Some("off") => DebugCommand::GodMode(false),
-                _ => DebugCommand::Unknown("usage: god on|off".into()),
-            }
-        }
+        "god" => match args.first().copied() {
+            Some("on") => DebugCommand::GodMode(true),
+            Some("off") => DebugCommand::GodMode(false),
+            _ => DebugCommand::Unknown("usage: god on|off".into()),
+        },
         "survivor" => {
             if args.is_empty() {
                 DebugCommand::Unknown("usage: survivor <name>".into())
@@ -78,7 +78,8 @@ pub fn parse(input: &str) -> DebugCommand {
                 match args[0].parse::<usize>() {
                     Ok(idx) => DebugCommand::AssignTask(idx, args[1..].join(" ")),
                     Err(_) => DebugCommand::Unknown(format!(
-                        "invalid survivor index '{}' — expected number", args[0]
+                        "invalid survivor index '{}' — expected number",
+                        args[0]
                     )),
                 }
             }
@@ -109,27 +110,31 @@ pub fn parse(input: &str) -> DebugCommand {
         "stats" => DebugCommand::Stats,
         "help" => DebugCommand::Help,
         "clear" => DebugCommand::Clear,
-        other => DebugCommand::Unknown(format!("unknown command '{}' — type 'help' for available commands", other)),
+        other => DebugCommand::Unknown(format!(
+            "unknown command '{}' — type 'help' for available commands",
+            other
+        )),
     }
 }
 
 fn parse_add_resource(kind: PoolKind, args: &[&str]) -> DebugCommand {
     if args.is_empty() {
-        return DebugCommand::Unknown(format!("usage: supplies|materials|faith|plants <amount>"));
+        return DebugCommand::Unknown("usage: supplies|materials|faith|plants <amount>".into());
     }
     match args[0].parse::<i32>() {
         Ok(amount) => DebugCommand::AddResource(kind, amount),
-        Err(_) => DebugCommand::Unknown(format!(
-            "invalid amount '{}' — expected a number", args[0]
-        )),
+        Err(_) => {
+            DebugCommand::Unknown(format!("invalid amount '{}' — expected a number", args[0]))
+        }
     }
 }
 
 fn parse_u64(args: &[&str]) -> Result<u64, String> {
     if args.is_empty() {
-        return Err(format!("expected a number argument"));
+        return Err("expected a number argument".into());
     }
-    args[0].parse::<u64>()
+    args[0]
+        .parse::<u64>()
         .map_err(|_| format!("invalid number '{}'", args[0]))
 }
 
@@ -149,12 +154,18 @@ mod tests {
 
     #[test]
     fn parse_supplies() {
-        assert_eq!(parse("supplies 50"), DebugCommand::AddResource(PoolKind::Supplies, 50));
+        assert_eq!(
+            parse("supplies 50"),
+            DebugCommand::AddResource(PoolKind::Supplies, 50)
+        );
     }
 
     #[test]
     fn parse_supplies_negative() {
-        assert_eq!(parse("supplies -10"), DebugCommand::AddResource(PoolKind::Supplies, -10));
+        assert_eq!(
+            parse("supplies -10"),
+            DebugCommand::AddResource(PoolKind::Supplies, -10)
+        );
     }
 
     #[test]
@@ -169,17 +180,26 @@ mod tests {
 
     #[test]
     fn parse_materials() {
-        assert_eq!(parse("materials 20"), DebugCommand::AddResource(PoolKind::Materials, 20));
+        assert_eq!(
+            parse("materials 20"),
+            DebugCommand::AddResource(PoolKind::Materials, 20)
+        );
     }
 
     #[test]
     fn parse_faith() {
-        assert_eq!(parse("faith 5"), DebugCommand::AddResource(PoolKind::Faith, 5));
+        assert_eq!(
+            parse("faith 5"),
+            DebugCommand::AddResource(PoolKind::Faith, 5)
+        );
     }
 
     #[test]
     fn parse_plants() {
-        assert_eq!(parse("plants 3"), DebugCommand::AddResource(PoolKind::WildPlants, 3));
+        assert_eq!(
+            parse("plants 3"),
+            DebugCommand::AddResource(PoolKind::WildPlants, 3)
+        );
     }
 
     #[test]
@@ -267,7 +287,10 @@ mod tests {
 
     #[test]
     fn parse_survivor_single_name() {
-        assert_eq!(parse("survivor Mara"), DebugCommand::SpawnSurvivor("Mara".into()));
+        assert_eq!(
+            parse("survivor Mara"),
+            DebugCommand::SpawnSurvivor("Mara".into())
+        );
     }
 
     #[test]
@@ -307,7 +330,10 @@ mod tests {
 
     #[test]
     fn parse_task_bad_index() {
-        assert!(matches!(parse("task abc gathering"), DebugCommand::Unknown(_)));
+        assert!(matches!(
+            parse("task abc gathering"),
+            DebugCommand::Unknown(_)
+        ));
     }
 
     #[test]
@@ -328,8 +354,14 @@ mod tests {
 
     #[test]
     fn parse_spawn_missing_coords() {
-        assert!(matches!(parse("spawn blueprint.rat"), DebugCommand::Unknown(_)));
-        assert!(matches!(parse("spawn blueprint.rat 5"), DebugCommand::Unknown(_)));
+        assert!(matches!(
+            parse("spawn blueprint.rat"),
+            DebugCommand::Unknown(_)
+        ));
+        assert!(matches!(
+            parse("spawn blueprint.rat 5"),
+            DebugCommand::Unknown(_)
+        ));
     }
 
     #[test]
@@ -339,7 +371,10 @@ mod tests {
 
     #[test]
     fn parse_spawn_bad_coords() {
-        assert!(matches!(parse("spawn blueprint.rat abc 5"), DebugCommand::Unknown(_)));
+        assert!(matches!(
+            parse("spawn blueprint.rat abc 5"),
+            DebugCommand::Unknown(_)
+        ));
     }
 
     #[test]
@@ -400,7 +435,10 @@ mod tests {
 
     #[test]
     fn parse_leading_whitespace() {
-        assert_eq!(parse("  supplies 10"), DebugCommand::AddResource(PoolKind::Supplies, 10));
+        assert_eq!(
+            parse("  supplies 10"),
+            DebugCommand::AddResource(PoolKind::Supplies, 10)
+        );
         assert_eq!(parse("\t\theal"), DebugCommand::Heal);
     }
 
@@ -411,11 +449,17 @@ mod tests {
 
     #[test]
     fn parse_zero_amount() {
-        assert_eq!(parse("supplies 0"), DebugCommand::AddResource(PoolKind::Supplies, 0));
+        assert_eq!(
+            parse("supplies 0"),
+            DebugCommand::AddResource(PoolKind::Supplies, 0)
+        );
     }
 
     #[test]
     fn parse_large_teleport() {
-        assert_eq!(parse("goto 9999 -9999"), DebugCommand::Teleport(9999, -9999));
+        assert_eq!(
+            parse("goto 9999 -9999"),
+            DebugCommand::Teleport(9999, -9999)
+        );
     }
 }

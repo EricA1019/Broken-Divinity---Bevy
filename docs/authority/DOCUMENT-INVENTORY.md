@@ -2,7 +2,7 @@
 
 **Status:** Active documentation authority map
 
-**Inventoried:** 2026-08-06
+**Inventoried:** 2026-08-09
 
 **Active testing-governance plan:** [AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md](AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md).
 
@@ -12,13 +12,20 @@
 
 **Active UI implementation plan:** [../active/FOUNDATION-UI-IMPROVEMENT-PLAN.md](../active/FOUNDATION-UI-IMPROVEMENT-PLAN.md).
 
+**Active factory/event implementation record:** [../active/FOUNDATION-FACTORY-EVENT-PIPELINE-PLAN.md](../active/FOUNDATION-FACTORY-EVENT-PIPELINE-PLAN.md).
+
+**Active stabilization and developer-console plan:** [../active/FOUNDATION-STABILIZATION-AND-CONSOLE-HARDENING-PLAN.md](../active/FOUNDATION-STABILIZATION-AND-CONSOLE-HARDENING-PLAN.md).
+
 The plans have non-overlapping authority: the testing plan owns evidence,
 metrics, and suite migration; the hardening plan owns behavior and
 implementation order. The basic colony-loop plan owns the active D-20
 vertical-slice sequence after the owner approved its Phase C0 defaults on
 2026-07-27. The UI plan owns presentation implementation order and phase gates
-without changing gameplay behavior. Product P2 still requires a separate
-owner-approved plan.
+without changing gameplay behavior. The factory/event plan records the
+implemented data-driven factory and deferred event/raid pipeline. The
+stabilization and console plan owns canonical recovery plus the sealed,
+role-separated hardening sequence for the existing developer console. Product
+P2 still requires a separate owner-approved plan.
 
 **Completed Foundation plans (archived):** See [`../archive/`](../archive/) for
 `FOUNDATION-RECOVERY-PLAN.md`, `FOUNDATION-STABILIZATION-PLAN.md`, and
@@ -51,6 +58,8 @@ has an implemented Foundation effect.
 | `docs/active/FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md` | Active plan | Foundation behavior and colony UX implementation-order authority |
 | `docs/active/FOUNDATION-BASIC-COLONY-LOOP-PLAN.md` | Active plan | Owner-approved D-20 test-first colony vertical-slice implementation and evidence sequence |
 | `docs/active/FOUNDATION-UI-IMPROVEMENT-PLAN.md` | Active plan | Owner-approved test-first Ratatui presentation sequence |
+| `docs/active/FOUNDATION-FACTORY-EVENT-PIPELINE-PLAN.md` | Active implementation record | Data-driven factory plus deferred event/raid pipeline sequence and contract inventory |
+| `docs/active/FOUNDATION-STABILIZATION-AND-CONSOLE-HARDENING-PLAN.md` | Active plan | Canonical recovery and sealed smaller-model developer-console hardening sequence |
 | `docs/archive/FOUNDATION-MVP-CORRECTION-PLAN.md` | Historical | Completed owner-authorized Foundation correction evidence |
 | `docs/archive/FOUNDATION-STABILIZATION-PLAN.md` | Historical | Completed stabilization evidence |
 | `docs/archive/FOUNDATION-RECOVERY-PLAN.md` | Historical | Completed earlier recovery evidence |

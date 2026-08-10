@@ -23,7 +23,6 @@ use crate::{
     components::{
         BlocksMovement, ContentIdentity, ExitTile, Name, Player, Position, ResourceNode, Tile,
     },
-    factory::EntityBlueprint,
     gamelog::{GameLog, LogEntry},
     inventory::{Container, EquipmentSlot, Item, SlotKind, Usable, UseEffect},
     map::SmokeMap,
@@ -384,9 +383,7 @@ fn validate_snapshot(snapshot: &RunSnapshot) -> Result<(), SaveError> {
 
 /// Deserialize a save file and restore the world.
 /// Returns the restored World and the seed.
-pub fn load_world(
-    path: &PathBuf,
-) -> Result<(World, u64), SaveError> {
+pub fn load_world(path: &PathBuf) -> Result<(World, u64), SaveError> {
     let snapshot = load_snapshot(path)?;
 
     let (world, _) = restore_world(&snapshot)?;
@@ -635,9 +632,7 @@ fn build_snapshot(world: &mut World, seed: u64, turn: u64) -> RunSnapshot {
 }
 
 /// Restore a world from a snapshot.
-fn restore_world(
-    snapshot: &RunSnapshot,
-) -> Result<(World, HashMap<SaveId, Entity>), SaveError> {
+fn restore_world(snapshot: &RunSnapshot) -> Result<(World, HashMap<SaveId, Entity>), SaveError> {
     let mut world = World::new();
     let mapping = restore_snapshot_into(&mut world, snapshot)?;
     Ok((world, mapping))

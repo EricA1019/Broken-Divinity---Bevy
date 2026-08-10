@@ -132,6 +132,10 @@ fn evaluate_condition(condition: &Condition, _player_pools: Option<&Pools>) -> b
 }
 
 /// Read `EventTrigger` messages, validate them, and initiate an event.
+// Bevy systems expose each independently borrowed world parameter in their
+// signature; keeping those borrows explicit is safer here than hiding them in
+// an opaque context object solely to satisfy Clippy's general API heuristic.
+#[allow(clippy::too_many_arguments)]
 pub fn process_event_triggers(
     mut triggers: bevy_ecs::message::MessageReader<EventTrigger>,
     registry: Res<EventRegistry>,
@@ -290,6 +294,9 @@ fn resolve_event_effect(
 }
 
 /// Read `EventSelected` messages, apply effects, advance or end the event.
+// See `process_event_triggers`: these are explicit Bevy world borrows, not a
+// general-purpose function API.
+#[allow(clippy::too_many_arguments)]
 pub fn process_event_choices(
     mut selections: bevy_ecs::message::MessageReader<EventSelected>,
     mut current: ResMut<CurrentEvent>,
@@ -813,18 +820,20 @@ mod tests {
     /// App with BlueprintCatalog containing a rat blueprint.
     fn spawn_event_test_app() -> App {
         let mut app = test_app();
-        app.world_mut().insert_resource(BlueprintCatalog::new(vec![
-            EntityBlueprint {
+        app.world_mut()
+            .insert_resource(BlueprintCatalog::new(vec![EntityBlueprint {
                 id: "blueprint.raid_rat".into(),
                 label: "Rat".into(),
                 is_player: false,
                 blocks_movement: true,
-                pools: vec![(PoolKind::Health, 11, 0, 11), (PoolKind::ActionPoints, 2, 0, 2)],
+                pools: vec![
+                    (PoolKind::Health, 11, 0, 11),
+                    (PoolKind::ActionPoints, 2, 0, 2),
+                ],
                 statuses: vec![],
                 visual: Some("Enemy".into()),
                 markers: vec![],
-            },
-        ]));
+            }]));
         app
     }
 
@@ -1019,10 +1028,7 @@ mod tests {
         );
 
         let player = trigger_event_in(&mut app, "test.onexit_trans");
-        assert_eq!(
-            app.world_mut().resource::<CurrentEvent>().node_id,
-            "start"
-        );
+        assert_eq!(app.world_mut().resource::<CurrentEvent>().node_id, "start");
 
         // Select choice → transition to node2
         app.world_mut()
@@ -1047,7 +1053,10 @@ mod tests {
 
         // Event should still be active, now on node2
         let ev = app.world_mut().resource::<CurrentEvent>();
-        assert!(ev.is_active(), "event must still be active after transition");
+        assert!(
+            ev.is_active(),
+            "event must still be active after transition"
+        );
         assert_eq!(ev.node_id, "node2");
     }
 
@@ -1133,7 +1142,10 @@ mod tests {
             .query_filtered::<(Entity, &Position), Without<Player>>()
             .iter(app.world_mut())
             .find(|(_, pos)| pos.x == 9 && pos.y == 9);
-        assert!(rat.is_none(), "no entity must be spawned for invalid blueprint");
+        assert!(
+            rat.is_none(),
+            "no entity must be spawned for invalid blueprint"
+        );
 
         // Warning logged about the invalid blueprint
         let log = app.world_mut().resource::<GameLog>();

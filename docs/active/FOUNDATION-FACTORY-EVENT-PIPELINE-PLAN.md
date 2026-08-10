@@ -1,9 +1,16 @@
 # Foundation Factory & Event Pipeline Plan
 
-> **Status**: Active — Phase 1 implementation in progress
+> **Status**: Implemented infrastructure — green, independently unreviewed; events and raids remain product-deferred
 > **Created**: 2026-08-06
 > **Depends on**: Foundation content loading pipeline (`bd_data::loader`, `FoundationContent`)
 > **Test-driven**: Each phase writes contract tests first (fail), then implements (pass).
+
+The implementation described by Phases 1–4 is present as of 2026-08-09. Its
+22 contract IDs are registered in `testing/foundation-contracts.ron`: factory
+catalog/marker coverage is Foundation support, action-spawn coverage is
+deferred infrastructure, and event/raid coverage remains deferred
+infrastructure under the GDD. This document is now an implementation record,
+not authorization to expose deferred events or raids as Foundation product.
 
 ## Overview
 

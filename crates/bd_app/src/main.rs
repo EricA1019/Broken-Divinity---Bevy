@@ -3,10 +3,8 @@
 //! Initializes tracing, Bevy app with Bevy-Ratatui,
 //! and spawns the Phase 1 minimal terminal slice.
 
+use std::path::{Path, PathBuf};
 use std::time::Duration;
-use std::{
-    path::{Path, PathBuf},
-};
 
 use bevy_app::{AppExit, PanicHandlerPlugin, ScheduleRunnerPlugin};
 use bevy_ecs::message::MessageWriter;
@@ -183,8 +181,7 @@ fn process_persistence_requests(world: &mut bevy_ecs::world::World) {
     if load_requested {
         let path = bd_core::save::manual_slot_path(&save_dir);
         match bd_core::save::load_manual_slot(&save_dir).and_then(|snapshot| {
-            bd_core::save::restore_snapshot_into(world, &snapshot)
-                .map(|_| snapshot)
+            bd_core::save::restore_snapshot_into(world, &snapshot).map(|_| snapshot)
         }) {
             Ok(snapshot) => {
                 request_screen_for_restored_mode(world);

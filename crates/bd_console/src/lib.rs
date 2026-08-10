@@ -22,11 +22,29 @@ pub use state::ConsoleState;
 #[derive(Message, Debug, Clone)]
 pub struct ConsoleCommand(pub String);
 
+/// System set for the console input reducer. Ordered explicitly before
+/// gameplay routing within `BdSet::Input` so close keys cannot leak.
+#[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
+pub struct ConsoleCaptureSet;
+
+/// Bridge: reads `ConsoleCommand` messages emitted by the reducer and
+/// queues them into `ConsoleState.pending` for the exclusive Mutation
+/// dispatcher. This is the single production bridge from typed command to
+/// dispatch queue. Runs in `BdSet::Mutation` before `execute_console_command`.
+fn bridge_console_commands(
+    mut console: ResMut<ConsoleState>,
+    mut commands: bevy_ecs::message::MessageReader<ConsoleCommand>,
+) {
+    for cmd in commands.read() {
+        console.pending.push(cmd.0.clone());
+    }
+}
+
 /// Minimal plugin that registers the console message, systems, and resources.
 ///
 /// Add **after** `BdCorePlugin` (needs `BlueprintCatalog`, `EventRegistry`,
-/// `GameTime`, etc.) and **before** `BdTuiPlugin` (the input guard in
-/// `map_input_to_intents` depends on `ConsoleState`).
+/// `GameTime`, etc.) and **before** `BdTuiPlugin` (the ordering in
+/// `BdTuiPlugin` depends on `ConsoleCaptureSet`).
 pub struct BdConsolePlugin;
 
 impl Plugin for BdConsolePlugin {
@@ -38,11 +56,28 @@ impl Plugin for BdConsolePlugin {
         app.init_resource::<ConsoleState>();
 
         // Systems
-        app.add_systems(bevy_app::Update, (
-            render::render_console.in_set(bd_core::BdSet::Render),
-        ));
-        app.add_systems(bevy_app::Update,
-            dispatch::execute_console_command.in_set(bd_core::BdSet::Mutation));
+        // Console input reducer: owns all physical key editing in Input.
+        app.add_systems(
+            bevy_app::Update,
+            (
+                input::capture_console_input
+                    .in_set(ConsoleCaptureSet)
+                    .in_set(bd_core::BdSet::Input),
+                render::render_console.in_set(bd_core::BdSet::Render),
+            ),
+        );
+        // Bridge: carries ConsoleCommand to pending in Mutation, before dispatch.
+        app.add_systems(
+            bevy_app::Update,
+            bridge_console_commands
+                .in_set(bd_core::BdSet::Mutation)
+                .before(dispatch::execute_console_command),
+        );
+        // Exclusive dispatcher: runs in Mutation, after the bridge.
+        app.add_systems(
+            bevy_app::Update,
+            dispatch::execute_console_command.in_set(bd_core::BdSet::Mutation),
+        );
     }
 }
 
@@ -74,13 +109,15 @@ mod tests {
 
         // Write a message and verify it's stored
         {
-            let mut msgs = app.world_mut()
+            let mut msgs = app
+                .world_mut()
                 .resource_mut::<bevy_ecs::message::Messages<ConsoleCommand>>();
             msgs.write(ConsoleCommand("test".into()));
         }
-        let msgs = app.world()
+        let msgs = app
+            .world()
             .resource::<bevy_ecs::message::Messages<ConsoleCommand>>();
-        assert!(msgs.len() >= 1);
+        assert!(!msgs.is_empty());
     }
 
     /// Plugin must build without panic — basic smoke test.
@@ -105,11 +142,6 @@ mod tests {
         assert!(!state.open, "console must start closed");
     }
 
-    // ── Phase 6: pipeline contract tests ──
-    //
-    // Input routing (backtick toggle, key capture) lives in bd_tui's
-    // console_input_guard — tested via bd_app integration tests.
-
     /// Input→dispatch pipeline: pending commands flow through dispatch to output.
     #[test]
     fn input_to_dispatch_pipeline() {
@@ -120,16 +152,30 @@ mod tests {
         world.init_resource::<bd_core::events::EventRegistry>();
         world.init_resource::<bd_core::colony::production::ColonyResources>();
         world.init_resource::<bd_core::factory::BlueprintCatalog>();
-        world.insert_resource(bevy_ecs::message::Messages::<bd_core::signals::PoolDeltaRequested>::default());
-        world.insert_resource(bevy_ecs::message::Messages::<bd_core::signals::EventTrigger>::default());
-        world.insert_resource(bevy_ecs::message::Messages::<bd_core::signals::EntityDefeated>::default());
-        world.insert_resource(bevy_ecs::message::Messages::<bd_core::spatial::TransitionIntent>::default());
+        world.insert_resource(bevy_ecs::message::Messages::<
+            bd_core::signals::PoolDeltaRequested,
+        >::default());
+        world.insert_resource(
+            bevy_ecs::message::Messages::<bd_core::signals::EventTrigger>::default(),
+        );
+        world.insert_resource(bevy_ecs::message::Messages::<
+            bd_core::signals::EntityDefeated,
+        >::default());
+        world.insert_resource(bevy_ecs::message::Messages::<
+            bd_core::spatial::TransitionIntent,
+        >::default());
 
-        world.resource_mut::<ConsoleState>().pending.push("help".into());
+        world
+            .resource_mut::<ConsoleState>()
+            .pending
+            .push("help".into());
         dispatch::execute_console_command(&mut world);
 
         let output = &world.resource::<ConsoleState>().output;
-        assert!(output.iter().any(|l| l.contains("COMMANDS")), "dispatch must process 'help'");
+        assert!(
+            output.iter().any(|l| l.contains("COMMANDS")),
+            "dispatch must process 'help'"
+        );
         assert!(world.resource::<ConsoleState>().pending.is_empty());
     }
 
@@ -143,7 +189,8 @@ mod tests {
         // Open console, type something, press Escape
         {
             use crossterm::event::{KeyEvent, KeyEventKind, KeyModifiers};
-            let mut msgs = app.world_mut()
+            let mut msgs = app
+                .world_mut()
                 .resource_mut::<bevy_ecs::message::Messages<bevy_ratatui::event::KeyMessage>>();
             msgs.write(bevy_ratatui::event::KeyMessage(KeyEvent::new_with_kind(
                 crossterm::event::KeyCode::Char('`'),

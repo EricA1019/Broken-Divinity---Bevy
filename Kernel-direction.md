@@ -12,9 +12,9 @@ The current foundation target is narrower than the eventual game: stabilize the 
 
 This appendix contains detailed engineering direction, including future
 procedural-location work and broader tactical MVP targets. For current
-implementation, [docs/FOUNDATION-STABILIZATION-PLAN.md](docs/FOUNDATION-STABILIZATION-PLAN.md)
+implementation, [docs/archive/FOUNDATION-STABILIZATION-PLAN.md](docs/archive/FOUNDATION-STABILIZATION-PLAN.md)
 is the task authority. The completed
-[Foundation Recovery Plan](docs/FOUNDATION-RECOVERY-PLAN.md) remains prior
+[Foundation Recovery Plan](docs/archive/FOUNDATION-RECOVERY-PLAN.md) remains prior
 evidence. Any phase text that assumes procedural generation,
 raids, events, sanity, or the complete overworld loop is future work unless the
 active plan explicitly brings it in.

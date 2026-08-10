@@ -29,6 +29,10 @@ pub const RAID_EVENT_SMALL: &str = "event.raid.small";
 pub const RAID_EVENT_MEDIUM: &str = "event.raid.medium";
 
 /// Roll for raid at day change. Emits an event instead of spawning directly.
+// Bevy systems expose each independently borrowed world parameter in their
+// signature; keeping those borrows explicit is safer here than hiding them in
+// an opaque context object solely to satisfy Clippy's general API heuristic.
+#[allow(clippy::too_many_arguments)]
 pub fn process_raids(
     mut raid_state: ResMut<RaidState>,
     mut colony_res: ResMut<crate::colony::production::ColonyResources>,
@@ -101,10 +105,7 @@ pub fn process_raids(
             );
         } else {
             game_log.push(
-                format!(
-                    "Raid event '{}' not registered — skipping spawn.",
-                    event_id
-                ),
+                format!("Raid event '{}' not registered — skipping spawn.", event_id),
                 crate::gamelog::LogLevel::Warn,
             );
         }
@@ -193,12 +194,8 @@ mod tests {
                     mutators: vec![],
                 }],
             });
-        app.world_mut()
-            .resource_mut::<crate::time::GameTime>()
-            .day = 5;
-        app.world_mut()
-            .resource_mut::<crate::time::GameTime>()
-            .turn = 50;
+        app.world_mut().resource_mut::<crate::time::GameTime>().day = 5;
+        app.world_mut().resource_mut::<crate::time::GameTime>().turn = 50;
         app.world_mut()
             .resource_mut::<crate::colony::production::ColonyResources>()
             .pools
@@ -215,15 +212,16 @@ mod tests {
         // After one update: process_raids queued EventTrigger, but
         // process_event_triggers (IntentCollection) ran earlier this frame.
         // So event is not yet active and no entities spawned.
-        let w = app.world_mut();
-        let ev = w.resource::<CurrentEvent>();
-        assert!(
-            !ev.is_active(),
-            "event not yet active after raid trigger (processed next frame)"
-        );
-        let markers = w.query::<&RaidEnemy>().iter(w).count();
-        assert_eq!(markers, 0, "no RaidEnemy before event resolution");
-        drop(w);
+        {
+            let w = app.world_mut();
+            let ev = w.resource::<CurrentEvent>();
+            assert!(
+                !ev.is_active(),
+                "event not yet active after raid trigger (processed next frame)"
+            );
+            let markers = w.query::<&RaidEnemy>().iter(w).count();
+            assert_eq!(markers, 0, "no RaidEnemy before event resolution");
+        }
 
         // Second update: process_event_triggers reads the queued trigger,
         // event becomes active, spawn_on_enter fires.
@@ -271,12 +269,8 @@ mod tests {
                     mutators: vec![],
                 }],
             });
-        app.world_mut()
-            .resource_mut::<crate::time::GameTime>()
-            .day = 5;
-        app.world_mut()
-            .resource_mut::<crate::time::GameTime>()
-            .turn = 50;
+        app.world_mut().resource_mut::<crate::time::GameTime>().day = 5;
+        app.world_mut().resource_mut::<crate::time::GameTime>().turn = 50;
         app.world_mut()
             .resource_mut::<crate::colony::production::ColonyResources>()
             .pools
@@ -336,12 +330,8 @@ mod tests {
                     mutators: vec![],
                 }],
             });
-        app.world_mut()
-            .resource_mut::<crate::time::GameTime>()
-            .day = 5;
-        app.world_mut()
-            .resource_mut::<crate::time::GameTime>()
-            .turn = 50;
+        app.world_mut().resource_mut::<crate::time::GameTime>().day = 5;
+        app.world_mut().resource_mut::<crate::time::GameTime>().turn = 50;
         app.world_mut()
             .resource_mut::<crate::colony::production::ColonyResources>()
             .pools
@@ -412,12 +402,8 @@ mod tests {
                     mutators: vec![],
                 }],
             });
-        app.world_mut()
-            .resource_mut::<crate::time::GameTime>()
-            .day = 5;
-        app.world_mut()
-            .resource_mut::<crate::time::GameTime>()
-            .turn = 50;
+        app.world_mut().resource_mut::<crate::time::GameTime>().day = 5;
+        app.world_mut().resource_mut::<crate::time::GameTime>().turn = 50;
         app.world_mut()
             .resource_mut::<crate::colony::production::ColonyResources>()
             .pools

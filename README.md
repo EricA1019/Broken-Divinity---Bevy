@@ -7,9 +7,9 @@ A reusable terminal-based roguelike/tactics game kernel built with Rust, Bevy EC
 Foundation remediation is automated-green, but Foundation acceptance remains
 partially reopened. Registered contracts are currently `GreenUnreviewed`, and
 the visual matrix retains explicit open evidence. The
-[Foundation Test and Colony UX Hardening Plan](docs/FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md)
+[Foundation Test and Colony UX Hardening Plan](docs/active/FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md)
 owns the remaining behavior work; the
-[Authoritative Testing Standard](docs/AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md)
+[Authoritative Testing Standard](docs/authority/AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md)
 owns evidence sufficiency and suite migration. Product P2 remains unauthorized
 and requires a separate owner-approved plan.
 
@@ -84,7 +84,7 @@ bash scripts/test-gate.sh
 
 Development follows the repository contract in [`AGENTS.md`](AGENTS.md) and
 the owner-approved
-[Authoritative Testing Standard](docs/AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md).
+[Authoritative Testing Standard](docs/authority/AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md).
 Behavior changes must proceed red → green through focused contract tests before
 the complete measured gate is run. A green automated gate does not replace
 required GDD drift review, visual evidence, or real-terminal playtesting.

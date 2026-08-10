@@ -1,9 +1,9 @@
 # Broken Divinity Foundation Requirement-to-Test Map
 
 **Status:** Active evidence index; this file is not design authority
-**Authority:** `../GDD.md`, `../docs/DECISIONS-TO-LOCK.md`,
-`../docs/MVP-SCENARIO.md`, and
-`../docs/AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md`
+**Authority:** `../GDD.md`, `../docs/authority/DECISIONS-TO-LOCK.md`,
+`../docs/authority/MVP-SCENARIO.md`, and
+`../docs/authority/AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md`
 **Scope:** The locked Foundation only. Product P2/P3 and explicitly deferred
 systems do not create active Foundation acceptance failures.
 
@@ -307,4 +307,16 @@ workflow evidence.
 | Selected Cinder Rite identity is shared beyond the colony screen | `selected_cinder_rite_identity_frames_colony_and_reusable_screens` | Green unreviewed | Palette, double shell/modal chrome, muted single-rule panels, responsive HP/AP tracks, and shared mode/command ribbons pass both automated profiles; final owner review and complete placement/profile PTY remain |
 | Supplies exposes pressure and next-day outlook | `provisions_show_stock_pressure_and_dawn_outlook_at_supported_profiles` | Green unreviewed | Structured exact gauge, pressure, dawn delta/result, and both automated profiles pass; PTY/owner review remains |
 | Entering station/node range emits one nearby hint | `entering_adjacent_range_emits_one_deduplicated_nearby_hint` plus registered node/aggregation/re-entry supports | Green unreviewed | Production movement now emits one focused fact plus a count, preserves the complete deterministic target set, rearms on exit/re-entry, and keeps unbound Interact truthfully disabled; PTY/owner review remains |
-| One Context presentation serves station/node/colonist | `nearby_station_context_is_complete_at_supported_profiles` plus registered category/state/action/final-composition supports | Red | Default category rows pass, but staffed station worker/recipe/progress, assigned-node worker/progress, active-colonist target/progress/cargo/blocker detail, their final composed output, and bound-without-reducer action truth remain red |
+| One Context presentation serves station/node/colonist | `nearby_station_context_is_complete_at_supported_profiles` plus registered category/state/action/final-composition supports | Green unreviewed | All 113 `bd_tui --lib` observers pass; final PTY/owner review remains open |
+
+## 16. Developer-console input support
+
+These rows support development tooling and do not expand Foundation product
+scope. The C1 v2 handoff preserves six useful physical greens while keeping
+two independently observed architecture gaps intentionally Red.
+
+| Requirement piece | Primary evidence | Status | Missing proof |
+|---|---|---|---|
+| One registered reducer owns physical console editing | `console_input_contract::physical_console_editing_uses_the_registered_production_reducer` | Red | Physical editing is green, but C1 cannot close until the reducer has explicit schedule ownership and one causal submission path |
+| Console-owned close keys never reach gameplay routing | `console_input_contract::escape_close_is_consumed_before_title_routing` plus Title/Outpost close cases and `console_capture_is_explicitly_ordered_before_gameplay_routing` | Red | Physical close cases pass, but Bevy still reports one unresolved conflict involving the reducer instead of an explicit dependency before gameplay routing |
+| One physical line uses one typed submission path | `console_input_contract::one_physical_line_reaches_dispatch_exactly_once` | Red | The reducer emits `ConsoleCommand` and independently writes `ConsoleState.pending`; quarantining that competitor leaves zero dispatch results |

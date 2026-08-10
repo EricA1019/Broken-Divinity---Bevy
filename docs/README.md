@@ -1,6 +1,6 @@
 # Broken Divinity Documentation Hub
 
-**Updated:** 2026-08-06
+**Updated:** 2026-08-09
 
 ## Directory Structure
 
@@ -10,7 +10,9 @@ docs/
 ├── active/                # Current implementation plans (the ones you execute)
 │   ├── FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md
 │   ├── FOUNDATION-BASIC-COLONY-LOOP-PLAN.md
-│   └── FOUNDATION-UI-IMPROVEMENT-PLAN.md
+│   ├── FOUNDATION-UI-IMPROVEMENT-PLAN.md
+│   ├── FOUNDATION-FACTORY-EVENT-PIPELINE-PLAN.md
+│   └── FOUNDATION-STABILIZATION-AND-CONSOLE-HARDENING-PLAN.md
 ├── authority/             # Locked decisions, guardrails, testing standards
 │   ├── DECISIONS-TO-LOCK.md
 │   ├── ARCHITECTURE_GUARDRAILS.md
@@ -52,7 +54,9 @@ docs/
 8. [`active/FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md`](active/FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md) — active Foundation behavior and colony UX implementation authority
 9. [`active/FOUNDATION-BASIC-COLONY-LOOP-PLAN.md`](active/FOUNDATION-BASIC-COLONY-LOOP-PLAN.md) — owner-approved D-20 colony-loop implementation
 10. [`active/FOUNDATION-UI-IMPROVEMENT-PLAN.md`](active/FOUNDATION-UI-IMPROVEMENT-PLAN.md) — Foundation Ratatui improvement sequence and UI phase gates
-11. [`authority/DOCUMENT-INVENTORY.md`](authority/DOCUMENT-INVENTORY.md) — classification and ownership of all project documentation
+11. [`active/FOUNDATION-FACTORY-EVENT-PIPELINE-PLAN.md`](active/FOUNDATION-FACTORY-EVENT-PIPELINE-PLAN.md) — factory, blueprint, event, and raid-pipeline implementation record
+12. [`active/FOUNDATION-STABILIZATION-AND-CONSOLE-HARDENING-PLAN.md`](active/FOUNDATION-STABILIZATION-AND-CONSOLE-HARDENING-PLAN.md) — canonical recovery followed by sealed developer-console hardening batches
+13. [`authority/DOCUMENT-INVENTORY.md`](authority/DOCUMENT-INVENTORY.md) — classification and ownership of all project documentation
 
 **Completed plans** are in [`archive/`](archive/). They are evidence records,
 not active authority. Do not execute from them.

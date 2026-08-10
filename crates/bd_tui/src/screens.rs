@@ -298,7 +298,7 @@ pub fn default_screen_registry() -> ScreenRegistry {
             // (status + Inspect/Assign/Set Production + reason) stays legible.
             PanelDefinition {
                 id: "actions".into(),
-                layout: PanelLayout::Bottom { height_pct: 25 },
+                layout: PanelLayout::Bottom { height_pct: 30 },
                 view_model: "ActionListViewModel".into(),
             },
             PanelDefinition {
@@ -395,17 +395,15 @@ pub fn compact_screen_definition(definition: &ScreenDefinition) -> ScreenDefinit
         "outpost" => {
             for panel in &mut compact.panels {
                 match panel.id.as_str() {
-                    // Slightly narrower party keeps the shelter map the largest
-                    // interactive panel once Chronicle/Context grow to keep
-                    // target identity and actions readable at 60x20.
+                    // Keep enough inner width for complete worker/station names.
                     "outpost_party" => panel.layout = PanelLayout::Left { width_pct: 22 },
                     // Eleven inner cells retain live-sized values plus a two-cell
                     // ASCII track (for example HP24/30[#-]).
                     "stats" => panel.layout = PanelLayout::Right { width_pct: 24 },
-                    // Context needs three inner rows so the longest station
-                    // action set (Inspect/Assign/Set Production + reason) stays
-                    // legible without clipping.
-                    "actions" => panel.layout = PanelLayout::Bottom { height_pct: 38 },
+                    // Three inner rows plus semantic border labels keep target
+                    // identity, detail, actions, and denial reasons visible
+                    // without tying the layout to one entity category.
+                    "actions" => panel.layout = PanelLayout::Bottom { height_pct: 32 },
                     // Chronicle needs two inner rows so a wrapped NEARBY fact
                     // never loses its target name or Interact hint.
                     "log" => panel.layout = PanelLayout::Bottom { height_pct: 25 },
@@ -1533,7 +1531,38 @@ fn render_actions_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContex
     } else {
         "Actions".to_string()
     };
-    let block = panel(ctx.theme, title, PanelTone::Dense);
+    let mut block = panel(ctx.theme, title, PanelTone::Dense);
+    if let Some(target) = context_target {
+        // Inspect is target identity plus a disabled preview. The bottom rule
+        // owns that stable row so inner height remains available for live
+        // status and the remaining context actions at compact profiles.
+        if let Some(inspect) = ctx
+            .actions
+            .actions
+            .iter()
+            .find(|action| action.label == format!("Inspect {}", target.name))
+        {
+            let reason_is_repeated = inspect.denial_reason.as_deref().is_some_and(|reason| {
+                ctx.actions.actions.iter().any(|later| {
+                    later.label != inspect.label && later.denial_reason.as_deref() == Some(reason)
+                })
+            });
+            let inspect_title = if reason_is_repeated {
+                inspect.label.clone()
+            } else if let Some(reason) = inspect.denial_reason.as_deref() {
+                format!("{}: {reason}", inspect.label)
+            } else {
+                inspect.label.clone()
+            };
+            block = block.title_bottom(
+                ratatui::text::Line::styled(
+                    format!(" {inspect_title} "),
+                    style(ctx.theme, UiTone::Muted),
+                )
+                .right_aligned(),
+            );
+        }
+    }
 
     let inner = block.inner(area);
     frame.render_widget(block, area);
@@ -1553,23 +1582,29 @@ fn render_actions_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContex
         }
         // Concise status stays with the context feed so the focused target's
         // category/status never rely on glyph inference.
+        let status = target
+            .status
+            .strip_prefix(&format!("{} ", target.title))
+            .unwrap_or(&target.status);
         spans.push(ratatui::text::Span::styled(
-            format!("{} ", target.status),
+            format!("{status} "),
             style(ctx.theme, UiTone::KeyHint),
         ));
     }
     // Action rows carry their key hint, label, and any denial reason inline
     // so compact wrapping keeps each action+reason pair together. Each action
     // is one span so the wrapper never separates a label from its reason.
-    // Action rows carry their key hint, label, and any denial reason inline
-    // so compact wrapping keeps each action+reason pair together. Each action
-    // is one span so the wrapper never separates a label from its reason.
-    for action in ctx
+    let visible_actions: Vec<_> = ctx
         .actions
         .actions
         .iter()
-        .filter(|a| context_target.is_none() || a.label != "Interact")
-    {
+        .filter(|action| {
+            context_target.as_ref().is_none_or(|target| {
+                action.label != "Interact" && action.label != format!("Inspect {}", target.name)
+            })
+        })
+        .collect();
+    for (index, action) in visible_actions.iter().enumerate() {
         let key_style = if action.enabled {
             style(ctx.theme, UiTone::KeyHint)
         } else {
@@ -1581,10 +1616,18 @@ fn render_actions_widget(frame: &mut Frame, area: Rect, ctx: &WidgetRenderContex
                 key_style,
             ));
         }
-        let text = if let Some(reason) = action.denial_reason.as_deref() {
-            format!("{}({}) ", action.label, reason)
+        let label = action.label.as_str();
+        // Repeated denial reasons are shown once, on their final action. This
+        // retains the truthful reason while avoiding flat duplicate prose.
+        let reason = action.denial_reason.as_deref().filter(|reason| {
+            !visible_actions[index + 1..]
+                .iter()
+                .any(|later| later.denial_reason.as_deref() == Some(*reason))
+        });
+        let text = if let Some(reason) = reason {
+            format!("{label}: {reason} ")
         } else {
-            format!("{} ", action.label)
+            format!("{label} ")
         };
         spans.push(ratatui::text::Span::raw(text));
     }

@@ -138,15 +138,19 @@ impl Plugin for BdTuiPlugin {
 
         view_models::register_view_models(app);
 
+        // Explicit: console capture ordered before gameplay routing
+        // within BdSet::Input so close keys cannot leak.
+        app.configure_sets(
+            bevy_app::Update,
+            bd_console::ConsoleCaptureSet.before(map_input_to_intents),
+        );
+
         app.add_systems(
             bevy_app::Update,
             (
                 sync_event_screen.in_set(BdSet::IntentCollection),
                 sync_transition_screen.in_set(BdSet::IntentCollection),
                 reset_transient_ui_after_restore
-                    .before(map_input_to_intents)
-                    .in_set(BdSet::Input),
-                console_input_guard
                     .before(map_input_to_intents)
                     .in_set(BdSet::Input),
                 map_input_to_intents.in_set(BdSet::Input),
@@ -157,195 +161,6 @@ impl Plugin for BdTuiPlugin {
 
         tracing::info!("BdTuiPlugin initialized");
     }
-}
-
-/// When the debug console is open, route keys to console state instead of gameplay.
-fn console_input_guard(
-    console_state: Option<ResMut<bd_console::ConsoleState>>,
-    mut messages: MessageReader<KeyMessage>,
-) {
-    let Some(mut console_state) = console_state else {
-        return; // Console not available — skip (tests, headless, etc.)
-    };
-    use crossterm::event::{KeyCode, KeyEventKind};
-
-    for key_msg in messages.read() {
-        // Only process press events (ignore release/repeat)
-        if key_msg.0.kind != KeyEventKind::Press {
-            continue;
-        }
-        let code = &key_msg.0.code;
-        // Backtick toggles console open/closed
-        if matches!(code, KeyCode::Char('`')) {
-            console_state.open = !console_state.open;
-            if console_state.open {
-                console_state.buffer.clear();
-                console_state.cursor = 0;
-                console_state.history_idx = None;
-                // Welcome message on open
-                console_state.output.push("— DEBUG CONSOLE — Type 'help' for available commands. Press ` or Esc to close.".into());
-            }
-            continue;
-        }
-        // When console is open, route all keys to buffer
-        if console_state.open {
-            match code {
-                KeyCode::Esc => {
-                    console_state.open = false;
-                    console_state.buffer.clear();
-                    console_state.cursor = 0;
-                    console_state.history_idx = None;
-                }
-                KeyCode::Enter => {
-                    let line = console_state.buffer.clone();
-                    if !line.is_empty() {
-                        console_state.history.push(line.clone());
-                    }
-                    console_state.pending.push(line);
-                    console_state.buffer.clear();
-                    console_state.cursor = 0;
-                    console_state.history_idx = None;
-                }
-                KeyCode::Backspace => {
-                    if console_state.cursor > 0 {
-                        let pos = console_state.cursor - 1;
-                        console_state.buffer.remove(pos);
-                        console_state.cursor = pos;
-                    }
-                }
-                KeyCode::Tab => {
-                    tab_complete(&mut console_state);
-                }
-                KeyCode::Up => {
-                    history_search(&mut console_state, false);
-                }
-                KeyCode::Down => {
-                    history_search(&mut console_state, true);
-                }
-                KeyCode::Char(c) if c.is_ascii_graphic() || *c == ' ' => {
-                    let pos = console_state.cursor;
-                    console_state.buffer.insert(pos, *c);
-                    console_state.cursor = pos + 1;
-                    // Reset history search position when typing
-                    console_state.history_idx = None;
-                }
-                _ => {}
-            }
-        }
-        // When console is closed, keys pass through to map_input_to_intents normally
-    }
-}
-
-/// All completable command names (including aliases).
-const COMMAND_NAMES: &[&str] = &[
-    "supplies", "materials", "faith", "plants",
-    "day", "turn", "skip_day",
-    "event", "end_event",
-    "kill_all", "heal", "god",
-    "survivor", "task",
-    "spawn", "goto", "shelter",
-    "blueprints", "events", "stats",
-    "help", "clear",
-    "s", "m", "f", "p",
-];
-
-/// Tab-complete the current buffer against known command names.
-fn tab_complete(state: &mut bd_console::ConsoleState) {
-    let prefix = state.buffer.trim();
-    if prefix.is_empty() {
-        // Show all top-level commands
-        state.output.push(format!(
-            "Commands: {}",
-            COMMAND_NAMES.iter()
-                .filter(|n| !n.len() == 1 || n.starts_with(|c: char| c.is_alphabetic())) // skip aliases in listing
-                .cloned()
-                .collect::<Vec<_>>()
-                .join(", ")
-        ));
-        return;
-    }
-
-    let matches: Vec<&&str> = COMMAND_NAMES
-        .iter()
-        .filter(|n| n.starts_with(prefix) && n.len() > 1) // skip single-char aliases unless exact
-        .collect();
-
-    match matches.len() {
-        0 => {
-            state.output.push(format!("No matches for '{}'", prefix));
-        }
-        1 => {
-            // Complete with a trailing space
-            state.buffer = format!("{} ", matches[0]);
-            state.cursor = state.buffer.len();
-        }
-        _ => {
-            // Show all matches
-            state.output.push(format!(
-                "{} matches: {}",
-                matches.len(),
-                matches.iter().map(|s| **s).collect::<Vec<_>>().join(", ")
-            ));
-            // Complete the common prefix
-            let strs: Vec<&str> = matches.iter().map(|s| **s).collect();
-            if let Some(common) = common_prefix(&strs) {
-                if common.len() > prefix.len() {
-                    state.buffer = common.to_string();
-                    state.cursor = state.buffer.len();
-                }
-            }
-        }
-    }
-}
-
-/// Navigate history filtered by the current buffer prefix.
-/// `forward`: false = Up (older), true = Down (newer).
-fn history_search(state: &mut bd_console::ConsoleState, forward: bool) {
-    let prefix = &state.buffer;
-    let matches: Vec<(usize, &String)> = state.history.iter().enumerate()
-        .filter(|(_, h)| h.starts_with(prefix.as_str()))
-        .collect();
-
-    if matches.is_empty() {
-        return;
-    }
-
-    let current_match = state.history_idx
-        .and_then(|idx| matches.iter().position(|(i, _)| *i == idx));
-
-    let new_pos = match (forward, current_match) {
-        // Down (forward): next match, or clear to fresh input
-        (true, Some(pos)) if pos + 1 < matches.len() => Some(matches[pos + 1].0),
-        (true, _) => {
-            // Past last match — clear to fresh input
-            state.history_idx = None;
-            state.buffer.clear();
-            state.cursor = 0;
-            return;
-        }
-        // Up (backward): previous match, or wrap to last
-        (false, Some(pos)) if pos > 0 => Some(matches[pos - 1].0),
-        (false, _) => {
-            // First Up press or at top — go to last match
-            matches.last().map(|(i, _)| *i)
-        }
-    };
-
-    if let Some(idx) = new_pos {
-        state.history_idx = Some(idx);
-        state.buffer = state.history[idx].clone();
-        state.cursor = state.buffer.len();
-    }
-}
-
-/// Find the longest common prefix among a list of strings.
-fn common_prefix<'a>(strings: &[&'a str]) -> Option<&'a str> {
-    let first = strings.first()?;
-    let mut end = first.len();
-    for s in strings.iter().skip(1) {
-        end = end.min(s.bytes().zip(first.bytes()).take_while(|(a, b)| a == b).count());
-    }
-    if end == 0 { None } else { Some(&first[..end]) }
 }
 
 fn reset_transient_ui_after_restore(
@@ -781,8 +596,12 @@ fn map_input_to_intents(
         foundation_content,
     } = colony_interaction;
 
-    // Debug console steals all input when open
-    if input.console_state.as_ref().map_or(false, |s| s.open) {
+    // Console reducer owns the current batch — gameplay must not re-read keys
+    if input
+        .console_state
+        .as_ref()
+        .is_some_and(|s| s.batch_capture_active)
+    {
         return;
     }
 

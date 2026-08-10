@@ -3,8 +3,8 @@
 Status: Active evidence ledger
 Authorities:
 
-- `../docs/AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md`
-- `../docs/FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md`
+- `../docs/authority/AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md`
+- `../docs/active/FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md`
 
 Baseline captured: 2026-07-25
 
@@ -1506,3 +1506,78 @@ handoff/report is forbidden unless its exact path is explicitly authorized.
 The next reviewer-owned v4 handoff permits only the existing shared Context
 view-model owner and generic screen composition owner. UI9-D input/menu work,
 tests, fixtures, authority, evidence, and status remain protected.
+
+## 2026-08-09 stabilization recovery evidence
+
+Reviewer recovery reconciled the documentation move, stale registry paths,
+strict formatting/Clippy failures, and the two remaining UI composition
+failures before any developer-console handoff was sealed.
+
+- `VISUAL-LAYOUT-001` now passes at 80x24 and 60x20. Compact Context uses five
+  rows, leaving the map seven rows and strictly larger than every secondary
+  panel while retaining the original Party and Stats widths.
+- `VISUAL-CONTEXT-001` now passes its entire 113-test `bd_tui --lib` target.
+  The shared Context renderer places its target-specific Inspect preview on
+  the bottom border, retains category/state in the canonical top title,
+  deduplicates repeated denial reasons, and preserves live detail plus the
+  remaining actions in three inner rows. No category-specific renderer was
+  introduced.
+- `cargo test --locked -p bd_core` reports 235 passed, 0 failed, 0 ignored
+  across 228 library tests and 7 architecture tests.
+- The factory/action/event/raid implementation record now maps 22 contract IDs
+  into the registry. Factory coverage is Foundation support/regression;
+  action-spawn and event/raid coverage are explicitly
+  `DeferredInfrastructure`, so this evidence does not authorize deferred
+  product behavior.
+- `VISUAL-CONTEXT-001` is `GreenUnreviewed`; final acceptance still requires
+  independent visual/PTY review under the testing authority.
+
+## C1 authoritative red baseline — 2026-08-09
+
+The reviewer added seven physical production-path cases in
+`bd_app::console_input_contract` and ran every case independently before
+sealing. Six reproduce missing C1 behavior and one preservation case passes:
+
+- `CONSOLE-INPUT-001`: the registered console plugin leaves the physical
+  open/edit batch unhandled, so state remains closed;
+- `CONSOLE-COMMAND-001`: the real full stack produces no typed
+  `ConsoleCommand` at the audit seam because the TUI writes the parallel
+  pending queue directly;
+- `CONSOLE-INPUT-002`: Title Escape also requests quit, Title backtick also
+  begins Outpost, Outpost Escape also requests quit, and an Outpost backtick
+  rebound to Wait advances the turn;
+- the closed-console preservation case passes and advances exactly one turn
+  for one Press plus Release.
+
+The complete target reports 7 listed: 1 passed, 6 failed, 0 ignored. Each Red
+was reproduced with an exact test command, and no later case is hidden behind
+an earlier assertion. The three registered contract records remain `Red` for
+the implementation candidate and must not be promoted by that candidate.
+
+## C1 v2 authoritative red baseline — 2026-08-09
+
+Independent review of the v1 candidate found useful physical behavior but
+rejected its seal and two false-green seams: `ConsoleCommand` was observational
+rather than causal, and the console reducer still relied on an unresolved Bevy
+schedule conflict instead of an explicit edge before gameplay routing.
+
+The reviewer strengthened the existing physical target without editing
+production:
+
+- `one_physical_line_reaches_dispatch_exactly_once` now quarantines the legacy
+  `ConsoleState.pending` competitor in `BdSet::IntentCollection`. One physical
+  `help` line produces `typed=["help"]`, but the current reducer also produces
+  `legacy=["help"]`; after quarantine, `help_count=0`. The tuple observer keeps
+  typed transport, legacy ownership, history, buffer, final dispatch output,
+  and post-dispatch queue visible in one diagnostic.
+- `console_capture_is_explicitly_ordered_before_gameplay_routing` resolves the
+  registered reducer through its Bevy system type set and inspects the built
+  schedule. Exactly one reducer exists and does not suppress all ambiguities,
+  but it retains one unresolved resource conflict. The paired physical close
+  cases determine the required direction; ambiguity suppression is explicitly
+  invalid.
+
+All eight cases were run independently. Six pass and two fail at the intended
+checkpoints above; no case is hidden behind an earlier panic. The affected
+target compiles, and the three registered contracts remain `Red` for the v2
+implementation candidate.

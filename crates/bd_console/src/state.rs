@@ -22,4 +22,10 @@ pub struct ConsoleState {
     pub scroll: usize,
     /// Commands pending dispatch (pushed by input, consumed by dispatch each frame).
     pub pending: Vec<String>,
+    /// True when the current physical batch is owned by the console.
+    /// Set before the reducer mutates `open`; checked by gameplay routing.
+    /// This prevents close/toggle keys from leaking into gameplay in the
+    /// same physical batch after the reducer changes open state.
+    #[serde(skip)]
+    pub batch_capture_active: bool,
 }

@@ -1,4 +1,4 @@
-use std::collections::{HashMap, HashSet};
+use std::collections::HashSet;
 
 use bd_core::{
     colony::{
@@ -436,12 +436,9 @@ fn round_trip_world(app: &mut App, case_id: &str) {
     let snapshot = bd_core::save::load_snapshot(&path).unwrap_or_else(|error| {
         panic!("contract=PERSIST-PROJECTION-001 case={case_id} checkpoint=load error={error}")
     });
-    bd_core::save::restore_snapshot_into(app.world_mut(), &snapshot)
-        .unwrap_or_else(|error| {
-            panic!(
-                "contract=PERSIST-PROJECTION-001 case={case_id} checkpoint=restore error={error}"
-            )
-        });
+    bd_core::save::restore_snapshot_into(app.world_mut(), &snapshot).unwrap_or_else(|error| {
+        panic!("contract=PERSIST-PROJECTION-001 case={case_id} checkpoint=restore error={error}")
+    });
     app.update();
     let _ = std::fs::remove_file(path);
     let _ = std::fs::remove_dir(save_dir);

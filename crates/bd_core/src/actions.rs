@@ -1315,10 +1315,8 @@ pub(crate) fn resolve_action_effects(
                 } => {
                     let Some(blueprint) = location.blueprint_catalog.get(blueprint_id) else {
                         if player_flag.is_some() {
-                            game_log.push(
-                                format!("Unknown blueprint: {blueprint_id}"),
-                                LogLevel::Warn,
-                            );
+                            game_log
+                                .push(format!("Unknown blueprint: {blueprint_id}"), LogLevel::Warn);
                         }
                         continue;
                     };
@@ -1337,10 +1335,7 @@ pub(crate) fn resolve_action_effects(
                     };
                     commands.entity(entity).insert(scope);
                     if player_flag.is_some() {
-                        game_log.push(
-                            format!("A {} appears.", blueprint.label),
-                            LogLevel::Info,
-                        );
+                        game_log.push(format!("A {} appears.", blueprint.label), LogLevel::Info);
                     }
                 }
                 Effect::SetSurvivorTask(task) => {
@@ -1960,24 +1955,21 @@ mod tests {
                 mutators,
             }],
         };
-        let mut registry = app
-            .world_mut()
-            .resource_mut::<ActionRegistry>();
-        registry.register(def);
-        drop(registry); // release mutable borrow before further app operations
+        {
+            let mut registry = app.world_mut().resource_mut::<ActionRegistry>();
+            registry.register(def);
+        }
 
         send_action(app, actor, "test.spawn", None, None);
         app.update(); // validation frame
         app.update(); // effect resolution frame
 
         // Find the spawned entity (not the actor, at the spawn position)
-        let spawned = app
-            .world_mut()
+        app.world_mut()
             .query_filtered::<(Entity, &Position), Without<Player>>()
             .iter(app.world_mut())
             .find(|(e, pos)| *e != actor && pos.x == x && pos.y == y)
-            .map(|(e, _)| e);
-        spawned
+            .map(|(e, _)| e)
     }
 
     #[test]
@@ -1992,14 +1984,20 @@ mod tests {
         assert_eq!(pos.x, 5, "spawned entity must be at specified x");
         assert_eq!(pos.y, 3, "spawned entity must be at specified y");
 
-        let has_blocks = app.world_mut().get::<BlocksMovement>(spawned.unwrap()).is_some();
+        let has_blocks = app
+            .world_mut()
+            .get::<BlocksMovement>(spawned.unwrap())
+            .is_some();
         assert!(has_blocks, "rat blueprint must attach BlocksMovement");
 
         let has_player = app.world_mut().get::<Player>(spawned.unwrap()).is_some();
         assert!(!has_player, "spawned rat must NOT be a player");
 
         let name = app.world_mut().get::<Name>(spawned.unwrap()).unwrap();
-        assert_eq!(name.0, "Rat", "spawned entity must have Name from blueprint");
+        assert_eq!(
+            name.0, "Rat",
+            "spawned entity must have Name from blueprint"
+        );
     }
 
     #[test]
@@ -2029,7 +2027,10 @@ mod tests {
         let player = spawn_player(&mut app, 1, 1);
 
         let spawned = submit_spawn_action(&mut app, player, "blueprint.missing", 5, 3, vec![]);
-        assert!(spawned.is_none(), "missing blueprint must not create entity");
+        assert!(
+            spawned.is_none(),
+            "missing blueprint must not create entity"
+        );
 
         // Verify a blueprint-related warning was logged
         let log = app.world_mut().resource::<GameLog>();

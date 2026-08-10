@@ -15,7 +15,7 @@ retirement of weak or duplicate tests
 
 **Coordination authority:** This plan owns how Foundation behavior is tested
 and when evidence is sufficient.
-[FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md](FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md)
+[FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md](../active/FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md)
 continues to own the behavior being repaired and its implementation order.
 
 **Does not authorize:** Product P2, new gameplay, changed balance, procgen in
@@ -81,15 +81,15 @@ generated inventory and migration results live in
 
 Before executing any task, read:
 
-1. [README.md](README.md);
-2. root [GDD.md](../GDD.md), especially Sections 3, 6, 8, and 9;
+1. [README.md](../README.md);
+2. root [GDD.md](../../GDD.md), especially Sections 3, 6, 8, and 9;
 3. [DECISIONS-TO-LOCK.md](DECISIONS-TO-LOCK.md), especially D-01 through D-18
    and D-19;
-4. root [Kernel.md](../Kernel.md), especially testing, schedule, view-model,
+4. root [Kernel.md](../../Kernel.md), especially testing, schedule, view-model,
    persistence, and data-ownership rules;
 5. [MVP-SCENARIO.md](MVP-SCENARIO.md);
 6. this plan in full;
-7. [FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md](FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md);
+7. [FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md](../active/FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md);
 8. [MIGRATION-AND-DEPRECATION.md](MIGRATION-AND-DEPRECATION.md);
 9. `testing/FOUNDATION-TEST-EVIDENCE.md`;
 10. `testing/VISUAL-ACCEPTANCE-MATRIX.md`;

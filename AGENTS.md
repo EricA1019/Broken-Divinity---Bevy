@@ -13,9 +13,11 @@ Before changing behavior, read the relevant sections of:
 5. [`docs/active/FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md`](docs/active/FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md) — active Foundation behavior and colony UX implementation authority;
 6. [`docs/active/FOUNDATION-BASIC-COLONY-LOOP-PLAN.md`](docs/active/FOUNDATION-BASIC-COLONY-LOOP-PLAN.md) — owner-approved D-20 colony-loop implementation;
 7. [`docs/active/FOUNDATION-UI-IMPROVEMENT-PLAN.md`](docs/active/FOUNDATION-UI-IMPROVEMENT-PLAN.md) — Foundation Ratatui improvement sequence and UI phase gates;
-8. [`testing/foundation-contracts.ron`](testing/foundation-contracts.ron) — machine-readable contract ownership;
-9. [`docs/README.md`](docs/README.md) — full documentation hub and navigation;
-10. the current implementation and tests.
+8. [`docs/active/FOUNDATION-FACTORY-EVENT-PIPELINE-PLAN.md`](docs/active/FOUNDATION-FACTORY-EVENT-PIPELINE-PLAN.md) — current factory, blueprint, event, and raid-pipeline implementation record;
+9. [`docs/active/FOUNDATION-STABILIZATION-AND-CONSOLE-HARDENING-PLAN.md`](docs/active/FOUNDATION-STABILIZATION-AND-CONSOLE-HARDENING-PLAN.md) — reviewer recovery and sealed smaller-model console-hardening sequence;
+10. [`testing/foundation-contracts.ron`](testing/foundation-contracts.ron) — machine-readable contract ownership;
+11. [`docs/README.md`](docs/README.md) — full documentation hub and navigation;
+12. the current implementation and tests.
 
 For test planning, writing, strengthening, review, or red-to-green handoff,
 also load and follow the project-agnostic global skill

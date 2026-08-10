@@ -1,6 +1,6 @@
 # Broken Divinity Product Design Authority
 
-**Status:** Current working product direction; unresolved choices are tracked in [docs/DECISIONS-TO-LOCK.md](docs/DECISIONS-TO-LOCK.md).
+**Status:** Current working product direction; unresolved choices are tracked in [docs/authority/DECISIONS-TO-LOCK.md](docs/authority/DECISIONS-TO-LOCK.md).
 
 **Working Guide**
 

@@ -16,10 +16,7 @@ use crate::state::ConsoleState;
 /// Registered in `BdSet::Render` with `.after(draw_ui)` ordering — writes
 /// to the same `RatatuiContext` frame as the main UI, overlaying the
 /// bottom 40% of the terminal.
-pub fn render_console(
-    ratatui_ctx: Option<ResMut<RatatuiContext>>,
-    state: Res<ConsoleState>,
-) {
+pub fn render_console(ratatui_ctx: Option<ResMut<RatatuiContext>>, state: Res<ConsoleState>) {
     if !state.open {
         return;
     }
@@ -32,7 +29,12 @@ pub fn render_console(
         Ok(s) => s,
         Err(_) => return,
     };
-    let area = Rect { x: 0, y: 0, width: size.width, height: size.height };
+    let area = Rect {
+        x: 0,
+        y: 0,
+        width: size.width,
+        height: size.height,
+    };
 
     // Bottom 40% of the terminal
     let height = (area.height as f32 * 0.4) as u16;
@@ -72,7 +74,7 @@ pub fn render_console(
         .block(Block::default().borders(Borders::NONE))
         .wrap(Wrap { trim: false });
 
-    ctx.draw(|frame| {
+    if let Err(error) = ctx.draw(|frame| {
         // Clear the console area (overlay on top of whatever bd_tui drew)
         frame.render_widget(ratatui::widgets::Clear, console_area);
 
@@ -94,11 +96,7 @@ pub fn render_console(
         frame.render_widget(output, log_area);
 
         // Input line: "> buffer█"
-        let prompt = format!(
-            "> {}",
-            &state.buffer
-        );
-        let cursor_pos = state.cursor + 2; // "> " prefix
+        let prompt = format!("> {}", state.buffer);
         let prompt_span = if prompt.len() > inner.width as usize {
             // Scroll: show end of long input
             let start = prompt.len().saturating_sub(inner.width as usize);
@@ -115,7 +113,9 @@ pub fn render_console(
             height: 1,
         };
         frame.render_widget(input_line, input_area);
-    });
+    }) {
+        tracing::error!(%error, "console overlay render failed");
+    }
 }
 
 // ── Tests ──
@@ -205,4 +205,3 @@ mod tests {
         // Contract: nothing is drawn when console is closed.
     }
 }
-

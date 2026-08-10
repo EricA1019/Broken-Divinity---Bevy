@@ -86,9 +86,12 @@ fn candidate_status_drift(
                 "candidate handoff names unknown contract {contract_id}"
             ));
         };
-        if contract.scope != "FoundationRequired" {
+        if !matches!(
+            contract.scope.as_str(),
+            "FoundationRequired" | "FoundationSupport" | "Regression" | "DeferredInfrastructure"
+        ) {
             return Some(format!(
-                "candidate contract {contract_id} is {}, not FoundationRequired",
+                "candidate contract {contract_id} has ineligible scope {}",
                 contract.scope
             ));
         }
@@ -103,7 +106,7 @@ fn candidate_status_drift(
     let actual_red = registry
         .contracts
         .iter()
-        .filter(|contract| contract.scope == "FoundationRequired" && contract.status == "Red")
+        .filter(|contract| contract.status == "Red")
         .map(|contract| contract.id.as_str())
         .collect::<BTreeSet<_>>();
     let unlisted = actual_red
@@ -112,7 +115,7 @@ fn candidate_status_drift(
         .collect::<Vec<_>>();
     if !unlisted.is_empty() {
         return Some(format!(
-            "required Red contracts not declared by the candidate handoff: {}",
+            "Red contracts not declared by the candidate handoff: {}",
             unlisted.join(", ")
         ));
     }
@@ -126,13 +129,13 @@ fn required_red_status_drift(registry: &ContractRegistry, failed: usize) -> Opti
     let mut stale = registry
         .contracts
         .iter()
-        .filter(|contract| contract.scope == "FoundationRequired" && contract.status == "Red")
+        .filter(|contract| contract.status == "Red")
         .map(|contract| contract.id.as_str())
         .collect::<Vec<_>>();
     stale.sort_unstable();
     (!stale.is_empty()).then(|| {
         format!(
-            "all observed tests passed but required contracts remain Red: {}; \
+            "all observed tests passed but contracts remain Red: {}; \
              restore a reproducible failure or update reviewed registry/evidence status",
             stale.join(", ")
         )
@@ -249,12 +252,19 @@ mod tests {
     }
 
     #[test]
-    fn candidate_mode_accepts_only_the_named_required_red_contracts() {
-        let registry = registry("FoundationRequired", "Red");
-        assert!(
-            candidate_status_drift(&registry, &["VISUAL-TEST-001".into()]).is_none(),
-            "candidate green must preserve the author-owned Red record"
-        );
+    fn candidate_mode_accepts_named_red_contracts_in_implementation_scopes() {
+        for scope in [
+            "FoundationRequired",
+            "FoundationSupport",
+            "Regression",
+            "DeferredInfrastructure",
+        ] {
+            let registry = registry(scope, "Red");
+            assert!(
+                candidate_status_drift(&registry, &["VISUAL-TEST-001".into()]).is_none(),
+                "candidate green must preserve the author-owned Red record for {scope}"
+            );
+        }
     }
 
     #[test]
@@ -267,11 +277,19 @@ mod tests {
     }
 
     #[test]
-    fn candidate_mode_rejects_an_unlisted_required_red_contract() {
-        let registry = registry("FoundationRequired", "Red");
+    fn candidate_mode_rejects_an_unlisted_red_contract_in_any_eligible_scope() {
+        let registry = registry("FoundationSupport", "Red");
         let error = candidate_status_drift(&registry, &[])
             .expect("unlisted Red status must remain canonical drift");
         assert!(error.contains("not declared by the candidate handoff"));
+    }
+
+    #[test]
+    fn candidate_mode_rejects_diagnostic_scope_as_an_implementation_batch() {
+        let registry = registry("Diagnostic", "Red");
+        let error = candidate_status_drift(&registry, &["VISUAL-TEST-001".into()])
+            .expect("diagnostic coverage cannot authorize production implementation");
+        assert!(error.contains("ineligible scope"));
     }
 
     #[test]

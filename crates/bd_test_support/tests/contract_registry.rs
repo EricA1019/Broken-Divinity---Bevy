@@ -523,6 +523,37 @@ fn seeded_registry_maps_current_foundation_contract_batches() {
         "bd_tui::lib::ui_development_contract_tests::assigned_colonist_target_progress_survives_final_composition",
         "bd_tui::lib::ui_development_contract_tests::carrying_colonist_target_cargo_survives_final_composition",
         "bd_tui::lib::ui_development_contract_tests::blocked_colonist_reason_survives_final_composition",
+        "bd_core::factory::tests::catalog_get_returns_blueprint_by_id",
+        "bd_core::factory::tests::catalog_get_unknown_returns_none",
+        "bd_core::factory::tests::catalog_construction_warns_unknown_markers",
+        "bd_core::factory::tests::catalog_construction_panics_on_duplicate_ids",
+        "bd_core::factory::tests::spawn_inserts_marker_components",
+        "bd_core::factory::tests::spawn_silently_ignores_unknown_marker",
+        "bd_core::factory::tests::spawn_multiple_markers_with_data",
+        "bd_core::factory::tests::ron_loads_required_blueprints",
+        "bd_core::factory::tests::factory_spawns_player_blueprint",
+        "bd_core::factory::tests::factory_spawns_enemy_blueprint",
+        "bd_core::factory::tests::factory_spawns_item_blueprint",
+        "bd_core::actions::tests::spawn_blueprint_at_creates_entity_at_position",
+        "bd_core::actions::tests::spawn_blueprint_at_applies_mutators",
+        "bd_core::actions::tests::spawn_blueprint_at_missing_blueprint_warns",
+        "bd_core::actions::tests::spawn_blueprint_at_sets_entity_scope_by_mode",
+        "bd_core::events::tests::spawn_on_enter_creates_entities",
+        "bd_core::events::tests::on_exit_fires_on_event_end",
+        "bd_core::events::tests::on_exit_fires_on_node_transition",
+        "bd_core::events::tests::mixed_effects_in_spawn_on_enter",
+        "bd_core::events::tests::invalid_blueprint_in_event_does_not_crash",
+        "bd_core::colony::raids::tests::raid_pushes_event_not_direct_spawn",
+        "bd_core::colony::raids::tests::raid_event_spawn_creates_raiders",
+        "bd_core::colony::raids::tests::raid_spawn_uses_blueprint_pools",
+        "bd_app::console_input_contract::physical_console_editing_uses_the_registered_production_reducer",
+        "bd_app::console_input_contract::one_physical_line_reaches_dispatch_exactly_once",
+        "bd_app::console_input_contract::escape_close_is_consumed_before_title_routing",
+        "bd_app::console_input_contract::backtick_close_is_consumed_before_title_routing",
+        "bd_app::console_input_contract::console_capture_is_explicitly_ordered_before_gameplay_routing",
+        "bd_app::console_input_contract::escape_close_does_not_quit_or_mutate_outpost",
+        "bd_app::console_input_contract::backtick_close_does_not_reach_a_rebound_outpost_action",
+        "bd_app::console_input_contract::closed_console_preserves_normal_gameplay_input",
     ];
     let context = RegistryValidationContext::new(
         project_root()
@@ -541,8 +572,8 @@ fn seeded_registry_maps_current_foundation_contract_batches() {
     );
     assert_eq!(
         registry.contracts.len(),
-        93,
-        "the registry must own every contract in the current visual, worker, management, shell, persistence, build, spatial, and dungeon batches"
+        118,
+        "the registry must own every current Foundation contract plus the registered factory and deferred event/raid infrastructure"
     );
     assert_eq!(
         registry
@@ -552,8 +583,8 @@ fn seeded_registry_maps_current_foundation_contract_batches() {
                 contract.id.starts_with("VISUAL-") && contract.status == "GreenUnreviewed"
             })
             .count(),
-        38,
-        "thirty-eight registered visual contracts are green but still require review evidence"
+        39,
+        "thirty-nine registered visual contracts are green but still require review evidence"
     );
     assert_eq!(
         registry
@@ -561,8 +592,8 @@ fn seeded_registry_maps_current_foundation_contract_batches() {
             .iter()
             .filter(|contract| contract.status == "Red")
             .count(),
-        1,
-        "the corrective UI9-C handoff must contain exactly one unresolved red contract"
+        3,
+        "the sealed C1 batch must contain exactly its three author-owned Red contracts"
     );
     assert_eq!(
         registry

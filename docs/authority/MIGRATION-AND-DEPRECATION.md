@@ -2,11 +2,11 @@
 
 Broken Divinity is being reorganized around a clearer plan, not restarted from zero.
 
-**Completed Foundation stabilization record:** [FOUNDATION-STABILIZATION-PLAN.md](FOUNDATION-STABILIZATION-PLAN.md)
+**Completed Foundation stabilization record:** [FOUNDATION-STABILIZATION-PLAN.md](../archive/FOUNDATION-STABILIZATION-PLAN.md)
 
-**Completed Foundation recovery record:** [FOUNDATION-RECOVERY-PLAN.md](FOUNDATION-RECOVERY-PLAN.md)
+**Completed Foundation recovery record:** [FOUNDATION-RECOVERY-PLAN.md](../archive/FOUNDATION-RECOVERY-PLAN.md)
 
-**Completed Foundation MVP correction record:** [FOUNDATION-MVP-CORRECTION-PLAN.md](FOUNDATION-MVP-CORRECTION-PLAN.md)
+**Completed Foundation MVP correction record:** [FOUNDATION-MVP-CORRECTION-PLAN.md](../archive/FOUNDATION-MVP-CORRECTION-PLAN.md)
 
 **Current documentation inventory:** [DOCUMENT-INVENTORY.md](DOCUMENT-INVENTORY.md)
 

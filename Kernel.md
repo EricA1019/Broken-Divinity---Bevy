@@ -1,6 +1,6 @@
 # Broken Divinity Technical Architecture and Engineering Roadmap
 
-**Status:** Canonical technical direction. Product decisions come from [GDD.md](GDD.md); unresolved conflicts are tracked in [docs/DECISIONS-TO-LOCK.md](docs/DECISIONS-TO-LOCK.md).
+**Status:** Canonical technical direction. Product decisions come from [GDD.md](GDD.md); unresolved conflicts are tracked in [docs/authority/DECISIONS-TO-LOCK.md](docs/authority/DECISIONS-TO-LOCK.md).
 
 ## Reuse-First Bevy ECS + Bevy-Ratatui ASCII Game Kernel
 
@@ -12,7 +12,7 @@ In this document, existing `Phase N` headings refer to engineering milestones `E
 
 The immediate target is to lock down the reusable kernel and establish a functioning game shell that supports a fixed dungeon loop and basic colony mechanics. The first foundation does not require procgen, raids, events, sanity, theology-driven mechanics, final factions, or the complete overworld loop.
 
-The implementation must reuse the current `broken-divinity/` codebase where practical and preserve existing tests as regression coverage. See [docs/MIGRATION-AND-DEPRECATION.md](docs/MIGRATION-AND-DEPRECATION.md).
+The implementation must reuse the current `broken-divinity/` codebase where practical and preserve existing tests as regression coverage. See [docs/authority/MIGRATION-AND-DEPRECATION.md](docs/authority/MIGRATION-AND-DEPRECATION.md).
 
 ---
 

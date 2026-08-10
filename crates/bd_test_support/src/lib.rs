@@ -1040,10 +1040,7 @@ impl FoundationDriver {
         &mut self,
         checkpoint: &FoundationCheckpoint,
     ) -> Result<(), ScenarioError> {
-        bd_core::save::restore_snapshot_into(
-            self.app.world_mut(),
-            &checkpoint.snapshot,
-        )?;
+        bd_core::save::restore_snapshot_into(self.app.world_mut(), &checkpoint.snapshot)?;
         Ok(())
     }
 

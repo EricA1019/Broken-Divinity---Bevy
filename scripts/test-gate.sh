@@ -57,7 +57,7 @@ CANDIDATE_PROTECTION_ARGS=(
     --require-protected AGENTS.md
     --require-protected GDD.md
     --require-protected Kernel.md
-    --require-protected docs/DECISIONS-TO-LOCK.md
+    --require-protected docs/authority/DECISIONS-TO-LOCK.md
     --require-protected Cargo.toml
     --require-protected scripts/test-gate.sh
     --require-protected testing/allowed-ignored-tests.txt
@@ -65,7 +65,8 @@ CANDIDATE_PROTECTION_ARGS=(
     --require-protected testing/FOUNDATION-TEST-EVIDENCE.md
     --require-protected testing/FOUNDATION-REQUIREMENT-MAP.md
     --require-protected testing/VISUAL-ACCEPTANCE-MATRIX.md
-    --require-protected docs/AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md
+    --require-protected docs/authority/AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md
+    --require-protected docs/active/FOUNDATION-STABILIZATION-AND-CONSOLE-HARDENING-PLAN.md
     --require-protected crates/bd_test_support/Cargo.toml
     --require-protected crates/bd_test_support/src/lib.rs
     --require-protected crates/bd_test_support/src/contract_registry.rs

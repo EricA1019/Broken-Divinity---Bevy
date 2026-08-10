@@ -56,18 +56,18 @@ off-screen buffer is not proof of a usable interface.
 
 Before changing a file, read:
 
-1. [README.md](README.md);
-2. root [GDD.md](../GDD.md), especially the player loop, Shelter and Colony,
+1. [README.md](../README.md);
+2. root [GDD.md](../../GDD.md), especially the player loop, Shelter and Colony,
    Minimum Colony Foundation, and Minimum Dungeon Foundation;
-3. [DECISIONS-TO-LOCK.md](DECISIONS-TO-LOCK.md), especially D-09 through
+3. [DECISIONS-TO-LOCK.md](../authority/DECISIONS-TO-LOCK.md), especially D-09 through
    D-12 and D-16 through D-20;
-4. root [Kernel.md](../Kernel.md), especially semantic ASCII, view-model
+4. root [Kernel.md](../../Kernel.md), especially semantic ASCII, view-model
    boundaries, input ownership, schedules, content, and persistence;
-5. [MVP-SCENARIO.md](MVP-SCENARIO.md);
-6. [AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md](AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md);
+5. [MVP-SCENARIO.md](../authority/MVP-SCENARIO.md);
+6. [AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md](../authority/AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md);
 7. [FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md](FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md);
 8. [FOUNDATION-BASIC-COLONY-LOOP-PLAN.md](FOUNDATION-BASIC-COLONY-LOOP-PLAN.md);
-9. [MIGRATION-AND-DEPRECATION.md](MIGRATION-AND-DEPRECATION.md);
+9. [MIGRATION-AND-DEPRECATION.md](../authority/MIGRATION-AND-DEPRECATION.md);
 10. the contract registry, requirement map, evidence report, visual matrix,
     current implementation, and affected tests.
 
