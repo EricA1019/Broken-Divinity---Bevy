@@ -554,6 +554,25 @@ fn seeded_registry_maps_current_foundation_contract_batches() {
         "bd_app::console_input_contract::escape_close_does_not_quit_or_mutate_outpost",
         "bd_app::console_input_contract::backtick_close_does_not_reach_a_rebound_outpost_action",
         "bd_app::console_input_contract::closed_console_preserves_normal_gameplay_input",
+        "bd_tui::console_render_contract_tests::open_console_survives_authoritative_final_composition_at_supported_profiles",
+        "bd_tui::console_render_contract_tests::visible_console_state_invalidates_the_authoritative_frame_once",
+        "bd_tui::console_render_contract_tests::closed_console_matches_clean_canvas_and_styles_at_supported_profiles",
+        "bd_tui::console_render_contract_tests::open_resize_close_returns_to_clean_authoritative_output",
+        "bd_tui::lib::tests::draw_failure_requests_clean_application_shutdown",
+        "bd_app::console_debug_contract::console_plugin_explicitly_enables_the_debug_gate",
+        "bd_app::console_debug_contract::core_debug_gate_defaults_disabled_and_denies_direct_requests",
+        "bd_app::console_debug_contract::disabled_gate_blocks_every_c3_mutation_and_reports_each_denial",
+        "bd_app::console_debug_contract::every_ordinary_mutation_crosses_one_typed_boundary_then_applies_exactly_one_delta",
+        "bd_app::console_debug_contract::debug_dispatch_precedes_exactly_one_named_core_resolver",
+        "bd_app::console_debug_contract::debug_request_channel_remains_observable_after_core_resolution",
+        "bd_app::console_debug_contract::enabled_invalid_mutations_are_atomic_and_return_one_rejection_trace",
+        "bd_app::console_debug_contract::read_only_and_console_local_commands_emit_no_debug_mutation",
+        "bd_app::console_debug_contract::survivor_indices_share_one_visible_stable_order_and_reject_indistinguishable_duplicates",
+        "bd_app::console_debug_c4_contract::remaining_combat_and_spawn_commands_use_one_gated_typed_owner",
+        "bd_app::console_debug_c4_contract::god_mode_blocks_only_negative_player_health_deltas_inside_canonical_resolution",
+        "bd_app::console_debug_c4_contract::console_spawn_matches_canonical_factory_fingerprint_for_unlike_blueprints",
+        "bd_app::console_debug_c4_contract::console_spawn_scope_follows_current_game_mode_without_legacy_markers",
+        "bd_app::console_debug_c4_contract::unknown_console_blueprint_is_atomic_and_reports_one_rejection",
     ];
     let context = RegistryValidationContext::new(
         project_root()
@@ -572,7 +591,7 @@ fn seeded_registry_maps_current_foundation_contract_batches() {
     );
     assert_eq!(
         registry.contracts.len(),
-        118,
+        127,
         "the registry must own every current Foundation contract plus the registered factory and deferred event/raid infrastructure"
     );
     assert_eq!(
@@ -592,8 +611,30 @@ fn seeded_registry_maps_current_foundation_contract_batches() {
             .iter()
             .filter(|contract| contract.status == "Red")
             .count(),
-        3,
-        "the sealed C1 batch must contain exactly its three author-owned Red contracts"
+        0,
+        "no contract may remain Red after independent C4 acceptance"
+    );
+    assert_eq!(
+        registry
+            .contracts
+            .iter()
+            .filter(|contract| {
+                contract.id.starts_with("DEBUG-") && contract.status == "GreenUnreviewed"
+            })
+            .count(),
+        7,
+        "all three C3 and four C4 debug contracts must be independently GreenUnreviewed"
+    );
+    assert_eq!(
+        registry
+            .contracts
+            .iter()
+            .filter(|contract| {
+                contract.id.starts_with("CONSOLE-") && contract.status == "GreenUnreviewed"
+            })
+            .count(),
+        5,
+        "the three accepted C1 contracts and both independently verified C2 contracts must remain GreenUnreviewed"
     );
     assert_eq!(
         registry

@@ -76,6 +76,40 @@ fn write_manifest(root: &Path, protected: &Path) -> (PathBuf, String) {
     (manifest, manifest_digest)
 }
 
+fn write_suffix_manifest(root: &Path, protected: &Path) -> (PathBuf, String) {
+    git(root, &["add", "--all"]);
+    git(root, &["commit", "--quiet", "-m", "sealed suffix baseline"]);
+
+    let baseline = root.join("candidate-baseline.ron");
+    fs::write(
+        &baseline,
+        "(\n  version: 1,\n  exact_production_write_set: [\"allowed.txt\"],\n  entries: [],\n)\n",
+    )
+    .expect("candidate baseline must be writable");
+    let protected_digest = sha256(protected);
+    let baseline_digest = sha256(&baseline);
+    let suffix_source = fs::read_to_string(root.join("allowed.txt"))
+        .expect("protected suffix source must be readable");
+    let suffix_start = suffix_source
+        .find("#[cfg(test)]")
+        .expect("fixture must contain the protected marker");
+    let suffix_fixture = root.join("suffix-digest.txt");
+    fs::write(&suffix_fixture, &suffix_source[suffix_start..])
+        .expect("suffix digest fixture must be writable");
+    let suffix_digest = sha256(&suffix_fixture);
+    fs::remove_file(suffix_fixture).expect("suffix digest fixture must be removable");
+    let manifest = root.join("candidate-handoff.ron");
+    fs::write(
+        &manifest,
+        format!(
+            "(\n  version: 2,\n  contracts: [\"CONTRACT-A\"],\n  baseline_path: \"candidate-baseline.ron\",\n  exact_production_write_set: [\"allowed.txt\"],\n  protected_files: [\n    (path: \"candidate-baseline.ron\", sha256: \"{baseline_digest}\"),\n    (path: \"protected.txt\", sha256: \"{protected_digest}\"),\n  ],\n  protected_suffixes: [\n    (path: \"allowed.txt\", start_marker: \"#[cfg(test)]\", sha256: \"{suffix_digest}\"),\n  ],\n)\n"
+        ),
+    )
+    .expect("candidate suffix manifest must be writable");
+    let manifest_digest = sha256(&manifest);
+    (manifest, manifest_digest)
+}
+
 fn run_guard_with_required(
     root: &Path,
     manifest: &Path,
@@ -247,4 +281,71 @@ fn signed_candidate_handoff_rejects_an_out_of_scope_tracked_mutation() {
         "diagnostic must name the unauthorized tracked path: {}",
         String::from_utf8_lossy(&output.stderr)
     );
+}
+
+#[test]
+fn signed_candidate_handoff_allows_prefix_edits_before_a_protected_test_suffix() {
+    let root = temp_root("protected-suffix-prefix");
+    let protected = root.join("protected.txt");
+    fs::write(&protected, "author-owned baseline\n").expect("protected fixture must be writable");
+    fs::write(
+        root.join("allowed.txt"),
+        "fn production() -> bool { false }\n\n#[cfg(test)]\nmod tests {\n    // reviewer-owned test\n}\n",
+    )
+    .expect("suffix fixture must be writable");
+    let (manifest, digest) = write_suffix_manifest(&root, &protected);
+    fs::write(
+        root.join("allowed.txt"),
+        "fn production() -> bool { true }\n\n#[cfg(test)]\nmod tests {\n    // reviewer-owned test\n}\n",
+    )
+    .expect("authorized production-prefix mutation must be writable");
+
+    let output = run_guard(&root, &manifest, &digest);
+
+    assert!(
+        output.status.success(),
+        "production-prefix edit before protected test suffix must pass: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn signed_candidate_handoff_rejects_a_colocated_test_suffix_mutation() {
+    let mutations = [
+        (
+            "body",
+            "fn production() -> bool { true }\n\n#[cfg(test)]\nmod tests {\n    // candidate-rewritten test\n}\n",
+        ),
+        (
+            "marker-deleted",
+            "fn production() -> bool { true }\n\nmod tests {\n    // reviewer-owned test\n}\n",
+        ),
+        (
+            "marker-duplicated",
+            "fn production() -> bool { true }\n\n#[cfg(test)]\nmod tests {\n    // reviewer-owned test\n}\n\n#[cfg(test)]\nmod tests {}\n",
+        ),
+    ];
+    for (case, mutation) in mutations {
+        let root = temp_root(&format!("protected-suffix-test-{case}"));
+        let protected = root.join("protected.txt");
+        fs::write(&protected, "author-owned baseline\n")
+            .expect("protected fixture must be writable");
+        fs::write(
+            root.join("allowed.txt"),
+            "fn production() -> bool { false }\n\n#[cfg(test)]\nmod tests {\n    // reviewer-owned test\n}\n",
+        )
+        .expect("suffix fixture must be writable");
+        let (manifest, digest) = write_suffix_manifest(&root, &protected);
+        fs::write(root.join("allowed.txt"), mutation)
+            .expect("protected suffix mutation fixture must be writable");
+
+        let output = run_guard(&root, &manifest, &digest);
+
+        assert!(!output.status.success(), "case={case}");
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("allowed.txt"),
+            "case={case} diagnostic must identify the co-located protected suffix: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
 }

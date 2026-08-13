@@ -11,7 +11,7 @@ use bd_core::{
     spatial::{GameMode, TransitionIntent},
 };
 use bd_test_support::foundation_content;
-use bevy_app::{App, Update};
+use bevy_app::{App, PreUpdate, Update};
 use bevy_ecs::{message::Messages, prelude::*};
 use bevy_ratatui::{
     crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
@@ -31,6 +31,18 @@ fn write_batch(app: &mut App, batch: impl IntoIterator<Item = KeyMessage>) {
 
 fn press(code: KeyCode) -> KeyMessage {
     key(code, KeyEventKind::Press)
+}
+
+#[derive(Resource, Default)]
+struct ScheduledTerminalBatch(Vec<KeyMessage>);
+
+fn emit_scheduled_terminal_batch(
+    mut pending: ResMut<ScheduledTerminalBatch>,
+    mut messages: MessageWriter<KeyMessage>,
+) {
+    for message in std::mem::take(&mut pending.0) {
+        messages.write(message);
+    }
 }
 
 fn full_runtime() -> App {
@@ -446,5 +458,43 @@ fn closed_console_preserves_normal_gameplay_input() {
         app.world().resource::<RunSession>().turn,
         turn_before + 1,
         "closed-console input was over-captured instead of reaching gameplay once"
+    );
+}
+
+#[test]
+fn open_console_typed_key_does_not_leak_to_gameplay_on_a_later_frame() {
+    // Regression for CONSOLE-INPUT-002. The real terminal adapter emits keys
+    // during PreUpdate; writing this fixture before App::update would age the
+    // message early and create a false green for the lagging-reader defect.
+    // A gameplay-bound character must remain owned by the console both in its
+    // arrival frame and after the capture flag clears on the following frame.
+    let mut app = outpost_runtime();
+    app.world_mut()
+        .resource_mut::<bd_tui::commands::CommandBindings>()
+        .bind(bd_tui::commands::UiCommand::Wait, KeyCode::Char('x'));
+    app.world_mut()
+        .resource_mut::<bd_console::ConsoleState>()
+        .open = true;
+    app.insert_resource(ScheduledTerminalBatch(vec![press(KeyCode::Char('x'))]));
+    app.add_systems(PreUpdate, emit_scheduled_terminal_batch);
+    let turn_before = app.world().resource::<RunSession>().turn;
+
+    app.update();
+    assert_eq!(
+        app.world().resource::<RunSession>().turn,
+        turn_before,
+        "contract=CONSOLE-INPUT-002 case=terminal-arrival-frame forbidden=gameplay-leak"
+    );
+    app.update();
+
+    assert_eq!(
+        app.world().resource::<RunSession>().turn,
+        turn_before,
+        "contract=CONSOLE-INPUT-002 case=open-console-typed-key forbidden=gameplay-leak"
+    );
+    assert_eq!(
+        app.world().resource::<bd_console::ConsoleState>().buffer,
+        "x",
+        "the typed key must be owned by the console buffer"
     );
 }

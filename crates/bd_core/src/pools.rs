@@ -135,6 +135,7 @@ fn regenerate_action_points(
 
 /// The single system that applies all `PoolDeltaRequested` messages.
 /// This is the ONLY system that mutates pool values.
+#[allow(clippy::type_complexity)] // The signed-delta resolver reads pool owners plus optional modifiers/markers in one query.
 pub(crate) fn resolve_pool_deltas(
     mut commands: Commands,
     mut combat_rng: Option<ResMut<CombatRng>>,
@@ -147,6 +148,8 @@ pub(crate) fn resolve_pool_deltas(
         &mut Pools,
         Option<&Statuses>,
         Option<&mut crate::combat::Armor>,
+        Option<&crate::components::GodMode>,
+        Option<&crate::components::Player>,
     )>,
 ) {
     let mut defeated_this_resolution: HashSet<Entity> = HashSet::new();
@@ -159,13 +162,37 @@ pub(crate) fn resolve_pool_deltas(
             "PoolDelta",
             format!("{:?} {:?} {}", req.target, req.kind, req.amount),
         );
-        let Ok((entity, mut pools, statuses, armor)) = query.get_mut(req.target) else {
+        let Ok((entity, mut pools, statuses, armor, god_mode, player_marker)) =
+            query.get_mut(req.target)
+        else {
             continue; // target has no Pools component — skip
         };
 
         let Some(pool) = pools.get_mut(req.kind) else {
             continue; // target doesn't have this pool kind
         };
+
+        // Narrow GodMode rule: a GodMode player ignores negative Health deltas
+        // without consuming armor, applying Wounded, or being defeated. The
+        // applied telemetry row is still emitted with a zero application.
+        if god_mode.is_some()
+            && player_marker.is_some()
+            && req.kind == PoolKind::Health
+            && req.amount < 0
+        {
+            let before = pool.current;
+            applied_writer.write(PoolDeltaApplied {
+                source: req.source,
+                target: req.target,
+                kind: req.kind,
+                before,
+                after: before,
+                amount_applied: 0,
+                tags: req.tags.clone(),
+                reason: req.reason.clone(),
+            });
+            continue;
+        }
 
         // Apply status modifiers (e.g., Guarded halves physical damage)
         let mut modified_amount = if let Some(statuses) = statuses {

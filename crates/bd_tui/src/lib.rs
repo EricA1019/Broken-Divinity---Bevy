@@ -13,6 +13,8 @@ pub mod view_models;
 pub mod visual;
 
 #[cfg(test)]
+mod console_render_contract_tests;
+#[cfg(test)]
 mod ui_development_contract_tests;
 
 use std::{
@@ -318,6 +320,7 @@ struct UiRuntimeState<'w> {
     bindings: Res<'w, commands::CommandBindings>,
     mode: Res<'w, bd_core::spatial::GameMode>,
     build: Res<'w, bd_core::colony::stations::BuildInteraction>,
+    console: Option<Res<'w, bd_console::ConsoleState>>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -596,12 +599,15 @@ fn map_input_to_intents(
         foundation_content,
     } = colony_interaction;
 
-    // Console reducer owns the current batch — gameplay must not re-read keys
+    // Console reducer owns the current batch — gameplay must not re-read keys.
+    // Drain this reader so a batch owned by the console is not reprocessed as
+    // gameplay on a later frame once the capture flag is cleared.
     if input
         .console_state
         .as_ref()
         .is_some_and(|s| s.batch_capture_active)
     {
+        messages.clear();
         return;
     }
 
@@ -1547,12 +1553,13 @@ fn draw_ui(
         runtime.game_time.turn,
         runtime.game_time.day,
     );
+    let fingerprint = visible_console_fingerprint(fingerprint, runtime.console.as_deref());
     if !invalidation.needs_draw(fingerprint) {
         return;
     }
 
     match ratatui_ctx
-        .draw(|frame| render_ui_frame(frame, &frame_data))
+        .draw(|frame| render_final_frame(frame, &frame_data, runtime.console.as_deref()))
         .map(|_| ())
     {
         Ok(()) => complete_draw_attempt(&mut invalidation, &mut exit_request, Ok(())),
@@ -1560,6 +1567,20 @@ fn draw_ui(
             let message = format!("Terminal draw failed: {error}");
             complete_draw_attempt(&mut invalidation, &mut exit_request, Err(message));
         }
+    }
+}
+
+/// Final composition seam: renders normal UI then composes the reusable
+/// console overlay. C2 owns the console integration here; the base UI
+/// render and the protected overlay widgets are unchanged.
+fn render_final_frame(
+    frame: &mut ratatui::Frame<'_>,
+    data: &UiFrameData<'_>,
+    console: Option<&bd_console::ConsoleState>,
+) {
+    render_ui_frame(frame, data);
+    if let Some(state) = console {
+        bd_console::render::render_console_overlay(frame, state);
     }
 }
 
@@ -1577,6 +1598,26 @@ fn complete_draw_attempt(
         draw_count = invalidation.draw_count(),
         "terminal draw attempt"
     );
+}
+
+/// Extends the ordinary frame fingerprint with state visible only
+/// while the console participates in final composition.
+fn visible_console_fingerprint(base: u64, console: Option<&bd_console::ConsoleState>) -> u64 {
+    use std::hash::Hasher;
+    // Absent and closed consoles produce the identical clean final frame;
+    // only open visible state extends the ordinary UI fingerprint.
+    let state = match console {
+        Some(s) if s.open => s,
+        _ => return base,
+    };
+    let mut hasher = DefaultHasher::new();
+    base.hash(&mut hasher);
+    state.open.hash(&mut hasher);
+    state.buffer.hash(&mut hasher);
+    for line in &state.output {
+        line.hash(&mut hasher);
+    }
+    hasher.finish()
 }
 
 #[allow(clippy::too_many_arguments)]

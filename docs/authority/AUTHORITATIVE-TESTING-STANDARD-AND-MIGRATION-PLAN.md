@@ -463,6 +463,17 @@ stop conditions, required commands, or acceptance. Protecting an obsolete
 prompt while leaving the active instruction body mutable invalidates the
 handoff even when every generic minimum file is sealed.
 
+When a production file in the exact write set also contains reviewer-owned
+tests, fixtures, or observers, test-name inventory protection is insufficient:
+the candidate could retain every name while weakening its body. Before handoff,
+either extract that reviewer-owned code to a fully protected file or add a
+manifest `protected_suffixes` entry whose unique `start_marker` begins at the
+reviewer-owned suffix and whose SHA-256 covers every byte from that marker to
+end of file. The guard must allow edits before the marker, reject marker
+deletion or duplication, and reject any suffix-byte change. Do not use a suffix
+seal when production code follows the protected region; extract the protected
+code instead.
+
 The author computes the manifest SHA-256 after its contents are final and
 provides that digest separately in the handoff prompt. The implementation
 agent must not regenerate the digest, rewrite the manifest, remove a protected

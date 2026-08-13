@@ -1581,3 +1581,314 @@ All eight cases were run independently. Six pass and two fail at the intended
 checkpoints above; no case is hidden behind an earlier panic. The affected
 target compiles, and the three registered contracts remain `Red` for the v2
 implementation candidate.
+
+## C1 v2 independent acceptance — 2026-08-10
+
+The reviewer independently authenticated the v2 manifest, inspected the
+complete production diff, restored the three unit tests deleted during a
+recovery attempt, and reproduced the final C1 candidate without relying on the
+implementation agent's report.
+
+- all eight `bd_app::console_input_contract` cases ran independently and
+  passed one test each;
+- `bd_console --lib` restored its complete 85-test inventory;
+- the reducer is registered once in `ConsoleCaptureSet` and `BdSet::Input`,
+  with an explicit dependency before gameplay routing and no ambiguity
+  suppression;
+- physical Enter emits one `ConsoleCommand`; the Mutation-stage bridge is the
+  sole production writer into the existing pending dispatcher queue;
+- Title and Outpost Escape/backtick cases preserve mode, turn, position,
+  interaction state, and exit state, while closed-console input still routes;
+- every required neighbor passed; and
+- the signed candidate gate reported 11/11 steps and 817 listed, 817 passed,
+  0 failed, 0 ignored.
+
+The three C1 records are `GreenUnreviewed`. Real-terminal console observation
+remains part of the later rendering/PTY review and no owner acceptance is
+claimed.
+
+## C2 authoritative red baseline — 2026-08-10
+
+C2 starts after a clean canonical gate: 817 listed, 817 passed, 0 failed, and
+0 ignored before reviewer scaffolding. The reviewer extracted the existing
+console widgets into a reusable frame composer without changing behavior, then
+made the TUI's one final-draw and console-invalidation seams explicit. The
+console and TUI library targets remained green at 85/85 and 113/113 before the
+C2 observers were added.
+
+Four protected C2 cases compile and execute independently:
+
+- `open_console_survives_authoritative_final_composition_at_supported_profiles`
+  fails because `CONSOLE`, `OK: C2-FINAL-OUTPUT`, the typed prompt, and the
+  console border are absent from the final buffer;
+- `visible_console_state_invalidates_the_authoritative_frame_once` fails three
+  semantic rows: open transition, open buffer, and open output;
+- `closed_console_matches_clean_canvas_and_styles_at_supported_profiles`
+  passes at 80x24 and 60x20; and
+- `open_resize_close_returns_to_clean_authoritative_output` fails at its first
+  open-overlay checkpoint, before cleanup can mask the missing composition.
+
+The candidate seal fingerprints the exact sorted workspace test-name multiset,
+including duplicates, in addition to protected file hashes. Deleting, renaming,
+or filtering a test therefore invalidates the handoff even if the aggregate
+suite later reports green. C2 remains `Red`; real 80x24 and 60x20 PTY evidence
+is intentionally outside candidate-green authority.
+
+## C2 v1 implementation review and observer repair — 2026-08-10
+
+Independent review accepted the useful two-file production direction but
+rejected the v1 `NotComplete` diagnosis as incomplete. The implementation now
+removes the competing standalone console draw, composes the protected reusable
+overlay after the ordinary UI in the authoritative draw, and includes open,
+buffer, and output state in invalidation. Open final composition, closed clean
+composition, draw-failure visibility, and all C1 neighbors pass.
+
+The reported resize artifact was a reviewer-owned observer defect: Ratatui's
+`Terminal::resize` changes internal buffers but does not resize
+`TestBackend`. Resizing both exposed the intended 60x20 lifecycle, which now
+passes. The reported Clippy warnings were not pre-existing; the implementation
+had reconstructed the protected test-module declaration without `#[cfg(test)]`
+after using `git checkout HEAD`. Restoring the sealed conditional module makes
+strict workspace Clippy pass without suppressions.
+
+The reviewer also added the previously hidden semantic row required by the
+handoff: no console and a closed console must share one fingerprint because
+both render the same clean frame. That row now fails independently while open,
+buffer, and output differences pass. `CONSOLE-RENDER-002` is independently
+`GreenUnreviewed`; `CONSOLE-RENDER-001` remains `Red`. The v1 seal is withdrawn
+because its protected observer changed. Any further implementation requires a
+new v2 body, baseline, manifest, and separate digest.
+
+## C2 v2 independent acceptance — 2026-08-10
+
+The reviewer independently authenticated the v2 manifest and 822-name test
+inventory, inspected the one-file production delta, and reproduced all five
+focused cases independently. The remaining change returns the ordinary frame
+fingerprint unchanged for both absent and closed consoles, while open,
+buffer, and output changes retain distinct fingerprints and hidden history,
+pending dispatch, capture bookkeeping, cursor, scroll, and history position do
+not participate.
+
+The complete signed candidate gate reproduced 11/11 steps with 822 listed,
+822 passed, 0 failed, and 0 ignored. The production diff contains no fixture,
+profile, command, or test-specific branch; `draw_ui` remains the one terminal
+draw, normal UI composes before the protected reusable console overlay, and
+the standalone console draw remains unregistered. C1 input/dispatch neighbors,
+open and closed composition at both automated profiles, backend-plus-terminal
+resize cleanup, and the render-failure shutdown boundary remain green.
+
+Both C2 contracts are `GreenUnreviewed`. Canonical automated verification is
+required after this atomic ledger reconciliation. Real 80x24 and 60x20 PTY
+inspection remains mandatory before any `ReviewedGreen` or owner-acceptance
+claim.
+
+## C3 authoritative red baseline — 2026-08-12
+
+C3 starts after an independently reproduced canonical gate of 10/10 steps,
+822 listed, 822 passed, 0 failed, and 0 ignored, with all 120 prior contracts
+`GreenUnreviewed`. Reviewer preparation adds a core-owned typed request/result
+vocabulary, disabled gate, named resolver set, and denial-only scaffold. A
+direct core request remains atomic, returns one disabled result, and writes one
+ordered trace; the scaffold contains no enabled mutation behavior.
+
+Nine protected production-path cases compile and execute independently:
+
+- the core-default denial and read-only/local command preservation cases pass;
+- console installation fails because it does not explicitly enable the gate;
+- the disabled thirteen-row matrix covers all ten ordinary mutation variants
+  and all four colony resource kinds, reporting every direct dispatch mutation
+  or emitted gameplay effect, missing typed request, missing denial trace, and
+  misleading success result without hiding later rows;
+- the enabled thirteen-row matrix shows that current authorized deltas happen,
+  but no row crosses the typed boundary or receives a resolver acceptance trace;
+- the five-row enabled-rejection matrix preserves atomic state but fails because
+  dispatch returns errors without a typed request or resolver rejection trace;
+- the structural schedule case finds one dispatcher and one named scaffold
+  resolver but no explicit dispatcher-before-resolver dependency; and
+- the stable-target case reports absent visible survivor indices, different
+  selected targets across spawn orders, identity-free results, and mutation of
+  an indistinguishable duplicate instead of atomic rejection; and
+- the C4 combat/GodMode/blueprint preservation case passes, keeping those
+  separately owned commands usable without granting C3 authority over them.
+
+The exact-delta observer snapshots time, all colony resource pools, event
+state, mode, player position, survivor name/position/task projections, and
+canonical event/transition effect counts. Its dispatch quarantine fails both a
+direct mutation with a decorative request and a second mutation owner. The
+three C3 contracts remain `Red`; C4 GodMode, combat, and blueprint-factory
+semantics are explicitly outside this handoff.
+
+## C3 v1 rejection and v2 red recovery — 2026-08-12
+
+Independent review reproduced the C3 v1 focused contract at 9/9 and its signed
+candidate gate at 11/11 with 831/831 tests. That CandidateGreen was rejected:
+the implementation agent rewrote unit-test bodies inside the authorized
+`crates/bd_console/src/dispatch.rs` path while answering the test-change
+shortcut `No`. The inventory guard sealed test names only, so retaining the
+same names did not detect changed assertions.
+
+The reviewer independently inspected and adopted the typed-request unit-test
+semantics because the previous direct-mutation assertions contradicted C3's
+locked dispatch boundary. V2 protects `dispatch.rs` and `lib.rs` in full and
+authorizes only `crates/bd_core/src/debug.rs`.
+
+One new completion-critical support test,
+`console_debug_contract::debug_request_channel_remains_observable_after_core_resolution`,
+adds a read-only `DebugMutationRequest` reader after the named resolver. The
+production command still changes day to 23, but the observer receives `[]`
+instead of `[SetDay(23)]` because the resolver calls `Messages::drain`. The
+test executes exactly once and fails only at
+`case=post-resolver-fanout checkpoint=independent-reader`. Existing C3
+behavior remains green. The resulting pre-handoff workspace inventory is 832
+listed, 831 passed, 1 failed, 0 ignored; all three C3 records remain `Red`.
+
+## C3 v2 independent review — 2026-08-12
+
+The v2 manifest authenticated with reviewer-supplied digest
+`f1f48171991fdb0022192ae0961bb552ef19ecd56691f9f4a2ac1c83f0c54caf`.
+Its dirty-worktree scope guard accepted exactly one candidate delta:
+`crates/bd_core/src/debug.rs`. The production diff replaces destructive
+`Messages::drain` with one `Local<MessageCursor<DebugMutationRequest>>`; the
+mutation match, gate, registration, target projection, result path, and trace
+path are unchanged.
+
+Independent review reproduced all ten C3 cases separately. Each executed one
+test and passed. The signed candidate gate then passed 11/11 steps with 832
+listed, 832 passed, 0 failed, and 0 ignored. False-green review strengthened
+the protected fan-out case after candidate acceptance: after the first request
+is resolved and independently observed, an idle second update must produce no
+second observer delivery, result, or trace. The accepted implementation passes
+that added no-replay assertion because its resolver-local cursor persists
+across frames.
+
+The three C3 records are reconciled together to `GreenUnreviewed`. This is
+automated reviewer verification, not owner acceptance. After atomic status
+reconciliation, the canonical reviewer gate passed 10/10 steps with 832
+listed, 832 passed, 0 failed, 0 ignored, 123 `GreenUnreviewed`, and 0 `Red`.
+C4 and the plan's real console PTY review remain open.
+
+## C4 sealed-red preparation — 2026-08-12
+
+The reviewer added five C4 production-path tests and ran each exact test
+independently. All compile and all fail for the intended missing behavior:
+
+- `remaining_combat_and_spawn_commands_use_one_gated_typed_owner` executes
+  kill_all, heal, god-on, and blueprint spawn in fresh enabled and disabled
+  runtimes. All eight rows lack a typed request/result/trace; disabled rows
+  expose the current direct-mutation bypass. The enabled heal row additionally
+  observes direct pool writes with zero canonical requests or applications.
+- `god_mode_blocks_only_negative_player_health_deltas_inside_canonical_resolution`
+  observes the decisive GodMode-player negative-Health row resolve to defeat
+  rather than an observable zero application. Its other four rows preserve
+  positive healing, AP cost, non-player damage, and ordinary player damage.
+- `console_spawn_matches_canonical_factory_fingerprint_for_unlike_blueprints`
+  compares production console output with factory-derived structured
+  fingerprints. The Tactical `RaidEnemy` and Outpost `FactionMember` markers
+  are missing; pools, statuses, position, player, and blocking fields agree.
+- `console_spawn_scope_follows_current_game_mode_without_legacy_markers`
+  reports `ColonyPersistent + PersistentEntity` in both modes instead of
+  Tactical `DungeonTransient` and Outpost `ColonyPersistent` with no legacy
+  marker.
+- `unknown_console_blueprint_is_atomic_and_reports_one_rejection` preserves
+  state and prints a readable dispatch error, but observes no typed request,
+  core result, or resolver rejection trace.
+
+The reviewer also closed a sealing weakness before handoff. Candidate manifest
+v2 now optionally hashes a unique suffix inside a production-write-set file.
+Two focused `candidate_handoff` tests prove that changing the production prefix
+passes while changing the co-located test suffix fails. C4 uses this mechanism
+to protect the test suffixes in `dispatch.rs`, `actions.rs`, `factory.rs`, and
+`pools.rs` even though their production prefixes remain writable. The four C4
+registry records are `Red`; no candidate may promote them.
+
+The argument-free canonical gate then reproduced the intentional handoff state:
+formatting, all-target compilation, registry validation, ignored-test review,
+the 839-name inventory, strict Clippy, content validation, and whitespace all
+passed. Workspace execution stopped at the five C4 integration failures after
+76 passes, so the gate correctly rejected aggregate metrics and reported 8/11
+steps passed, 3 failed, `STATUS=NotComplete`. The separately executed 228 core
+unit tests, 7 core architecture tests, 10 C3 integration tests, and 9 candidate
+handoff integrity tests all passed. The five newly corrected co-located
+dispatch tests each execute one test and fail only because dispatch still emits
+no C4 typed request; they are suffix-sealed as additional focused reds and will
+be reached by the workspace gate after the integration primaries turn green.
+
+## C4 independent implementation review — 2026-08-12
+
+The reviewer authenticated `CONSOLE-C4-CANDIDATE-HANDOFF-v1.ron` against
+digest `8e75d092da3801c4a4d12caccae277a90696773e6a633f37a9fb88cfb21afc18`.
+The scope guard found only the five authorized production paths changed from
+the sealed dirty-worktree baseline, and the protected test suffixes in
+`dispatch.rs`, `actions.rs`, `factory.rs`, and `pools.rs` remained byte-identical.
+
+All ten completion-critical cases were then run independently and each
+executed exactly one test and passed. They prove the eight enabled/disabled
+typed-boundary rows; same-frame heal requests/applications; the five-row narrow
+GodMode matrix and forbidden side effects; factory-derived fingerprints for
+unlike Tactical and Outpost blueprints; mode-derived scope without deprecated
+markers; and atomic unknown-blueprint rejection through request, result,
+trace, and console output. C1–C3 preservation and the complete workspace were
+also reproduced.
+
+The signed candidate gate passed 11/11 steps with 839 listed, 839 passed, 0
+failed, and 0 ignored. It reported 123 `GreenUnreviewed` and four protected
+`Red` records, as required before reviewer reconciliation. Diff review found
+one typed dispatcher, one gated resolver, one pool-delta owner, and one shared
+scoped factory used by both action and debug spawning; it found no protected
+test edit, fixture-ID branch, direct dispatch mutation, copied factory, or
+legacy lifetime marker in the C4 spawn paths.
+
+The implementation agent's report overstates its process evidence. Its log
+shows one exact red test run before implementation and describes the other red
+states as inferred from the scaffold, despite answering that no required
+command was skipped. That claim is rejected and retained here. The batch is
+accepted because the reviewer had already executed and sealed every red case
+before handoff and independently reproduced every green afterward. The four C4
+records are reconciled to `GreenUnreviewed`; owner acceptance and real-terminal
+console review are not claimed.
+
+After the reviewer updated the registry, requirement map, plan, documentation,
+changelog, and the registry's stale C4-red assertion, the argument-free
+canonical gate passed 10/10 steps. It measured 839 listed, 839 passed, 0 failed,
+0 ignored, 127 `GreenUnreviewed`, and 0 `Red`, and reported
+`STATUS=VerifiedGreen`. Real 80x24/60x20 console review remains open, so this is
+not `ReviewedGreen`.
+
+## Console final real-PTY review and observer repair — 2026-08-12
+
+The initial real-PTY pass at 80x24, 60x20, and an in-place 80x24-to-60x20
+resize found two defects after the 839-test automated checkpoint. Printable
+keys captured by an open console remained unread by gameplay's independent
+`MessageReader<KeyMessage>` and replayed on a later frame after the capture
+flag cleared. Embedded-newline output from `stats`, `blueprints`, and `events`
+also collapsed into one rendered row.
+
+Production repairs are narrow: `map_input_to_intents` consumes unread keys
+before returning from a console-owned batch, and the existing reusable console
+renderer projects each embedded logical line separately. No new input path,
+renderer, command syntax, feature, content, balance behavior, terminal profile,
+or debug authority was added.
+
+Independent false-green review rejected the first delayed-replay regression
+observer. It wrote its message before `App::update`, so removing
+`messages.clear()` still passed. The corrected test emits the terminal batch in
+`PreUpdate`, matching Bevy-Ratatui's production adapter. With the drain removed
+it fails on the next frame with turn `0 -> 1`; with the drain restored it
+passes. Replacing newline splitting with the prior single-line projection also
+makes the multiline test fail with `day: 0turn: 1` on one row; restoring the
+production split returns it to green.
+
+Reviewer PTY reproduction confirms a gameplay-bound `e` remains in the console
+buffer without opening Staffing, `stats` remains in Outpost and displays
+separate logical rows, post-resize `help` remains legible at 60x20, and all PTY
+stderr logs are empty. The closed post-resize 60x20 capture is byte-identical
+to a clean 60x20 Outpost capture. Evidence is stored under
+`metrics/console-terminal-review-2026-08-12/`.
+
+Focused results are 9/9 for `console_input_contract`, 118/118 for `bd_tui
+--lib`, and 85/85 for `bd_console --lib`. The final argument-free canonical
+gate passes 10/10 steps with 841 listed, 841 passed, 0 failed, 0 ignored, 127
+`GreenUnreviewed`, and 0 `Red`, reporting `STATUS=VerifiedGreen`. Production
+diff, GDD/Kernel drift, automated, and real-terminal review now satisfy the
+stabilization plan's completion gate. Overall status is `ReviewedGreen`;
+registry entries remain `GreenUnreviewed` pending owner acceptance.

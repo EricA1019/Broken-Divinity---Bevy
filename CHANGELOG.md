@@ -2,7 +2,7 @@
 
 All notable changes to Broken Divinity are documented here.
 
-## [Unreleased] — 2026-08-09
+## [Unreleased] — 2026-08-12
 
 ### Developer CLI Console (`bd_console` crate)
 
@@ -12,10 +12,10 @@ All notable changes to Broken Divinity are documented here.
 - **Tab completion** against 24 known command names with common-prefix completion and multi-match suggestions
 - **History search** (Up/Down) filtered by current buffer prefix
 - **Welcome message** on console open orienting users
-- **Signal-driven dispatch**: resource commands mutate `ColonyResources` directly; event/transition/spawn commands emit standard `EventTrigger`/`TransitionIntent`/`PoolDeltaRequested` messages
+- **Gated typed mutation boundary**: every mutating console command emits one core-owned debug request; accepted, rejected, and disabled requests produce ordered results and trace evidence
 - **Color-coded output**: ERROR=red, OK=green, prompt=yellow
-- **Entity completeness**: console-spawned survivors and entities include `EntityScope`, `PersistentEntity`, and blueprint `Statuses`
-- **`GodMode` component** — console `god on/off` inserts/removes a marker component for invincibility
+- **Canonical scoped spawning**: action and console blueprint spawns share the complete factory component bundle and one Tactical/Outpost scope rule without deprecated lifetime markers
+- **`GodMode` behavior** — `god on/off` is resolved through the debug gate, and only negative player Health deltas are suppressed inside canonical pool resolution
 
 #### Changed
 - **`BlueprintCatalog::blueprint_ids()`** — new method exposing all blueprint IDs
@@ -24,12 +24,16 @@ All notable changes to Broken Divinity are documented here.
 - **`observe_player_defeat`** — documented the 3 reasons it bypasses `TransitionIntent` (entity despawn ordering, unconditional death, same-frame GameOver)
 
 #### Fixed
-- **Console resource commands were silent no-ops** — `supplies`/`materials`/`faith`/`plants` targeted the player entity (which lacks those pools) via `PoolDeltaRequested`, silently dropped by `resolve_pool_deltas`. Now mutates `ColonyResources.pools` directly.
+- **Console resource commands were silent no-ops** — `supplies`/`materials`/`faith`/`plants` now reach the core debug resolver and update `ColonyResources` through its single authorized owner.
 - **KeyEventKind::Press filter** — console no longer double-processes key events from Release/Repeat
+- **Console close-key leakage** — Escape/backtick captured by the console no longer reaches gameplay routing in the same input batch
+- **Console printable-key replay** — keys typed into an open console are consumed by gameplay's reader and cannot replay as actions on a later frame
+- **Final overlay composition** — the reusable console overlay is composed after the ordinary UI and restores an identical clean frame when closed
+- **Multi-line console output** — `stats`, `blueprints`, and `events` preserve logical rows instead of collapsing embedded newlines
+- **Blueprint drift** — console spawn no longer copies selected factory fields, forces colony scope, or rejects unknown IDs before the typed boundary
 
 #### Tests
-- 99 tests in `bd_console` across parser, input, dispatch, render, and integration
-- Full workspace green (only pre-existing `contract_registry` seeded_registry failure)
+- 841 automated tests and all 127 GreenUnreviewed contracts pass the canonical gate; independent real-PTY review passes at 80x24, 60x20, and resize
 
 ## [Unreleased] — 2026-07-31
 

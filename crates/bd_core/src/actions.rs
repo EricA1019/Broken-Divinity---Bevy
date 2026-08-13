@@ -1321,19 +1321,13 @@ pub(crate) fn resolve_action_effects(
                         continue;
                     };
                     let spawn_pos = Position { x: *x, y: *y };
-                    let entity = crate::factory::spawn_from_blueprint(
+                    crate::factory::spawn_from_blueprint_scoped(
                         blueprint,
                         Some(spawn_pos),
                         mutators,
+                        *location.mode,
                         &mut commands,
                     );
-                    let scope = match *location.mode {
-                        crate::spatial::GameMode::Outpost => {
-                            crate::spatial::EntityScope::ColonyPersistent
-                        }
-                        _ => crate::spatial::EntityScope::DungeonTransient,
-                    };
-                    commands.entity(entity).insert(scope);
                     if player_flag.is_some() {
                         game_log.push(format!("A {} appears.", blueprint.label), LogLevel::Info);
                     }

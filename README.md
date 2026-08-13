@@ -10,8 +10,12 @@ the visual matrix retains explicit open evidence. The
 [Foundation Test and Colony UX Hardening Plan](docs/active/FOUNDATION-TEST-AND-UX-HARDENING-PLAN.md)
 owns the remaining behavior work; the
 [Authoritative Testing Standard](docs/authority/AUTHORITATIVE-TESTING-STANDARD-AND-MIGRATION-PLAN.md)
-owns evidence sufficiency and suite migration. Product P2 remains unauthorized
-and requires a separate owner-approved plan.
+owns evidence sufficiency and suite migration. Automated developer-console
+hardening is implemented; its
+[active stabilization plan](docs/active/FOUNDATION-STABILIZATION-AND-CONSOLE-HARDENING-PLAN.md)
+is `ReviewedGreen` after repaired 80x24/60x20 real-PTY review and an 841-test
+canonical gate. Product P2 remains unauthorized and requires a separate
+owner-approved plan.
 
 Project authority:
 

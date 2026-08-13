@@ -40,6 +40,17 @@ fn bridge_console_commands(
     }
 }
 
+/// Production result reader: carries typed core results into console output.
+/// Runs after Mutation so the resolver's result is available the same frame.
+fn read_debug_results(
+    mut console: ResMut<ConsoleState>,
+    mut results: bevy_ecs::message::MessageReader<bd_core::debug::DebugMutationResult>,
+) {
+    for result in results.read() {
+        console.output.push(result.message.clone());
+    }
+}
+
 /// Minimal plugin that registers the console message, systems, and resources.
 ///
 /// Add **after** `BdCorePlugin` (needs `BlueprintCatalog`, `EventRegistry`,
@@ -49,22 +60,30 @@ pub struct BdConsolePlugin;
 
 impl Plugin for BdConsolePlugin {
     fn build(&self, app: &mut App) {
-        // Message
+        // Messages
         app.add_message::<ConsoleCommand>();
+        app.add_message::<bd_core::debug::DebugMutationRequest>();
+        app.add_message::<bd_core::debug::DebugMutationResult>();
 
         // Resources
         app.init_resource::<ConsoleState>();
+
+        // Explicit opt-in: installing the development console grants this app
+        // debug-mutation authority. Core runtimes remain disabled.
+        if let Some(mut gate) = app
+            .world_mut()
+            .get_resource_mut::<bd_core::debug::DebugMutationGate>()
+        {
+            gate.enabled = true;
+        }
 
         // Systems
         // Console input reducer: owns all physical key editing in Input.
         app.add_systems(
             bevy_app::Update,
-            (
-                input::capture_console_input
-                    .in_set(ConsoleCaptureSet)
-                    .in_set(bd_core::BdSet::Input),
-                render::render_console.in_set(bd_core::BdSet::Render),
-            ),
+            (input::capture_console_input
+                .in_set(ConsoleCaptureSet)
+                .in_set(bd_core::BdSet::Input),),
         );
         // Bridge: carries ConsoleCommand to pending in Mutation, before dispatch.
         app.add_systems(
@@ -73,10 +92,18 @@ impl Plugin for BdConsolePlugin {
                 .in_set(bd_core::BdSet::Mutation)
                 .before(dispatch::execute_console_command),
         );
-        // Exclusive dispatcher: runs in Mutation, after the bridge.
+        // Exclusive dispatcher: parses and emits typed requests in Mutation,
+        // explicitly before the named core resolver.
         app.add_systems(
             bevy_app::Update,
-            dispatch::execute_console_command.in_set(bd_core::BdSet::Mutation),
+            dispatch::execute_console_command
+                .in_set(bd_core::BdSet::Mutation)
+                .before(bd_core::debug::DebugMutationSet::Resolve),
+        );
+        // Production result reader: core results become console output.
+        app.add_systems(
+            bevy_app::Update,
+            read_debug_results.in_set(bd_core::BdSet::ResultEmission),
         );
     }
 }

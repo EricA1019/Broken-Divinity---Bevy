@@ -174,6 +174,27 @@ pub fn spawn_from_blueprint(
     e.id()
 }
 
+/// Spawn a blueprint through the canonical factory and assign authoritative
+/// entity scope from the current game mode. This is the single shared owner of
+/// the mode-to-scope mapping; both action spawning and console debug spawning
+/// route through it so no caller reimplements the rule or inserts a deprecated
+/// lifetime marker.
+pub fn spawn_from_blueprint_scoped(
+    blueprint: &EntityBlueprint,
+    pos: Option<Position>,
+    mutators: &[Mutator],
+    mode: crate::spatial::GameMode,
+    commands: &mut Commands,
+) -> Entity {
+    let entity = spawn_from_blueprint(blueprint, pos, mutators, commands);
+    let scope = match mode {
+        crate::spatial::GameMode::Outpost => crate::spatial::EntityScope::ColonyPersistent,
+        _ => crate::spatial::EntityScope::DungeonTransient,
+    };
+    commands.entity(entity).insert(scope);
+    entity
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

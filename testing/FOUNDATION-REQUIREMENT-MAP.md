@@ -312,11 +312,55 @@ workflow evidence.
 ## 16. Developer-console input support
 
 These rows support development tooling and do not expand Foundation product
-scope. The C1 v2 handoff preserves six useful physical greens while keeping
-two independently observed architecture gaps intentionally Red.
+scope. C1 v2 passed independent production-diff review and the complete
+physical input matrix. Final real-PTY review found and repaired a delayed
+printable-key replay; the corrected PreUpdate-timed observer and PTY workflow
+both pass.
 
 | Requirement piece | Primary evidence | Status | Missing proof |
 |---|---|---|---|
-| One registered reducer owns physical console editing | `console_input_contract::physical_console_editing_uses_the_registered_production_reducer` | Red | Physical editing is green, but C1 cannot close until the reducer has explicit schedule ownership and one causal submission path |
-| Console-owned close keys never reach gameplay routing | `console_input_contract::escape_close_is_consumed_before_title_routing` plus Title/Outpost close cases and `console_capture_is_explicitly_ordered_before_gameplay_routing` | Red | Physical close cases pass, but Bevy still reports one unresolved conflict involving the reducer instead of an explicit dependency before gameplay routing |
-| One physical line uses one typed submission path | `console_input_contract::one_physical_line_reaches_dispatch_exactly_once` | Red | The reducer emits `ConsoleCommand` and independently writes `ConsoleState.pending`; quarantining that competitor leaves zero dispatch results |
+| One registered reducer owns physical console editing | `console_input_contract::physical_console_editing_uses_the_registered_production_reducer` | Green unreviewed | Production reducer, Press-only editing, history/completion preservation, and real-PTY typing pass; owner acceptance remains |
+| Console-owned close keys and printable input never reach gameplay routing | `console_input_contract::escape_close_is_consumed_before_title_routing` plus Title/Outpost close cases, explicit ordering, and `open_console_typed_key_does_not_leak_to_gameplay_on_a_later_frame` | Green unreviewed | PreUpdate-timed delayed-replay guard and real-PTY gameplay-bound `e` pass; owner acceptance remains |
+| One physical line uses one typed submission path | `console_input_contract::one_physical_line_reaches_dispatch_exactly_once` | Green unreviewed | Typed submission and real-PTY `stats`/`help` workflows pass; owner acceptance remains |
+
+## 17. Developer-console final composition
+
+C2 began from the independently accepted C1 input path and the measured
+817/817 canonical baseline. Its buffer observers and final real-PTY workflow
+now agree after repairing multiline command-output projection.
+
+| Requirement piece | Primary evidence | Status | Missing proof |
+|---|---|---|---|
+| Open console is composed last at both supported profiles | `console_render_contract_tests::open_console_survives_authoritative_final_composition_at_supported_profiles` | Green unreviewed | Automated and real-PTY final composition pass; owner acceptance remains |
+| Visible console changes invalidate the final frame | `console_render_contract_tests::visible_console_state_invalidates_the_authoritative_frame_once` | Green unreviewed | Open/buffer/output changes invalidate and real-PTY command output refreshes; owner acceptance remains |
+| Closed console is identical to a clean frame | `console_render_contract_tests::closed_console_matches_clean_canvas_and_styles_at_supported_profiles` | Green preservation | Automated equality passes and resized-close PTY output is byte-identical to the clean compact frame |
+| Open → resize → close restores clean output | `console_render_contract_tests::open_resize_close_returns_to_clean_authoritative_output` | Green unreviewed | Automated lifecycle and real 80x24-to-60x20 PTY resize/close pass; owner acceptance remains |
+| Draw failure remains visible to shutdown boundary | `bd_tui::tests::draw_failure_requests_clean_application_shutdown` | Green preservation | Automated failure injection remains green; no real-terminal failure was manufactured |
+
+## 18. Developer-console debug mutation boundary
+
+C3 v1 produced a working gated typed boundary, but its CandidateGreen claim was
+rejected because the implementation agent rewrote co-located dispatch tests.
+The reviewer independently adopted the typed-request test semantics, protected
+the whole dispatch file for v2, and accepted the one-file v2 recovery. The core
+resolver now uses a persistent private cursor, leaving the request visible to
+independent readers without replaying it on the next frame.
+
+| Requirement piece | Primary evidence | Status | Missing proof |
+|---|---|---|---|
+| Console installation explicitly opts into a core gate that otherwise defaults disabled | `console_debug_contract::console_plugin_explicitly_enables_the_debug_gate` plus the core-default and disabled-command tables | Green unreviewed | Automated production-path and denial evidence passes; owner acceptance remains |
+| Ten ordinary mutation variants cross one typed pre-mutation boundary and one named resolver | `console_debug_contract::every_ordinary_mutation_crosses_one_typed_boundary_then_applies_exactly_one_delta` plus enabled-rejection, schedule, read-only, and post-resolver-reader supports | Green unreviewed | Exact deltas, ordering, results, traces, independent-reader fan-out, and no second-frame replay pass; owner acceptance remains |
+| Survivor indices share one visible stable order and reject indistinguishable ties | `console_debug_contract::survivor_indices_share_one_visible_stable_order_and_reject_indistinguishable_duplicates` | Green unreviewed | Deterministic ordering, visible identity, shared projection, and ambiguous-tie denial pass; owner acceptance remains |
+
+## 19. Developer-console GodMode and canonical spawn
+
+C4 is independently automated-green. All remaining mutating commands now cross
+the existing gated resolver; GodMode is enforced in canonical signed-delta
+resolution, and action/debug spawning share one scoped factory operation.
+
+| Requirement piece | Primary evidence | Status | Missing proof |
+|---|---|---|---|
+| GodMode blocks only negative player Health inside signed-delta resolution | `console_debug_c4_contract::god_mode_blocks_only_negative_player_health_deltas_inside_canonical_resolution` plus the gated-owner matrix | Green unreviewed | Five signed-delta rows and forbidden side effects pass; owner acceptance remains |
+| Console spawn preserves canonical structured factory components for unlike blueprints and both modes | `console_debug_c4_contract::console_spawn_matches_canonical_factory_fingerprint_for_unlike_blueprints` plus the gated-owner matrix | Green unreviewed | Factory-derived unlike-blueprint fingerprints pass; owner acceptance remains |
+| Console spawn derives authoritative scope from current mode | `console_debug_c4_contract::console_spawn_scope_follows_current_game_mode_without_legacy_markers` plus the gated-owner matrix | Green unreviewed | Tactical/Outpost scope and no-legacy-marker rows pass; owner acceptance remains |
+| Unknown blueprint requests reject atomically through the typed resolver | `console_debug_c4_contract::unknown_console_blueprint_is_atomic_and_reports_one_rejection` | Green unreviewed | Atomic request/result/trace/output rejection passes; owner acceptance remains |

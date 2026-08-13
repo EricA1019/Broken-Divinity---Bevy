@@ -9,6 +9,7 @@ use bevy_ecs::schedule::{IntoScheduleConfigs, SystemSet};
 
 pub mod components;
 pub mod content;
+pub mod debug;
 pub mod direction;
 pub mod gamelog;
 pub mod ids;
@@ -143,6 +144,10 @@ fn register_foundation(app: &mut App, foundation: bool) {
             .chain()
             .in_set(BdSet::Mutation),
     );
+
+    // Register the disabled-by-default developer mutation boundary. Tooling
+    // must opt in explicitly; ordinary core runtimes never gain this authority.
+    debug::register_debug(app);
 
     // Register resources
     app.insert_resource(SmokeMap::default_smoke_map());

@@ -1,6 +1,6 @@
 # Broken Divinity Documentation Hub
 
-**Updated:** 2026-08-09
+**Updated:** 2026-08-12
 
 ## Directory Structure
 
@@ -31,11 +31,11 @@ docs/
 │   ├── lore/              # Canonical worldbuilding
 │   ├── gameplay/          # Mechanics design specs
 │   └── mockups/           # Visual mockups
-├── handoff/               # Active UI9-C implementation handoff artifacts
-│   ├── UI9-C-CONTEXT-CANDIDATE-HANDOFF-PROMPT.md
-│   ├── UI9-C-CONTEXT-CANDIDATE-HANDOFF-PROMPT-v2.md
-│   ├── UI9-C-CONTEXT-CANDIDATE-HANDOFF-BODY-v3.md
-│   └── UI9-C-CONTEXT-CANDIDATE-HANDOFF-BODY-v4.md
+├── handoff/               # Sealed implementation handoff artifacts
+│   ├── UI9-C-CONTEXT-CANDIDATE-HANDOFF-BODY-v4.md
+│   ├── CONSOLE-C2-CANDIDATE-HANDOFF-BODY-v2.md
+│   ├── CONSOLE-C3-CANDIDATE-HANDOFF-BODY-v2.md
+│   └── CONSOLE-C4-CANDIDATE-HANDOFF-BODY-v1.md
 ├── decisions/             # Historical technical decision log
 ├── tech/                  # Archived technical references (Bevy 0.14 era)
 ├── archive/               # Completed plans, retired docs, legacy artifacts

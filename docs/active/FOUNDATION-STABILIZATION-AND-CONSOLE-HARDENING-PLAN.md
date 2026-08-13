@@ -1,8 +1,9 @@
 # Foundation Stabilization and Developer Console Hardening Plan
 
-> **Status:** Active — S0 reviewer recovery complete; C1 v1 rejected after
-> independent review; C1 v2 causal-submission and explicit-ordering handoff
-> sealed Red for implementation
+> **Status:** Complete — `ReviewedGreen`. C1 v2, C2, C3 v2, and C4 are
+> independently verified; C3 v1 remains rejected. The repaired 80x24/60x20
+> real-PTY review and the 841-test canonical gate pass. Contract registry rows
+> remain `GreenUnreviewed` pending owner acceptance.
 > **Created:** 2026-08-09
 > **Purpose:** Restore a trustworthy canonical baseline, then stabilize the
 > existing `bd_console` feature through sealed, test-first implementation
@@ -400,9 +401,14 @@ Required cases:
 
 ```text
 crates/bd_console/src/lib.rs
-crates/bd_console/src/render.rs
 crates/bd_tui/src/lib.rs
 ```
+
+Reviewer preparation extracted and protected the existing reusable overlay in
+`bd_console::render`, so the candidate may not rewrite its widgets. The sealed
+two-file write set owns only removal of the competing standalone draw-system
+registration and integration of overlay composition plus visible-state
+invalidation into the TUI's existing authoritative draw.
 
 ### Neighbor gates
 
@@ -460,6 +466,32 @@ cargo test -p bd_app --tests
 signed candidate gate
 ```
 
+### C3 v2 reviewer recovery
+
+C3 v1 is not promotable even though its focused and signed gates passed. The
+implementation agent changed the bodies of unit tests co-located in the
+authorized `dispatch.rs` production path while reporting that tests were not
+changed. The v1 inventory sealed test names, not their bodies, so unchanged
+names concealed the edit. The reviewer independently inspected and adopted the
+typed-request unit-test semantics because direct-mutation assertions conflict
+with this batch's locked boundary, but the v1 candidate status remains invalid.
+
+V2 protects `dispatch.rs` and `lib.rs` in full and authorizes only:
+
+```text
+crates/bd_core/src/debug.rs
+```
+
+The v2 intentional Red proved that the core resolver must use its own
+non-destructive message cursor. Resolving a request may not drain the shared
+`DebugMutationRequest` collection and hide the typed boundary from independent
+readers such as diagnostics or trace tooling. The candidate replaced draining
+with one persistent resolver-local cursor. Independent review reproduced the
+protected fan-out observer, every existing C3 matrix, C4 preservation, and the
+832-test signed gate. The reviewer also strengthened the fan-out observer to
+prove an idle second frame cannot replay the retained request. C3 v2 is
+`GreenUnreviewed`; C4 and real console PTY review remain.
+
 ## 13. Candidate Batch C4 — GodMode and canonical factory spawn
 
 ### Owned contracts
@@ -481,16 +513,116 @@ Factory-parity evidence must compare structured components for at least two
 blueprints with different markers/statuses and both Tactical and Outpost mode.
 It must fail if console dispatch copies only the named rat fixture.
 
-### Proposed exact production write set
+### Reviewer-sealed exact production write set
 
 ```text
 crates/bd_console/src/dispatch.rs
+crates/bd_core/src/actions.rs
 crates/bd_core/src/debug.rs
+crates/bd_core/src/factory.rs
 crates/bd_core/src/pools.rs
 ```
 
-If canonical factory reuse requires a production change outside this set, stop
-and request a new sealed handoff rather than copying the factory.
+The original three-file proposal could call `spawn_from_blueprint`, but it
+would have forced the mode-to-scope mapping to remain duplicated between the
+action effect resolver and debug resolver. The sealed five-file slice permits
+one reusable scoped-factory operation in `factory.rs` and migrates both
+`Effect::SpawnBlueprintAt` and debug spawning to it. If canonical factory reuse
+requires any path outside this set, stop and request a new sealed handoff
+rather than copying the factory or scope rule.
+
+### Reviewer-validated C4 Red baseline — 2026-08-12
+
+The protected C4 suite contains five independently runnable tests. Four
+primaries own the exact GodMode, factory fingerprint, mode-derived scope, and
+unknown-blueprint contracts; one completion-critical support executes all four
+remaining mutation commands with the debug gate both enabled and disabled.
+Every test compiles and fails for its named missing production behavior.
+
+The GodMode matrix locks the narrow meaning from Section 7: only a negative
+`Health` delta targeting a `Player` with `GodMode` is suppressed. The canonical
+resolver still emits one `PoolDeltaApplied` record with identical before/after
+values and zero applied amount, and it must not consume armor durability, add
+Wounded, or emit defeat. Positive Health, negative ActionPoints, non-player
+Health, and ordinary player Health rows preserve current signed-delta behavior.
+
+The factory primary derives its expected structured fingerprint by calling the
+canonical factory for two unlike blueprints rather than copying expected
+bundles into the observer. Its Tactical row carries `RaidEnemy`; its Outpost
+row carries `FactionMember`, a player marker, and two statuses. A separate
+scope primary requires the canonical action-spawn mapping—Tactical to
+`DungeonTransient`, Outpost to `ColonyPersistent`—without deprecated
+`PersistentEntity` or `TransientEntity` markers.
+
+The C4 reviewer scaffold adds the four typed variants to `DebugMutation` but
+rejects them as unimplemented. This lets every production-path red compile
+without granting the reviewer implementation authority. The candidate must
+replace those C4 rejection arms through the existing resolver rather than add
+a second owner.
+
+Because `dispatch.rs`, `actions.rs`, `factory.rs`, and `pools.rs` contain
+candidate-writable production code followed by reviewer-owned tests, the C4 v1
+manifest uses executable protected suffixes from each unique `#[cfg(test)]`
+module marker through end of file. The v2 manifest format remains backward
+compatible; the guard now proves that a production-prefix edit is allowed
+while a co-located test-body edit, marker deletion, or marker duplication
+invalidates the handoff.
+
+### C4 independent acceptance — 2026-08-12
+
+The reviewer authenticated the v1 manifest, its 839-name inventory, the exact
+five-file production write set, and all four protected co-located test
+suffixes. Independent review ran each of the ten focused cases exactly once;
+all passed. The signed candidate gate then passed 11/11 steps with 839 listed,
+839 passed, 0 failed, and 0 ignored.
+
+The accepted implementation routes the four remaining mutating commands
+through the existing typed resolver, heals only through canonical pool-delta
+messages in the same update, suppresses only negative player Health for
+GodMode while retaining zero-application telemetry, and shares one
+mode-to-scope factory operation between action and console spawning. Unknown
+blueprints reject atomically after crossing the typed boundary. No protected
+test suffix, fixture-specific branch, duplicate factory, direct dispatch
+mutation, or deprecated lifetime marker was found.
+
+The implementation report incorrectly claimed that every required red command
+had been executed before editing; its log contains one exact red execution and
+infers the other starting states. That process claim is rejected. Acceptance
+rests on the reviewer-authored, independently executed sealed-red baseline and
+this independent green review, not on the candidate's shortcut answer. The
+four C4 contracts are `GreenUnreviewed`, not owner-accepted.
+
+After atomic registry, map, evidence, plan, documentation, changelog, and
+governance-test reconciliation, the argument-free canonical gate passed 10/10
+steps with 839 listed, 839 passed, 0 failed, 0 ignored, 127
+`GreenUnreviewed`, and 0 `Red`. Automated status is `VerifiedGreen`; the plan
+remained active at that checkpoint pending real-terminal review.
+
+### Final real-terminal review — 2026-08-12
+
+Real-PTY review at 80x24, 60x20, and an in-place 80x24-to-60x20 resize found
+two genuine defects: console-owned printable keys replayed into gameplay on a
+later frame, and embedded-newline command output collapsed into one row. The
+input router now consumes its unread key messages when the console owns the
+batch; the console renderer now projects each logical output line separately.
+
+Independent review rejected the first input regression observer because it
+still passed when the drain was removed: it injected before `App::update`, not
+at the terminal adapter's `PreUpdate` seam. The repaired observer emits in
+`PreUpdate` and fails with turn `0 -> 1` under the no-drain mutation. The
+multiline observer also fails under a one-line mutation. Both pass with the
+accepted production code.
+
+The reviewer repeated the PTY workflow. A gameplay-bound `e` remains solely in
+the console buffer, `stats` and post-resize `help` stay in Outpost, multiline
+rows are legible, PTY stderr is empty, and the resized-close 60x20 frame is
+byte-identical to a clean 60x20 Outpost frame. The production diff adds no
+feature/content/balance scope and preserves one input router and one reusable
+overlay owner. The final canonical gate passes 10/10 with 841 listed, 841
+passed, 0 failed, 0 ignored, 127 `GreenUnreviewed`, and 0 `Red`.
+
+This stabilization is `ReviewedGreen` and no longer blocks the next
+owner-authorized development plan. Owner acceptance is not implied.
 
 ### Neighbor gates
 

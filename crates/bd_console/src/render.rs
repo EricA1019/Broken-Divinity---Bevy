@@ -11,11 +11,11 @@ use ratatui::{
 
 use crate::state::ConsoleState;
 
-/// Draws the console overlay when [`ConsoleState::open`] is true.
+/// Legacy standalone draw-system adapter.
 ///
-/// Registered in `BdSet::Render` with `.after(draw_ui)` ordering — writes
-/// to the same `RatatuiContext` frame as the main UI, overlaying the
-/// bottom 40% of the terminal.
+/// The reusable [`render_console_overlay`] function owns the actual widget
+/// composition so another crate can place the overlay in its authoritative
+/// final draw without copying console visuals.
 pub fn render_console(ratatui_ctx: Option<ResMut<RatatuiContext>>, state: Res<ConsoleState>) {
     if !state.open {
         return;
@@ -25,25 +25,37 @@ pub fn render_console(ratatui_ctx: Option<ResMut<RatatuiContext>>, state: Res<Co
         return;
     };
 
-    let size = match ctx.size() {
-        Ok(s) => s,
-        Err(_) => return,
-    };
-    let area = Rect {
-        x: 0,
-        y: 0,
-        width: size.width,
-        height: size.height,
-    };
+    if ctx.size().is_err() {
+        return;
+    }
 
-    // Bottom 40% of the terminal
+    if let Err(error) = ctx.draw(|frame| render_console_overlay(frame, &state)) {
+        tracing::error!(%error, "console overlay render failed");
+    }
+}
+
+/// Returns the terminal-contained region owned by an open console overlay.
+pub fn console_overlay_area(area: Rect) -> Rect {
     let height = (area.height as f32 * 0.4) as u16;
-    let console_area = Rect {
-        x: 0,
-        y: area.height.saturating_sub(height),
-        width: area.width,
+    Rect::new(
+        area.x,
+        area.y + area.height.saturating_sub(height),
+        area.width,
         height,
-    };
+    )
+}
+
+/// Composes the reusable console overlay into an existing Ratatui frame.
+///
+/// This function deliberately performs no terminal draw of its own. The
+/// caller retains ownership of the final frame and any render-failure
+/// boundary.
+pub fn render_console_overlay(frame: &mut ratatui::Frame<'_>, state: &ConsoleState) {
+    if !state.open {
+        return;
+    }
+
+    let console_area = console_overlay_area(frame.area());
 
     // Split: output log (top 75%) and input line (bottom 1 row)
     let chunks = Layout::default()
@@ -51,71 +63,72 @@ pub fn render_console(ratatui_ctx: Option<ResMut<RatatuiContext>>, state: Res<Co
         .constraints([Constraint::Min(1), Constraint::Length(1)])
         .split(console_area);
 
-    // Output log
-    let output_lines: Vec<Line> = state
-        .output
-        .iter()
+    // Output log. Split each entry on embedded newlines so multi-line
+    // command output (e.g. `stats`, `blueprints`) renders each logical line on
+    // its own row instead of collapsing into one wrapped paragraph.
+    let mut flat_lines: Vec<(String, Style)> = Vec::new();
+    for line in &state.output {
+        let style = if line.starts_with("ERROR") {
+            Style::default().fg(Color::Red)
+        } else if line.starts_with("OK") {
+            Style::default().fg(Color::Green)
+        } else {
+            Style::default().fg(Color::White)
+        };
+        for sub in line.split('\n') {
+            flat_lines.push((sub.to_string(), style));
+        }
+    }
+    let output_lines: Vec<Line> = flat_lines
+        .into_iter()
         .rev()
         .take(chunks[0].height as usize)
         .rev()
-        .map(|line| {
-            let style = if line.starts_with("ERROR") {
-                Style::default().fg(Color::Red)
-            } else if line.starts_with("OK") {
-                Style::default().fg(Color::Green)
-            } else {
-                Style::default().fg(Color::White)
-            };
-            Line::from(Span::styled(line.as_str(), style))
-        })
+        .map(|(sub, style)| Line::from(Span::styled(sub, style)))
         .collect();
 
     let output = Paragraph::new(output_lines)
         .block(Block::default().borders(Borders::NONE))
         .wrap(Wrap { trim: false });
 
-    if let Err(error) = ctx.draw(|frame| {
-        // Clear the console area (overlay on top of whatever bd_tui drew)
-        frame.render_widget(ratatui::widgets::Clear, console_area);
+    // Clear the console area (overlay on top of the authoritative underlay).
+    frame.render_widget(ratatui::widgets::Clear, console_area);
 
-        // Border frame
-        let block = Block::default()
-            .title(" CONSOLE ")
-            .borders(Borders::ALL)
-            .border_style(Style::default().fg(Color::DarkGray));
-        let inner = block.inner(console_area);
-        frame.render_widget(block, console_area);
+    // Border frame
+    let block = Block::default()
+        .title(" CONSOLE ")
+        .borders(Borders::ALL)
+        .border_style(Style::default().fg(Color::DarkGray));
+    let inner = block.inner(console_area);
+    frame.render_widget(block, console_area);
 
-        // Output log
-        let log_area = Rect {
-            x: inner.x,
-            y: inner.y,
-            width: inner.width,
-            height: inner.height.saturating_sub(1),
-        };
-        frame.render_widget(output, log_area);
+    // Output log
+    let log_area = Rect {
+        x: inner.x,
+        y: inner.y,
+        width: inner.width,
+        height: inner.height.saturating_sub(1),
+    };
+    frame.render_widget(output, log_area);
 
-        // Input line: "> buffer█"
-        let prompt = format!("> {}", state.buffer);
-        let prompt_span = if prompt.len() > inner.width as usize {
-            // Scroll: show end of long input
-            let start = prompt.len().saturating_sub(inner.width as usize);
-            Span::styled(&prompt[start..], Style::default().fg(Color::Yellow))
-        } else {
-            Span::styled(&prompt, Style::default().fg(Color::Yellow))
-        };
+    // Input line: "> buffer"
+    let prompt = format!("> {}", state.buffer);
+    let prompt_span = if prompt.len() > inner.width as usize {
+        // Scroll: show end of long input
+        let start = prompt.len().saturating_sub(inner.width as usize);
+        Span::styled(&prompt[start..], Style::default().fg(Color::Yellow))
+    } else {
+        Span::styled(&prompt, Style::default().fg(Color::Yellow))
+    };
 
-        let input_line = Paragraph::new(Line::from(prompt_span));
-        let input_area = Rect {
-            x: inner.x,
-            y: inner.y + inner.height.saturating_sub(1),
-            width: inner.width,
-            height: 1,
-        };
-        frame.render_widget(input_line, input_area);
-    }) {
-        tracing::error!(%error, "console overlay render failed");
-    }
+    let input_line = Paragraph::new(Line::from(prompt_span));
+    let input_area = Rect {
+        x: inner.x,
+        y: inner.y + inner.height.saturating_sub(1),
+        width: inner.width,
+        height: 1,
+    };
+    frame.render_widget(input_line, input_area);
 }
 
 // ── Tests ──
